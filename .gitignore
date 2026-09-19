@@ -427,3 +427,81 @@ FodyWeavers.xsd
 *.msix
 *.msm
 *.msp
+
+# -----------------------------
+# Atlas Repository Ignore Rules
+# -----------------------------
+
+# Python virtual environments
+.venv/
+.venv-*/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Local data, model binaries, and run outputs
+.atlas-local/
+.env
+.env.*
+!.env.example
+
+# Hugging Face, ONNX, llama.cpp, QNN, and runtime caches
+hf_cache/
+huggingface/
+onnxruntime_cache/
+qnn_cache/
+llama.cpp/
+*.gguf
+*.onnx
+*.bin
+
+# Training artifacts (Atlas forbids committing these)
+checkpoints/
+weights/
+adapters/
+artifacts/
+models/
+quantized/
+export/
+conversion/
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+
+# VS Code
+.vscode/
+*.code-workspace
+
+# Windows / PowerShell
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.ps1.tmp
+
+# Build tools
+build/
+dist/
+*.obj
+*.dll
+*.lib
+*.exe
+
+# Node / JS (if any tooling appears later)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dotnet (Scout integration tooling)
+bin/
+obj/
+*.user
+*.suo
+
+# Git safety
+*.orig
+*.patch
