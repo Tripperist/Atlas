@@ -31,6 +31,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | §5 QNN provider + model format | Yes, read-only |
 | [`src/setup/model_format.py`](src/setup/model_format.py) | §5 classify a model directory | Yes, read-only |
 | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
+| [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | §7.4 cloud compile + profile | Uploads model; needs API token |
 
 First run, in order:
 
@@ -897,6 +898,31 @@ quantize_job = hub.submit_quantize_job(model=..., calibration_data=...,
 profile_job  = hub.submit_profile_job(model=target, device=device)
 ```
 
+```bash
+.\.venv\Scripts\python.exe src\setup\hub_profile.py --model models\squeezenet1_1-onnx-w8a8\squeezenet1_1.onnx --input-name image_tensor --input-shape 1,3,224,224 --input-dtype uint8
+```
+
+[`hub_profile.py`](src/setup/hub_profile.py) submits a compile job followed by a profile job and prints the per-layer compute-unit split.
+
+**Measured — `squeezenet1_1` w8a8 on a hosted Snapdragon X2 Elite CRD:**
+
+| Metric | Hosted device | Local (§ Route A) |
+| --- | --- | --- |
+| Layers on **NPU** | **46 / 46 (100 %)** | not visible per-layer |
+| Inference | 0.21 ms (device-measured) | 0.46 ms (Python wall-clock) |
+| First load | 2.42 s | 2.1 s (on-device compile) |
+| Warm load | 0.34 s | 0.28 s (cached EPContext) |
+| Peak memory | 32 MB | not measured |
+
+The load figures agree closely across two independent measurements, which is good evidence both are right. The inference times are **not** comparable — the hosted number is device-measured, the local one is wall-clock around a Python call including interpreter overhead.
+
+The per-layer split is what makes this worth the round trip: local counters show *an* accelerator is busy, while a profile job states that **every one of the 46 layers ran on the NPU** with none falling back.
+
+**Two traps in the SDK**, both of which cost a failed run here:
+
+- An ONNX with a `.data` sidecar uploads as the `.onnx` alone and fails server-side with *"should be stored in ... but it is not regular file"*. `hub_profile.py` inlines external data before uploading.
+- `get_target_model()` returns a **future placeholder** rather than blocking, and a freshly submitted job sits in `CREATED` with both `success` and `failure` false. Checking immediately looks like failure when the job is merely queued. Poll until `success` or `failure` — compile took 51 s, profile 332 s including device provisioning.
+
 **Where this fits Atlas, and where it does not.**
 
 - ✅ **The right tool for §7 generally** — quantizing and compiling an Atlas-trained model for Snapdragon, once one exists. A profile job reports the compute unit actually used plus per-layer runtime, which is stronger evidence than anything measurable locally.
@@ -1150,7 +1176,8 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
 | Battery operation | Everything measured on AC with `burst`. Deployment behaviour on battery is unknown |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
-| Workbench profile job on hosted X2 Elite | Per-layer runtime and compute-unit reporting is stronger evidence than local counters. Needs an API token (§7.4). Vision/speech models only — not LLMs |
+| Workbench profile job for a *trained* Atlas model | Done once for SqueezeNet (§7.4, 46/46 layers on NPU). Repeat for real artifacts once Atlas produces one |
+| NPU headroom | Hosted profile gives per-layer placement but not saturation. Peak memory 32 MB for SqueezeNet suggests ample room; unmeasured for LLMs |
 
 ---
 
