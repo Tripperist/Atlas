@@ -14,6 +14,7 @@ This README is the single entry point. It supersedes the former `Setup.MD` and `
 - [8. Benchmarking](#8-benchmarking)
 - [9. Atlas project scope](#9-atlas-project-scope)
 - [10. Troubleshooting](#10-troubleshooting)
+- [11. Backlog](#11-backlog)
 
 ## Automation
 
@@ -1068,6 +1069,44 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | Export produces wrong-generation artifacts | Use `--device "Snapdragon X2 Elite CRD"` (HTP 81), not `X Elite` (HTP 73) |
 | Out-of-memory or sustained paging | Reduce `--nctx`, concurrency, or model size; account for duplicate cached copies |
 | Exported model regresses | Compare tokenizer/template, merge, quantization calibration, stop tokens, and context against the baseline |
+
+---
+
+## 11. Backlog
+
+### Benchmark ORT GenAI against GenieX GGUF for Phi-4
+
+**What.** Run a controlled head-to-head of the two working NPU paths on the same model, using [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) conditions for both: same prompt, ≥400 tokens, 3+ runs, `burst` power mode, AC power, warm machine, with NPU utilization sampled.
+
+**Why.** Both paths now work, and the numbers so far disagree — but they were not measured comparably:
+
+| Path | Model | Measured |
+| --- | --- | --- |
+| GenieX GGUF (llama.cpp) | `unsloth/Phi-4-mini-reasoning-GGUF` Q4_0 | 24.1 tok/s |
+| ORT GenAI (EPContext) | `microsoft/Phi-4-mini-reasoning-onnx` qnn-int4 | 17.1 tok/s |
+
+Those are **different quantizations, different runtimes, different token counts, and different thermal states**, so the ~40 % gap is not yet a real result. Section 8 already showed that measuring a cold machine briefly reverses a conclusion outright, so this needs the same discipline.
+
+**Why it matters.** Scout needs a runtime decision, and the two paths trade off differently:
+
+- **ORT GenAI** — in-process control over the token loop, and the direct route to C# via `Microsoft.ML.OnnxRuntimeGenAI`. Costs a version pin (`>=0.13.2,<0.16`) and a narrow supply of compatible models.
+- **GenieX** — faster in the numbers so far, far easier model sourcing (any GGUF from Hugging Face), and an OpenAI-compatible server. Costs process isolation and an HTTP hop.
+
+If GenieX really is ~40 % faster, that likely outweighs in-process control and C# should talk to `geniex serve`. If the gap closes under fair conditions, ORT GenAI is the cleaner integration. Decide with numbers, not architecture preference.
+
+**Confounder to resolve first.** `qnn-int4` and `Q4_0` are not the same quantization, so part of any gap is the weights rather than the runtime. Either find one model published in both formats, or treat the result as a path comparison rather than a runtime comparison and say so.
+
+### Other open threads
+
+| Item | Note |
+| --- | --- |
+| Scope of the 0.16.0 regression | Unknown whether it broke EPContext models specifically or QNN more broadly. Worth reporting upstream if reproducible on a second model |
+| C# / .NET path | Untested. The fix is a version pin plus `Config.append_provider`, both of which have .NET equivalents — verify before building on it |
+| NPU headroom | Utilization is clamped to 100 % in tooling; raw readings hit 238 %, so whether the NPU is saturated is unknown |
+| `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |
+| Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
+| Battery operation | Everything measured on AC with `burst`. Deployment behaviour on battery is unknown |
+| `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
 
 ---
 
