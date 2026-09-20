@@ -1414,20 +1414,53 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Also benchmark the native QAIRT path.** Qualcomm measures `phi_3_5_mini_instruct` w4a16 QAIRT at 34.2 tok/s against 18.1 for `phi_4_mini_instruct` q4_0 on llama.cpp NPU. If that ~2× holds, the comparison is really three-way: ORT GenAI, GenieX llama.cpp, and GenieX QAIRT — and the QAIRT bundle may beat both paths measured so far.
 
+### Verify tool calling on the NPU with `qwen2.5-7b`
+
+**What.** Pull `qwen2.5-7b` through Foundry Local, confirm it loads the NPU variant, and verify that **tool calling actually works while running on the NPU** — not just that the catalogue advertises it.
+
+```powershell
+foundry model info qwen2.5-7b            # confirm an NPU variant with QNNExecutionProvider
+foundry model download qwen2.5-7b        # ~6.8 GB
+foundry server start
+# POST /v1/chat/completions with a `tools` array; assert tool_calls in the response
+```
+
+Sample the NPU counter during the call, the same way [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) does:
+`\GPU Engine(*engtype_compute)\Utilization Percentage`, adapter luid `0x00013d0d`.
+
+**Why this model.** Scout needs tool calls, and of Foundry Local's 37 chat/multimodal models only **six** combine NPU placement with tool support — all Qwen2.5:
+
+| Model | Size | Device | Tools |
+| --- | --- | --- | --- |
+| `qwen2.5-7b` | 6.8 GB | NPU | yes |
+| `qwen2.5-1.5b` | 1.1 GB | NPU | yes |
+| `qwen2.5-0.5b` | 442 MB | NPU | yes |
+| `qwen2.5-coder-7b` / `-1.5b` / `-0.5b` | 0.4–7.1 GB | NPU | yes |
+
+Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deepseek-r1-*`) or moves off the NPU (the whole `phi-4` family, all of `qwen3`, routed to GPU here). `qwen2.5-7b` is the largest NPU + tools option, so it sets the quality ceiling for that combination.
+
+**Why it is not settled.** Three things could each break it:
+
+- The **Tools** flag may describe the model family rather than the specific NPU variant. The catalogue lists one flag per model while `foundry model info` lists separate NPU/GPU/CPU variants.
+- Tool calling may **force a fallback**. Constrained or grammar-based decoding sometimes runs outside the accelerated path; if so the NPU counter will sit near zero during a tool-calling request even though a plain completion pegs it at 100 %.
+- At 6.8 GB it is the **largest NPU model** in the catalogue. Confirm it loads and holds context without paging — `phi-3.5-mini` at 2.0 GB is the only NPU model measured so far.
+
+**What good looks like.** A tool-calling request returns a well-formed `tool_calls` payload, the NPU counter peaks near 100 % during it, and throughput is within range of the 26.5 tok/s measured for `phi-3.5-mini`. If tool calls work but drop to CPU, that is still a usable answer — it just means Scout pays NPU speed only on plain generation.
+
+**If it fails**, fall back to `qwen2.5-1.5b` to separate a size problem from a tool-calling problem, and compare against the same request on the GPU variant.
+
 ### Other open threads
 
 | Item | Note |
 | --- | --- |
 | Scope of the 0.16.0 regression | Unknown whether it broke EPContext models specifically or QNN more broadly. Worth reporting upstream if reproducible on a second model |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
-| Tool calling on the NPU | Foundry Local lists 6 NPU models with tool support, all Qwen2.5. Verify tool calls actually work on the NPU variant before designing around it |
-| NPU headroom | Utilization is clamped to 100 % in tooling; raw readings hit 238 %, so whether the NPU is saturated is unknown |
+| NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
 | `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
 | Battery operation | Everything measured on AC with `burst`. Deployment behaviour on battery is unknown |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
 | Workbench profile job for a *trained* Atlas model | Done once for SqueezeNet (§8.4, 46/46 layers on NPU). Repeat for real artifacts once Atlas produces one |
-| NPU headroom | Hosted profile gives per-layer placement but not saturation. Peak memory 32 MB for SqueezeNet suggests ample room; unmeasured for LLMs |
 | Scout's prompt/response ratio | Decides CPU vs NPU. Prefill-heavy favours NPU 3–4×, decode-heavy favours CPU ~25 % (§9.4). Measure real Scout traffic |
 | `qualcomm/Phi-3.5-Mini-Instruct` QAIRT | Published at 34.2 tok/s on X2 Elite, ~2× the llama.cpp NPU path. Already in the GenieX catalogue — pull and verify |
 | Verify the SSD 81 % speedup | Needs an export host with PyTorch, since Llama assets are licence-restricted (§6.4). Worth it: 81 % dwarfs every other tuning lever found so far |
