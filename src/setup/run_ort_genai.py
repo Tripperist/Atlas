@@ -27,6 +27,38 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from model_format import classify  # noqa: E402
 
 
+def _explain(exc: Exception) -> None:
+    """Turn the two known low-level failures into an actionable diagnosis."""
+    msg = str(exc)
+
+    if "EPContext node" in msg and "not compatible" in msg:
+        print(
+            "\n[DIAG] The QNN execution provider refused the pre-compiled context\n"
+            "       binary. These are ahead-of-time compiled for one Hexagon\n"
+            "       architecture and do not run on another:\n"
+            "         soc_model 60 = Snapdragon X Elite  (HTP v73)\n"
+            "         soc_model 88 = Snapdragon X2 Elite (HTP v81)\n"
+            "       Overriding soc_model does not help -- the binary itself is\n"
+            "       built for the other target. Either obtain assets compiled for\n"
+            "       your chipset, recompile from the source ONNX with QAIRT, or\n"
+            "       run the model through GenieX with a GGUF build instead."
+        )
+        return
+
+    if "GroupQueryAttention" in msg or "present_keys" in msg:
+        print(
+            "\n[DIAG] A KV-cache shape mismatch on a CPU-executed attention node.\n"
+            "       This is usually a SYMPTOM, not the cause: QNN declined the\n"
+            "       graph, ORT fell back to CPU, and the EPContext wrapper holds\n"
+            "       no real weights for the CPU to run. Re-run with ORT verbose\n"
+            "       logging to see the provider rejection underneath.\n"
+            "       Note also that 'past_present_share_buffer' models size their\n"
+            "       KV cache from genai_config.json -- overriding max_length can\n"
+            "       produce a similar mismatch on its own."
+        )
+        return
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument(
@@ -39,8 +71,14 @@ def build_parser() -> argparse.ArgumentParser:
         default="Write a fast sorting algorithm in Python.",
         help="Prompt text.",
     )
-    parser.add_argument("--max-length", type=int, default=512)
-    parser.add_argument("--temperature", type=float, default=0.7)
+    parser.add_argument(
+        "--max-length",
+        type=int,
+        default=None,
+        help="Override max_length. Omit to use genai_config.json (safer for "
+             "models with past_present_share_buffer).",
+    )
+    parser.add_argument("--temperature", type=float, default=None)
     parser.add_argument(
         "--no-chat-template",
         action="store_true",
@@ -73,8 +111,13 @@ def main() -> int:
 
     print(f"[INFO] Loading {fmt.path}")
     load_start = time.perf_counter()
-    model = og.Model(str(fmt.path))
-    tokenizer = og.Tokenizer(model)
+    try:
+        model = og.Model(str(fmt.path))
+        tokenizer = og.Tokenizer(model)
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FAIL] {type(exc).__name__}: {str(exc)[:300]}")
+        _explain(exc)
+        return 1
     print(f"[ OK ] Model loaded in {time.perf_counter() - load_start:.1f}s")
 
     if args.no_chat_template:
@@ -89,10 +132,24 @@ def main() -> int:
             text = args.prompt
 
     params = og.GeneratorParams(model)
-    params.set_search_options(max_length=args.max_length, temperature=args.temperature)
+    # Only override search options when asked. Models with
+    # "past_present_share_buffer" size their KV cache from genai_config.json,
+    # and forcing a different max_length can break that allocation.
+    opts = {}
+    if args.max_length:
+        opts["max_length"] = args.max_length
+    if args.temperature is not None:
+        opts["temperature"] = args.temperature
+    if opts:
+        params.set_search_options(**opts)
 
-    generator = og.Generator(model, params)
-    generator.append_tokens(tokenizer.encode(text))
+    try:
+        generator = og.Generator(model, params)
+        generator.append_tokens(tokenizer.encode(text))
+    except Exception as exc:  # noqa: BLE001
+        print(f"[FAIL] {type(exc).__name__}: {str(exc)[:300]}")
+        _explain(exc)
+        return 1
 
     stream = tokenizer.create_stream()
     print(f"\n--- Prompt ---\n{args.prompt}\n\n--- Response ---")

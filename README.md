@@ -28,6 +28,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §6 quick CPU/GPU/NPU check | Yes; runs inference |
 | [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | §8 full benchmark + CPU sampling → CSV | Yes; runs inference |
 | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | §5 QNN provider + model format | Yes, read-only |
+| [`src/setup/model_format.py`](src/setup/model_format.py) | §5 classify a model directory | Yes, read-only |
 | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
 
 First run, in order:
@@ -194,7 +195,9 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | `og.is_qnn_available()` | ✅ Verified | Returns `True` |
 | GenieX Python SDK | ⬜ Untested | `geniex==0.7.0` resolves for ARM64 py3.14; not installed |
 | `geniex serve` + OpenAI-compatible client | ⬜ Untested | — |
-| ONNX Runtime GenAI running a model on the NPU | ❌ **Blocked** | No compatible model — see [Method D](#method-d-onnx-runtime-genai--qnn-blocked) |
+| ONNX Runtime GenAI running a model on the NPU | ❌ **Blocked** | Phi-4 NPU bundle is compiled for X Elite (`soc_model 60`); QNN rejects it on X2 Elite — see [Phi-4 on the NPU](#phi-4-on-the-npu) |
+| **Phi-4 on the NPU via GenieX GGUF** | ✅ **Verified** | Phi-4-mini-reasoning Q4_0, **24.1 tok/s** |
+| ORT GenAI loads an EPContext model | ✅ Verified | Loads in 4.2 s; fails at generation, not load |
 | GGUF via llama.cpp engine | ✅ **Verified** | Qwen3-1.7B and 4B Q4_0 |
 | `--compute` works on the llama.cpp engine | ✅ **Verified** | 28 % tok/s spread; CPU load drops 68.7 %→15.2 % |
 | Direct NPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_compute)`, luid `0x13d0d` → **100 %** |
@@ -460,9 +463,9 @@ if __name__ == "__main__":
 
 > **Corrections to earlier notes.** The URL `http://127.0.0` was truncated and missing `/v1/chat/completions`, and `response.json()['choices']['message']` was missing the `[0]` index — `choices` is a list.
 
-### Method D: ONNX Runtime GenAI + QNN (blocked)
+### Method D: ONNX Runtime GenAI + QNN
 
-Use this only when you need your own token loop. **It cannot currently run the cached model, and this is a format mismatch, not a configuration error.**
+Use this when you need your own token loop, or when Python is a stepping stone to a C# application — the .NET API mirrors it closely. **No ONNX Runtime GenAI model has yet run on this machine's NPU**, for two separate reasons documented below: most GenieX models are the wrong format, and the one correctly-formatted Phi-4 NPU bundle is compiled for the wrong chipset. See [Phi-4 on the NPU](#phi-4-on-the-npu) for what does work.
 
 ```bash
 .\.venv\Scripts\python.exe src\setup\check_qnn.py --model-dir "$env:USERPROFILE\.cache\geniex\models\qualcomm\Qwen3-4B"
@@ -471,7 +474,7 @@ Use this only when you need your own token loop. **It cannot currently run the c
 [`check_qnn.py`](src/setup/check_qnn.py) verifies the provider stack and classifies any model directory *without loading it*, so a format mismatch is explained rather than surfacing as an opaque parse error. [`run_ort_genai.py`](src/setup/run_ort_genai.py) runs the actual generation loop and refuses to start unless the directory is loadable:
 
 ```bash
-.\.venv\Scripts\python.exe src\setup\run_ort_genai.py --model-dir models\Phi-3-mini-4k-instruct-onnx
+.\.venv\Scripts\python.exe src\setup\run_ort_genai.py --model-dir models\Phi-4-mini-reasoning-onnx\npu\qnn-int4
 ```
 
 The QNN provider registration works — verified:
@@ -513,6 +516,71 @@ qai-hub-models fetch qwen3_4b -i     # list assets without downloading
 For `qwen3_4b` today that returns only `q4_0/geniex_llamacpp`, `w4a16/genie`, and `w4a16/geniex_qairt` — **no ONNX asset at all**, which is why this model cannot feed Method D. Models that do publish an `onnx` or `precompiled_qnn_onnx` asset are the AI Hub candidates.
 
 Even then, AI Hub's ONNX assets target plain ONNX Runtime with the QNN EP; `onnxruntime-genai` additionally needs `genai_config.json`, which those bundles may not contain. The reliable source for ORT-GenAI models is Microsoft's own `*-onnx` Hugging Face repos, which ship `genai_config.json` alongside the graph.
+
+### Phi-4 on the NPU
+
+Microsoft publishes a correctly-formatted ORT GenAI NPU bundle for Phi-4. **It does not run on Snapdragon X2 Elite.** Both repos, verified against the Hugging Face API:
+
+| Repo | `npu/` assets | Notes |
+| --- | --- | --- |
+| `microsoft/Phi-4-mini-reasoning-onnx` | ✅ `npu/qnn-int4/` (2.8 GB) | `genai_config.json` + ONNX + 4 QNN context binaries |
+| `microsoft/Phi-4-mini-instruct-onnx` | ❌ none | Ships `cpu_and_mobile/` and `gpu/` only |
+
+```powershell
+uv add huggingface-hub          # provides the `hf` CLI
+hf download microsoft/Phi-4-mini-reasoning-onnx --include "npu/*" --local-dir models\Phi-4-mini-reasoning-onnx
+```
+
+> Use `hf`, not `huggingface-cli` — the latter is superseded in `huggingface_hub` 1.x. Install `hf_xet` as well for faster transfers on Xet-backed repos.
+
+**What happens on this machine.** The model loads in 4.2 s, then generation fails:
+
+```
+RuntimeError: ... GroupQueryAttention ... 'present_keys_0' has shape {1,8,80,128}
+but the computed output shape for this run is {1,8,4096,128}
+```
+
+That mismatch is a **symptom**. Loading the context binary directly under plain ONNX Runtime with `disable_cpu_ep_fallback` gives the real cause:
+
+```
+NOT_IMPLEMENTED : EPContext node generated by 'QNNExecutionProvider' is not
+compatible with any execution provider added to the session.
+```
+
+QNN declines the graph, ORT falls back to CPU, and the EPContext wrapper holds no CPU-executable weights — hence the shape error further downstream.
+
+**Why it is declined.** `genai_config.json` specifies `soc_model: 60`, and these `*_ctx.onnx` files are **ahead-of-time compiled** context binaries:
+
+| soc_model | Chipset | HTP |
+| --- | --- | --- |
+| 60 | Snapdragon X Elite | v73 |
+| **88** | **Snapdragon X2 Elite (this machine)** | **v81** |
+
+Overriding `soc_model` to 88 does not help — tested, and it fails identically. The binary itself targets the other architecture. This is the concrete case of the warning in §1: assets published for X Elite are not automatically X2 Elite compatible.
+
+Note also that the QNN options live **inside each pipeline stage**, not on the top-level decoder — this is a 4-stage pipeline (embedding → prompt-processor → token-generator → transformer-head). Inspecting `model.decoder.session_options.provider_options` alone shows an empty list and tells you nothing.
+
+#### What does work: Phi-4 on the NPU via GenieX
+
+The same model in GGUF form runs on the NPU today through the llama.cpp engine:
+
+```powershell
+geniex pull unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 --model-hub hf
+geniex infer unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 -p "What is 17 times 23?" --compute npu
+```
+
+Measured: **24.1 tok/s**, 0.1 s to first token, on the NPU. Benchmark it against the other compute units with `.\Scripts\Invoke-Benchmark.ps1 -Model "unsloth/Phi-4-mini-reasoning-GGUF:Q4_0"`.
+
+Other Phi options, from `qai-hub-models fetch <model> -i`:
+
+| Model | Available asset | X2 Elite? |
+| --- | --- | --- |
+| `phi_4_mini_instruct` | `q4_0` GenieX (Llama.cpp), Universal | ✅ via llama.cpp |
+| `phi_3_5_mini_instruct` | `w4a16` genie (QAIRT), QAIRT 2.43.1 | ✅ **explicitly lists X2 Elite** |
+
+`qualcomm/Phi-3.5-Mini-Instruct` is the only Phi with a *native NPU* bundle listing X2 Elite support — but it is a `genie` bundle, so it runs through GenieX, **not** `onnxruntime-genai`. Recall the naming trap above.
+
+**To get Phi-4 running under `onnxruntime-genai` on X2 Elite** you would have to recompile from the source ONNX with QAIRT targeting `soc_model 88`, then re-embed the context with ONNX Runtime's `gen_qnn_ctx_onnx_model.py`. That path is untested here.
 
 **A second, independent breakage.** The generation API changed, and code written against older `onnxruntime-genai` examples fails on 0.16 even with a correct model:
 
@@ -853,7 +921,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | `--port` rejected on `serve` | Use `--host 127.0.0.1:<port>` |
 | `QNNExecutionProvider` missing from providers | Call `ort.register_execution_provider_library(...)` first — it is a plugin, not built in |
 | `og.Model()` fails to parse the model dir | Run `check_qnn.py --model-dir <dir>` — it names the format. `genai_config.json` is required; `genie_config.json` + `part*_of_*.bin` is a QAIRT bundle that will not load |
-| `set_input_ids` / `compute_logits` AttributeError | Removed in onnxruntime-genai 0.16. Use `append_tokens` and drop `compute_logits` — see [Method D](#method-d-onnx-runtime-genai--qnn-blocked) |
+| `set_input_ids` / `compute_logits` AttributeError | Removed in onnxruntime-genai 0.16. Use `append_tokens` and drop `compute_logits` — see [Method D](#method-d-onnx-runtime-genai--qnn) |
 | Session loads but `get_providers()` shows only CPU | QNN took no nodes. Set `session.disable_cpu_ep_fallback` to turn the silent fallback into an error |
 | `--compute` makes no measurable difference | Expected for QAIRT bundles — the flag is `llama_cpp only`. Test placement with a GGUF model |
 | `pull` says success but nothing downloaded | The name resolved to an already-cached bundle. A real download prints `Location:`. Check `PluginId` in the model's `geniex.json` |
@@ -862,6 +930,10 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | NPU counter appears to be missing | It is `\GPU Engine(*engtype_compute)`, not an "NPU" counter set. Instances are per-process, so query with a wildcard *while* the workload runs |
 | Accelerator utilization reads 0 | Sampling missed the window. Each `Get-Counter` call costs ~1 s — use one combined call and a longer generation |
 | Utilization reads over 100 % | Normal for an adapter aggregating sub-engines; clamp to 100 |
+| `EPContext node ... is not compatible` | The context binary was compiled for another chipset. Check `soc_model` in `genai_config.json`: 60 = X Elite, 88 = X2 Elite. Overriding it does not help |
+| `GroupQueryAttention` / `present_keys` shape error | Usually a symptom of the row above — QNN declined the graph and CPU fallback has no weights. Also check whether you overrode `max_length` on a `past_present_share_buffer` model |
+| `provider_options` looks empty | On pipeline models the QNN options live inside each stage, not on the top-level decoder |
+| `huggingface-cli` not found | Superseded by `hf` in `huggingface_hub` 1.x |
 | `pip install` finds no ARM64 wheel | Check Python minor version and ABI. Use `uvx` for x86-constrained tooling; do not silently switch native benchmarks to emulation |
 | DLL load or architecture error | Interpreter, runtime, and native libraries must share an architecture |
 | Model runs but NPU is idle | Re-run with `--log debug --verbose`; CPU success is not NPU validation |
