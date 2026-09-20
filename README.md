@@ -1025,7 +1025,48 @@ CPU throughput fell **19 %** while the NPU held within ~2 tok/s. Any benchmark s
 
 **Caveats.** Single machine, one quantization (Q4_0), one prompt, nothing else running, AC power, `burst` power mode. Battery operation is untested. Thermal state materially changes CPU results, so record run order. Re-measure after driver or firmware updates and note the versions from §1 alongside results.
 
-### 8.4 Memory
+### 8.4 Qualcomm's published numbers for this device
+
+Before benchmarking anything yourself, check whether AI Hub already measured it. This is free, instant, and needs no job submission:
+
+```powershell
+qai-hub-models perf phi_4_mini_instruct -d "Snapdragon X2 Elite CRD"
+qai-hub-models numerics phi_4_mini_instruct      # accuracy metrics
+```
+
+**`phi_4_mini_instruct` q4_0, GenieX llama.cpp, Snapdragon X2 Elite CRD:**
+
+| Context | Compute | Decode tok/s | Prefill tok/s | Time to first token (ms) |
+| --- | --- | --- | --- | --- |
+| 512 | CPU | **34.2** | 504.1 | 1016–4064 |
+| 512 | GPU | 28.0 | 632.9 | 813–3252 |
+| 512 | NPU | 26.9 | **1660.2** | **309–1235** |
+| 4096 | CPU | **22.4** | 290.7 | 14090–450868 |
+| 4096 | GPU | 21.1 | 349.8 | 11711–374765 |
+| 4096 | NPU | 18.1 | **1276.5** | **3210–102712** |
+
+**This reframes the CPU-vs-NPU question.** The two phases behave oppositely:
+
+- **Decode** (token-by-token): CPU leads by ~25 %. Sequential and memory-bound, which suits wide CPU cores.
+- **Prefill** (processing the prompt): NPU leads by **3.3×** at 512 and **4.4×** at 4096. Batched matrix work, which is what the NPU is for.
+
+Time to first token follows prefill: the NPU is **3–4× faster** to start responding.
+
+**Which matters depends on the workload.** For Scout — retrieval-augmented prompts carrying itinerary context and tool definitions — prompts are long and replies are often short or structured. That is prefill-dominated, and points at the NPU. A chat workload generating long prose would favour the CPU. Measure your own prompt/response ratio before choosing.
+
+**The native QAIRT path is roughly twice as fast as llama.cpp on the NPU:**
+
+| Model | Runtime | Device | Decode tok/s |
+| --- | --- | --- | --- |
+| `phi_3_5_mini_instruct` w4a16 | QAIRT Context Binary | **X2 Elite** | **34.2** |
+| `phi_3_5_mini_instruct` w4a16 | QAIRT Context Binary | X Elite | 10.2 |
+| `phi_4_mini_instruct` q4_0 | GenieX llama.cpp NPU | X2 Elite | 18.1 |
+
+Two things fall out. The QAIRT bundle reaches 34.2 tok/s against 18.1 for llama.cpp on the same NPU — so **runtime choice matters more than compute-unit choice**. And X2 Elite is **3.4× X Elite** on that path, which is why assets and numbers published for X Elite are a poor guide to this machine.
+
+> These are Qualcomm's measurements under their harness, not ours. Context length is the configured window, not the number of tokens generated, so they are not directly comparable with [§8.2](#82-measured-results). Use them as a reference point and a sanity check, not as a substitute for measuring your own model.
+
+### 8.5 Memory
 
 This machine has **64 GB of shared system memory**, not a 64 GB model budget. Weights, KV cache, activations, runtime buffers, Windows, and your editor all draw from the same pool. Four-bit weights are roughly `parameters × 0.5 bytes` before quantization metadata and runtime overhead — the Qwen3-4B W4A16 bundle is 3.0 GiB on disk, the Q4_0 GGUF 2.2 GiB.
 
@@ -1165,6 +1206,10 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Confounder to resolve first.** `qnn-int4` and `Q4_0` are not the same quantization, so part of any gap is the weights rather than the runtime. Either find one model published in both formats, or treat the result as a path comparison rather than a runtime comparison and say so.
 
+**Measure prefill separately from decode.** Qualcomm's own figures ([§8.4](#84-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
+
+**Also benchmark the native QAIRT path.** Qualcomm measures `phi_3_5_mini_instruct` w4a16 QAIRT at 34.2 tok/s against 18.1 for `phi_4_mini_instruct` q4_0 on llama.cpp NPU. If that ~2× holds, the comparison is really three-way: ORT GenAI, GenieX llama.cpp, and GenieX QAIRT — and the QAIRT bundle may beat both paths measured so far.
+
 ### Other open threads
 
 | Item | Note |
@@ -1178,6 +1223,8 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
 | Workbench profile job for a *trained* Atlas model | Done once for SqueezeNet (§7.4, 46/46 layers on NPU). Repeat for real artifacts once Atlas produces one |
 | NPU headroom | Hosted profile gives per-layer placement but not saturation. Peak memory 32 MB for SqueezeNet suggests ample room; unmeasured for LLMs |
+| Scout's prompt/response ratio | Decides CPU vs NPU. Prefill-heavy favours NPU 3–4×, decode-heavy favours CPU ~25 % (§8.4). Measure real Scout traffic |
+| `qualcomm/Phi-3.5-Mini-Instruct` QAIRT | Published at 34.2 tok/s on X2 Elite, ~2× the llama.cpp NPU path. Already in the GenieX catalogue — pull and verify |
 
 ---
 
