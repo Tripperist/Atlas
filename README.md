@@ -208,6 +208,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | `providers=[...]` attaches a plugin EP | ❌ **No** | Silently ignored — use `set_provider_selection_policy` |
 | GGUF via llama.cpp engine | ✅ **Verified** | Qwen3-1.7B and 4B Q4_0 |
 | `--compute` works on the llama.cpp engine | ✅ **Verified** | 28 % tok/s spread; CPU load drops 68.7 %→15.2 % |
+| Speculative decoding (SSD) 81 % claim | ⬜ **Unverified** | Llama assets licence-restricted; local `ngram-*` gives ~4 % — see [§6.4](#64-what-we-could-and-could-not-verify) |
 | Direct NPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_compute)`, luid `0x13d0d` → **100 %** |
 | Direct GPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_3d)`, luid `0x133c8` → **87 %** |
 | NPU faster than CPU on sustained load | ✅ **Verified** | 29.1 vs 27.5 tok/s at 4B; CPU throttles 19 %, NPU does not |
@@ -841,11 +842,43 @@ These are **not** GenieX models. They are ONNX/QAIRT assets run through ONNX Run
 
 Three things in the numbers that are easy to miss:
 
-- **Speculative decoding is the biggest single win.** `Llama-v3.2-3B-Instruct-SSD` reaches 77.5 tok/s against 42.8 for the same base model — an 81 % gain from the decoding strategy, not the hardware.
+- **Speculative decoding is the biggest single win Qualcomm publishes — but we could not verify it.** `Llama-v3.2-3B-Instruct-SSD` is listed at 77.5 tok/s against 42.8 for the base model on the same runtime and context, an 81 % gain. See the caveats in [§6.4](#64-what-we-could-and-could-not-verify) before relying on it.
 - **Task models are cheap.** Embeddings at 0.67 ms and translation at ~4.3 ms cost a rounding error next to a single LLM token. Routing work to a specialist model beats prompting the LLM to do it.
 - **8B models cluster at 21–25 tok/s** regardless of family. If 4B quality suffices, that tier is roughly twice as fast.
 
 > These are Qualcomm's measurements under their harness. Context length is the configured window, not tokens generated, and rows come from different runtimes — `Phi-3.5-Mini-Instruct` at 34.2 is a QAIRT bundle while `Phi-4-Mini-Instruct` at 26.9 is llama.cpp, so that particular comparison is runtime as much as model. `Llama-SEA-LION-v3.5-8B-R` publishes no X2 Elite data at all. Verify anything you depend on ([§9](#9-benchmarking)).
+
+### 6.4 What we could and could not verify
+
+An attempt to reproduce the 77.5 tok/s SSD figure on this machine failed for reasons worth recording.
+
+**What "SSD" means — confirmed.** `qai-hub-models info llama_v3_2_3b_instruct_ssd` describes **Self Speculative Decoding**: *"Single-model LLM inference acceleration solution that achieves on-target speed up with guaranteed output accuracy identical to the base model."* Single-model — it drafts with part of itself rather than a separate draft model.
+
+**Why it cannot be tested here.** Every Llama asset on AI Hub is licence-restricted:
+
+```
+No pre-compiled assets available due to licensing restrictions.
+Please use the qai-hub-models Python package to manually export the model.
+```
+
+Manual export needs PyTorch, which has **no Windows ARM64 wheel** ([§8.1](#81-the-npu-does-not-train)). So reproducing this number requires a separate export host — it is not a five-minute check.
+
+**The nearest local substitute is much weaker.** GenieX exposes speculative decoding for GGUF models on the llama.cpp engine. Measured on `unsloth/Qwen3-4B-GGUF` Q4_0, NPU, 220 tokens, 2 runs each:
+
+| Config | Tok/s | vs baseline | Wall |
+| --- | --- | --- | --- |
+| baseline | 30.7 | — | 9.1 s |
+| `--spec-type ngram-cache` | 32.0 | **+4.2 %** | 11.1–14.6 s |
+| `--spec-type ngram-simple` | 31.8 | +3.6 % | ~14 s |
+| `--spec-type ngram-mod` | 31.8 | +3.6 % | 13.6–14.9 s |
+
+**~4 %, not 81 %.** That is not a refutation — `ngram-*` is draft-free speculation, a fundamentally weaker mechanism than SSD, on a different runtime and model. But it does mean the 81 % figure rests entirely on Qualcomm's published numbers, with no independent confirmation here.
+
+**Watch the wall-clock column.** Throughput rose ~4 % while wall time rose **30–60 %**. Speculative decoding generates and discards candidate tokens, so tok/s counts accepted tokens while the real work grows. A tok/s figure alone can make a configuration look better than it is.
+
+**Draft-model speculation did not work at all.** `--spec-type draft-simple --draft-model unsloth/Qwen3-0.6B-GGUF:Q4_0` (a sensible ~7:1 target-to-draft ratio) failed with `SDKError(Text generation failed)` at both 3 and 5 draft tokens. Unresolved — possibly a tokenizer or configuration mismatch.
+
+**Bottom line for Scout:** treat 77.5 tok/s as a vendor claim worth chasing, not a number to design around. The mechanism is real and Qualcomm guarantees identical output, but confirming it on this hardware means standing up an export host first.
 
 ---
 
@@ -1329,6 +1362,8 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | NPU headroom | Hosted profile gives per-layer placement but not saturation. Peak memory 32 MB for SqueezeNet suggests ample room; unmeasured for LLMs |
 | Scout's prompt/response ratio | Decides CPU vs NPU. Prefill-heavy favours NPU 3–4×, decode-heavy favours CPU ~25 % (§9.4). Measure real Scout traffic |
 | `qualcomm/Phi-3.5-Mini-Instruct` QAIRT | Published at 34.2 tok/s on X2 Elite, ~2× the llama.cpp NPU path. Already in the GenieX catalogue — pull and verify |
+| Verify the SSD 81 % speedup | Needs an export host with PyTorch, since Llama assets are licence-restricted (§6.4). Worth it: 81 % dwarfs every other tuning lever found so far |
+| `--spec-type draft-simple` failure | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 
 ---
 
