@@ -195,9 +195,12 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | `og.is_qnn_available()` | ✅ Verified | Returns `True` |
 | GenieX Python SDK | ⬜ Untested | `geniex==0.7.0` resolves for ARM64 py3.14; not installed |
 | `geniex serve` + OpenAI-compatible client | ⬜ Untested | — |
-| ONNX Runtime GenAI running a model on the NPU | ❌ **Blocked** | Phi-4 NPU bundle is compiled for X Elite (`soc_model 60`); QNN rejects it on X2 Elite — see [Phi-4 on the NPU](#phi-4-on-the-npu) |
+| ONNX Runtime GenAI generating on the NPU | ❌ **Blocked** | Phi-4 loads and QNN takes 36 EPContext nodes, but CPU-side attention hits a KV-cache shape mismatch — see [Phi-4 on the NPU](#phi-4-on-the-npu) |
+| **Compiling an EPContext model for this chipset** | ✅ **Verified** | SqueezeNet w8a8 → 1 EPContext node, NPU-only, **0.46 ms** |
+| X Elite context binaries load on X2 Elite | ✅ Verified | All 4 Phi-4 parts load; `soc_model` was a red herring |
 | **Phi-4 on the NPU via GenieX GGUF** | ✅ **Verified** | Phi-4-mini-reasoning Q4_0, **24.1 tok/s** |
-| ORT GenAI loads an EPContext model | ✅ Verified | Loads in 4.2 s; fails at generation, not load |
+| ORT GenAI loads an EPContext model | ✅ Verified | Loads in 6.3 s; fails at generation, not load |
+| `providers=[...]` attaches a plugin EP | ❌ **No** | Silently ignored — use `set_provider_selection_policy` |
 | GGUF via llama.cpp engine | ✅ **Verified** | Qwen3-1.7B and 4B Q4_0 |
 | `--compute` works on the llama.cpp engine | ✅ **Verified** | 28 % tok/s spread; CPU load drops 68.7 %→15.2 % |
 | Direct NPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_compute)`, luid `0x13d0d` → **100 %** |
@@ -549,14 +552,21 @@ compatible with any execution provider added to the session.
 
 QNN declines the graph, ORT falls back to CPU, and the EPContext wrapper holds no CPU-executable weights — hence the shape error further downstream.
 
-**Why it is declined.** `genai_config.json` specifies `soc_model: 60`, and these `*_ctx.onnx` files are **ahead-of-time compiled** context binaries:
+> **Correction.** An earlier revision blamed `soc_model: 60` (X Elite) versus this machine's 88 (X2 Elite). **That was wrong.** The `EPContext ... not compatible` error was caused by QNN never being attached to the session at all — see [the mistake above](#the-mistake-that-invalidates-most-qnn-debugging). Note the error's exact wording: *"not compatible with any execution provider **added to the session**"*.
 
-| soc_model | Chipset | HTP |
-| --- | --- | --- |
-| 60 | Snapdragon X Elite | v73 |
-| **88** | **Snapdragon X2 Elite (this machine)** | **v81** |
+**The X Elite binaries do load on X2 Elite.** Attaching QNN via the policy API, all four context binaries load cleanly:
 
-Overriding `soc_model` to 88 does not help — tested, and it fails identically. The binary itself targets the other architecture. This is the concrete case of the warning in §1: assets published for X Elite are not automatically X2 Elite compatible.
+```
+QnnBackendManager::LoadCachedQnnContextFromBuffer]
+  Context binary of QNNExecutionProvider_QNN_part0_... is 3.2.1.
+  File mapping is only supported for versions >= 3.3.3. Disabling file mapping for this node.
+```
+
+`part0` through `part3`, with only a benign file-mapping warning. The session opens with `providers=['QNNExecutionProvider', 'CPUExecutionProvider']`. So `soc_model` was a red herring, and assets published for X Elite are **not** automatically incompatible with X2 Elite.
+
+**What actually blocks Phi-4.** The graph is a hybrid — `{'EPContext': 36, 'GroupQueryAttention': 32, 'QuantizeLinear': 1, 'DequantizeLinear': 1}`. QNN runs the 36 compiled chunks; the 32 attention ops are ORT contrib nodes that stay on **CPU** by design. Generation then fails inside one of those CPU attention nodes on a KV-cache shape mismatch: the buffer is allocated at `{1,8,80,128}` while the run computes `{1,8,4096,128}`, tracking `max_length` from `genai_config.json`.
+
+That points at a mismatch between this bundle and `onnxruntime-genai` 0.16's handling of `past_present_share_buffer`, not at the hardware. Pinning an older `onnxruntime-genai` is the untested next step.
 
 Note also that the QNN options live **inside each pipeline stage**, not on the top-level decoder — this is a 4-stage pipeline (embedding → prompt-processor → token-generator → transformer-head). Inspecting `model.decoder.session_options.provider_options` alone shows an empty list and tells you nothing.
 
@@ -589,7 +599,11 @@ Other Phi options, from `qai-hub-models fetch <model> -i`:
 
 So this is a build-from-scratch exercise, not a re-run of a published step.
 
-**Route A — ONNX Runtime's compile API (no QAIRT SDK).** The local package already supports your chipset: `onnxruntime_qnn` ships `QnnHtpV81Stub.dll` (v81 = X2 Elite) alongside V68 and V73, plus the `QnnHtpPrepare.dll` compiler. ORT enumerates QNN as an NPU device:
+#### The mistake that invalidates most QNN debugging
+
+**`providers=["QNNExecutionProvider"]` does not attach the QNN execution provider.** It is silently ignored, the session runs entirely on CPU, and nothing warns you. Verbose ORT logging shows only *"Adding default CPU execution provider"* followed by *"All nodes placed on [CPUExecutionProvider]"* — no QNN initialization line at all.
+
+QNN is a **plugin EP** registered through `register_execution_provider_library`, and the legacy `providers` list does not resolve plugin EPs. Attach it with the policy API instead:
 
 ```python
 import onnxruntime as ort, onnxruntime_qnn as qnn_ep
@@ -597,43 +611,70 @@ ort.register_execution_provider_library("QNNExecutionProvider", qnn_ep.get_libra
 
 so = ort.SessionOptions()
 so.set_provider_selection_policy(ort.OrtExecutionProviderDevicePolicy.PREFER_NPU)
-
-ort.ModelCompiler(so, "source_qdq.onnx").compile_to_file("compiled_v81_ctx.onnx")
+sess = ort.InferenceSession(model_path, sess_options=so)   # note: NO providers= argument
 ```
 
-Compiling on the target machine means the binary matches your HTP by construction — no `soc_model` guessing.
+Measured on `squeezenet1_1` w8a8, same model and machine:
 
-> `sess_options.add_provider("QNNExecutionProvider", {...})` is rejected with *"Provider configuration is not supported"* for this plugin EP. Use `set_provider_selection_policy` instead.
-
-**Always verify the output.** If QNN will not take the graph, `compile_to_file` **succeeds silently and emits a pass-through** with no EPContext nodes. Measured here on the bundle's embedding graph: 615 MB in, 614.6 MB out, 1.2 s, **zero** EPContext nodes:
-
-```python
-import onnx, collections
-m = onnx.load("compiled_v81_ctx.onnx", load_external_data=False)
-print(collections.Counter(n.op_type for n in m.graph.node)["EPContext"])   # must be > 0
-```
-
-**Route A was tested against AI Hub assets and currently fails on this stack.** Both models publish a `w8a8 / ONNX Runtime / Universal` QDQ graph — the correct input for compilation — and AI Hub states each was *"verified with QAIRT 2.45.0.260326154327, ONNX Runtime 1.27.1"*. This machine runs **ONNX Runtime 1.30.0**:
-
-| Model | Result on ORT 1.30.0 |
+| Attachment | Nodes on QNN |
 | --- | --- |
-| `squeezenet1_1` w8a8 | Loads, but QNN claims **0 of 49 nodes** — profiling shows every node on `CPUExecutionProvider`. `ModelCompiler` fails: *"Conv with domain com.ms.internal.nhwc was inserted using the NHWC format as requested by QNNExecutionProvider, but was not selected by that EP ... could be a bug in layout transformer, or in the GetCapability implementation of the EP"* |
-| `mobilenet_v2` w8a8 | Will not load at all: *"This is an invalid model. Error: two nodes with same node name (node_Conv_239)"* — a validation strictness change |
+| `providers=["QNNExecutionProvider"]` | **0 / 49** — all CPU |
+| `set_provider_selection_policy(PREFER_NPU)` | **1 / 1** — whole graph fused onto the NPU |
 
-Two different failures, both consistent with **version skew rather than anything about the chipset or the models**. Take AI Hub's version note literally: pin `onnxruntime` to the stated version in a separate environment before concluding anything about NPU compatibility. Doing so here would mean testing whether `onnxruntime-genai` 0.16 and `onnxruntime-qnn` still work against ORT 1.27.1 — untested.
+`sess_options.add_provider("QNNExecutionProvider", {...})` is a third option but is rejected here with *"Provider configuration is not supported"*.
 
-Verify node assignment rather than trusting a successful `run()`:
+Always confirm with profiling rather than trusting a successful `run()`:
 
 ```python
-so = ort.SessionOptions(); so.enable_profiling = True
-sess = ort.InferenceSession(model, sess_options=so, providers=["QNNExecutionProvider"],
-                            provider_options=[{"backend_path": "QnnHtp.dll"}])
+so.enable_profiling = True
 sess.run(None, feeds)
 import json, collections
 events = json.load(open(sess.end_profiling()))
 print(collections.Counter(e["args"]["provider"] for e in events
                           if e.get("cat") == "Node" and "provider" in e.get("args", {})))
 ```
+
+#### Route A — compile an EPContext model, verified working
+
+`onnxruntime_qnn` already ships `QnnHtpV81Stub.dll` (v81 = X2 Elite) alongside V68 and V73, plus the `QnnHtpPrepare.dll` compiler. Compiling on the target machine means the binary matches your HTP by construction — no `soc_model` guessing.
+
+Use the **`ep.context_*` session options**, not `ModelCompiler`:
+
+```python
+import onnxruntime as ort, onnxruntime_qnn as qnn_ep
+ort.register_execution_provider_library("QNNExecutionProvider", qnn_ep.get_library_path())
+
+so = ort.SessionOptions()
+so.set_provider_selection_policy(ort.OrtExecutionProviderDevicePolicy.PREFER_NPU)
+so.add_session_config_entry("ep.context_enable", "1")
+so.add_session_config_entry("ep.context_file_path", "model_epctx.onnx")
+so.add_session_config_entry("ep.context_embed_mode", "1")
+
+ort.InferenceSession("source_qdq.onnx", sess_options=so)   # writes model_epctx.onnx
+```
+
+Verified end to end on `squeezenet1_1` w8a8 from AI Hub (`qai-hub-models fetch squeezenet1_1 -r onnx -p w8a8`):
+
+| Step | Result |
+| --- | --- |
+| Source | 231-node QDQ graph, 4.8 MB |
+| Compile | 2.1 s → `squeezenet1_1_epctx.onnx`, **1.44 MB, 1 EPContext node** |
+| Reload | **0.28 s** with `disable_cpu_ep_fallback` — NPU only |
+| Inference | **0.46 ms** per run |
+
+The payoff is load time: 2.1 s compiling on-device every session versus 0.28 s from the cached context.
+
+> **`ort.ModelCompiler` does not work for this.** It fails with *"Conv with domain com.ms.internal.nhwc was inserted using the NHWC format as requested by QNNExecutionProvider, but was not selected by that EP ... could be a bug in layout transformer"* — on both ORT 1.30.0 and 1.27.0, with the policy API correctly applied. Use the session-option route above.
+
+**Verify the output has EPContext nodes.** A failed compile can still emit a pass-through:
+
+```python
+import onnx, collections
+m = onnx.load("model_epctx.onnx", load_external_data=False)
+print(collections.Counter(n.op_type for n in m.graph.node)["EPContext"])   # must be > 0
+```
+
+Two further notes from testing: `mobilenet_v2` w8a8 will not load at all (*"two nodes with same node name"*), so not every AI Hub asset is usable. And ONNX Runtime **1.27.1 does not exist on PyPI** — 1.27.0 is the closest to AI Hub's stated version; testing on it changed nothing, so version skew was not the issue here.
 
 **Route B — full QAIRT SDK.** Needed when the graph requires Qualcomm's own quantizer. Broadly: install the QAIRT SDK, convert and quantize with `qairt-converter` / `qairt-quantizer` using a representative calibration set, generate the context binary with `qnn-context-binary-generator` against `QnnHtp.dll` for your SoC, then wrap it with ONNX Runtime's `gen_qnn_ctx_onnx_model.py` and hand-write a `genai_config.json` describing the pipeline stages. Consult [Qualcomm's ONNX model preparation docs](https://docs.qualcomm.com/doc/80-80022-15B/topic/onnx-prepare-model.html) and [ORT's Snapdragon build guide](https://onnxruntime.ai/docs/genai/howto/build-models-for-snapdragon.html) for current commands.
 
@@ -730,14 +771,18 @@ Look for the engine selected (`qairt` vs `llama_cpp`), the compute unit, and any
 
 It builds a small quantized graph and loads it twice — once with CPU fallback allowed, once with `session.disable_cpu_ep_fallback` set. Pass `--onnx <path>` to test your own model.
 
-This matters more than it sounds. Measured here, with fallback **allowed**, the session loaded successfully and reported `providers=['CPUExecutionProvider']` — QNN silently took no nodes while everything looked fine. With fallback **disabled**, it failed loudly:
+This matters more than it sounds, and it caught a real bug in this repo's own tooling. While `providers=["QNNExecutionProvider"]` was being used, the session loaded successfully, reported `providers=['CPUExecutionProvider']`, and returned correct-shaped output — entirely on CPU. With `disable_cpu_ep_fallback` set it failed loudly instead:
 
 ```
 FAIL : This session contains graph nodes that are assigned to the default CPU EP,
 but fallback to CPU EP has been explicitly disabled by the user.
 ```
 
-Two habits follow: always read `session.get_providers()` *after* creating the session, and set `disable_cpu_ep_fallback` during validation so a silent fallback becomes an error.
+The underlying cause was the plugin-EP attachment bug in [Method D](#the-mistake-that-invalidates-most-qnn-debugging), not an unsupported graph. Three habits follow:
+
+1. Attach QNN with `set_provider_selection_policy`, never the `providers` list.
+2. Read `session.get_providers()` *after* creating the session.
+3. Set `disable_cpu_ep_fallback` during validation so a silent fallback becomes an error.
 
 **Step 4 — watch the hardware.** Task Manager → Performance shows separate **NPU** and **GPU** graphs on this device. Correlate a sustained generation against those counters rather than a brief spike.
 

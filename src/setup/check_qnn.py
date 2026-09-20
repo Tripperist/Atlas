@@ -151,13 +151,16 @@ def prove_npu(onnx_path: str | None) -> bool:
     for label, disable in (("fallback allowed", "0"), ("fallback disabled", "1")):
         opts = ort.SessionOptions()
         opts.add_session_config_entry("session.disable_cpu_ep_fallback", disable)
+        # CRITICAL: do NOT pass providers=["QNNExecutionProvider"]. QNN is a
+        # plugin EP registered via register_execution_provider_library, and the
+        # legacy providers list SILENTLY IGNORES it -- the session runs entirely
+        # on CPU while appearing to honour the request. The policy API attaches
+        # it properly.
+        opts.set_provider_selection_policy(
+            ort.OrtExecutionProviderDevicePolicy.PREFER_NPU
+        )
         try:
-            session = ort.InferenceSession(
-                path,
-                sess_options=opts,
-                providers=["QNNExecutionProvider"],
-                provider_options=[{"backend_path": "QnnHtp.dll"}],
-            )
+            session = ort.InferenceSession(path, sess_options=opts)
             providers = session.get_providers()
             on_npu = "QNNExecutionProvider" in providers
             claimed = claimed or (on_npu and disable == "1")
