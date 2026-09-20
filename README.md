@@ -580,7 +580,42 @@ Other Phi options, from `qai-hub-models fetch <model> -i`:
 
 `qualcomm/Phi-3.5-Mini-Instruct` is the only Phi with a *native NPU* bundle listing X2 Elite support — but it is a `genie` bundle, so it runs through GenieX, **not** `onnxruntime-genai`. Recall the naming trap above.
 
-**To get Phi-4 running under `onnxruntime-genai` on X2 Elite** you would have to recompile from the source ONNX with QAIRT targeting `soc_model 88`, then re-embed the context with ONNX Runtime's `gen_qnn_ctx_onnx_model.py`. That path is untested here.
+#### Recompiling for X2 Elite (soc_model 88)
+
+**Read the blocker first.** Recompiling needs a **QDQ-quantized source ONNX** of the transformer stages. Microsoft publishes only the already-compiled `phi_4_mini_ctx.onnx_ctx.onnx` and `phi_4_mini_iter.onnx_ctx.onnx` — you cannot recompile a context binary, it is the output. Two facts close off the obvious shortcuts:
+
+- The ONNX Runtime GenAI **model builder cannot target QNN**. Verified locally: `onnxruntime_genai/models/builder.py` accepts `-e` of only `cpu`, `cuda`, `dml`, `webgpu`, `NvTensorRtRtx`. Microsoft's NPU bundle came from a different toolchain.
+- `microsoft/Phi-4-mini-instruct-onnx` ships no NPU assets, and its `cpu_and_mobile` / `gpu` graphs are not QDQ-quantized for HTP.
+
+So this is a build-from-scratch exercise, not a re-run of a published step.
+
+**Route A — ONNX Runtime's compile API (no QAIRT SDK).** The local package already supports your chipset: `onnxruntime_qnn` ships `QnnHtpV81Stub.dll` (v81 = X2 Elite) alongside V68 and V73, plus the `QnnHtpPrepare.dll` compiler. ORT enumerates QNN as an NPU device:
+
+```python
+import onnxruntime as ort, onnxruntime_qnn as qnn_ep
+ort.register_execution_provider_library("QNNExecutionProvider", qnn_ep.get_library_path())
+
+so = ort.SessionOptions()
+so.set_provider_selection_policy(ort.OrtExecutionProviderDevicePolicy.PREFER_NPU)
+
+ort.ModelCompiler(so, "source_qdq.onnx").compile_to_file("compiled_v81_ctx.onnx")
+```
+
+Compiling on the target machine means the binary matches your HTP by construction — no `soc_model` guessing.
+
+> `sess_options.add_provider("QNNExecutionProvider", {...})` is rejected with *"Provider configuration is not supported"* for this plugin EP. Use `set_provider_selection_policy` instead.
+
+**Always verify the output.** If QNN will not take the graph, `compile_to_file` **succeeds silently and emits a pass-through** with no EPContext nodes. Measured here on the bundle's embedding graph: 615 MB in, 614.6 MB out, 1.2 s, **zero** EPContext nodes:
+
+```python
+import onnx, collections
+m = onnx.load("compiled_v81_ctx.onnx", load_external_data=False)
+print(collections.Counter(n.op_type for n in m.graph.node)["EPContext"])   # must be > 0
+```
+
+**Route B — full QAIRT SDK.** Needed when the graph requires Qualcomm's own quantizer. Broadly: install the QAIRT SDK, convert and quantize with `qairt-converter` / `qairt-quantizer` using a representative calibration set, generate the context binary with `qnn-context-binary-generator` against `QnnHtp.dll` for your SoC, then wrap it with ONNX Runtime's `gen_qnn_ctx_onnx_model.py` and hand-write a `genai_config.json` describing the pipeline stages. Consult [Qualcomm's ONNX model preparation docs](https://docs.qualcomm.com/doc/80-80022-15B/topic/onnx-prepare-model.html) and [ORT's Snapdragon build guide](https://onnxruntime.ai/docs/genai/howto/build-models-for-snapdragon.html) for current commands.
+
+**Neither route has been completed here.** Route A's API is verified working; producing a functioning Phi-4 EPContext model is not. Budget real effort, and weigh it against the GenieX GGUF path above, which already runs Phi-4 on the NPU today.
 
 **A second, independent breakage.** The generation API changed, and code written against older `onnxruntime-genai` examples fails on 0.16 even with a correct model:
 
