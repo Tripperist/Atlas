@@ -204,6 +204,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | **Compiling an EPContext model for this chipset** | ✅ **Verified** | SqueezeNet w8a8 → 1 EPContext node, NPU-only, **0.46 ms** |
 | X Elite context binaries load on X2 Elite | ✅ Verified | All 4 Phi-4 parts load; `soc_model` was a red herring |
 | **Phi-4 on the NPU via GenieX GGUF** | ✅ **Verified** | Phi-4-mini-reasoning Q4_0, **24.1 tok/s** |
+| **Foundry Local on the NPU** | ✅ **Verified** | phi-3.5-mini qnn-npu, **26.5 tok/s**, NPU **100 %** |
 | ORT GenAI loads an EPContext model | ✅ Verified | Loads in 6.3 s; fails at generation, not load |
 | `providers=[...]` attaches a plugin EP | ❌ **No** | Silently ignored — use `set_provider_selection_policy` |
 | GGUF via llama.cpp engine | ✅ **Verified** | Qwen3-1.7B and 4B Q4_0 |
@@ -223,6 +224,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | Fastest path to working inference | GenieX CLI | NPU / GPU / CPU | AI Hub bundles, GGUF |
 | Inference inside Python | GenieX Python SDK | NPU / GPU / CPU | AI Hub bundles, GGUF |
 | Drop-in for LangChain / OpenAI clients | `geniex serve` | NPU / GPU / CPU | AI Hub bundles, GGUF |
+| **C#/.NET, or least setup** | **Foundry Local** | Auto-selected (NPU here) | Curated catalogue |
 | Custom graph / token-loop control | `onnxruntime-genai` + QNN EP | NPU via QNN EP | ONNX dir with `genai_config.json` |
 | Quantize / compile / profile a model | `qai-hub-models` | AI Hub cloud | PyTorch, ONNX FP32 |
 | Training / fine-tuning | PyTorch on a separate host | **Not the NPU** | Standard float tensors |
@@ -745,6 +747,71 @@ while not generator.is_done():
 
 del generator
 ```
+
+---
+
+### Method E: Microsoft Foundry Local
+
+Microsoft's on-device runtime. It wraps ONNX Runtime, picks an execution provider automatically, manages the model cache, and exposes an OpenAI-compatible server — **with a first-party C# SDK**, which makes it the most direct route to Scout of anything here.
+
+> The [github.com/microsoft-foundry](https://github.com/microsoft-foundry) organisation is the **Azure** Foundry platform and is cloud-oriented. The on-device project is [github.com/microsoft/foundry-local](https://github.com/microsoft/foundry-local).
+
+```powershell
+winget install --id Microsoft.FoundryLocal -e
+foundry status                      # hardware + versions
+foundry server start                # OpenAI-compatible, dynamic port
+foundry model list                  # catalogue, with the device chosen per model
+foundry model download phi-3.5-mini
+foundry complete phi-3.5-mini "Plan a day in Lisbon."
+```
+
+The winget installer is `foundry-0.10.3-win-arm64-winml.msix` — a native ARM64 build on Windows ML.
+
+**It detects this hardware correctly and does use the NPU.** `foundry status` reports the Hexagon NPU by its full SKU, and `foundry server start` downloads and initialises `QNNExecutionProvider` on first run.
+
+**Measured here**, `phi-3.5-mini` (variant `phi-3.5-mini-instruct-qnn-npu`) over the OpenAI endpoint, 354 tokens, 3 runs:
+
+| Metric | Value |
+| --- | --- |
+| Throughput | **26.5 tok/s** (26.0 / 26.8 / 26.8) |
+| NPU peak | **100 %** on all three runs |
+| CPU mean | 53.6 % |
+| Wall | ~13.2 s |
+
+For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#94-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
+
+**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — inside the range we verified working in [Method D](#method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
+
+**Device targeting is per model, and visible.** `foundry model list` has a Device column showing what this machine will actually use, and `foundry model info <model>` lists every variant with its execution provider:
+
+| Variant | Device | Execution provider | Size |
+| --- | --- | --- | --- |
+| `phi-3.5-mini-instruct-qnn-npu` | NPU | QNNExecutionProvider | 2.0 GB |
+| `Phi-3.5-mini-instruct-generic-gpu` | GPU | WebGpuExecutionProvider | 2.2 GB |
+| `Phi-3.5-mini-instruct-generic-cpu` | CPU | CPUExecutionProvider | 2.5 GB |
+
+**Tool calling and NPU placement do overlap** — relevant because Scout needs tool calls. Of 37 chat/multimodal models:
+
+| Device | With tools | Without |
+| --- | --- | --- |
+| NPU | **6** | 5 |
+| GPU | 18 | 5 |
+| CPU | 3 | 0 |
+
+The six NPU models with tool calling are the **Qwen2.5 family**: `qwen2.5-0.5b`, `qwen2.5-1.5b`, `qwen2.5-7b` and the three `qwen2.5-coder` variants. The NPU models *without* tools are `phi-3.5-mini`, `phi-3-mini-4k`, `phi-3-mini-128k` and the two `deepseek-r1` sizes. Notably the entire `phi-4` family and all of `qwen3` route to **GPU** here, not NPU.
+
+**Where it fits against the other paths:**
+
+| | Foundry Local | GenieX | ORT GenAI direct |
+| --- | --- | --- | --- |
+| C# support | **First-party SDK** | HTTP only | NuGet, version-sensitive |
+| Model sourcing | Curated catalogue (~50) | Any GGUF on HF + AI Hub | Hand-assembled |
+| EP selection | Automatic | `--compute` flag | Manual, easy to get wrong |
+| Version pinning | Handled | n/a | You must pin `<0.16` |
+| Speed (Phi-3.5 NPU) | 26.5 tok/s | 34.2 published (QAIRT) | — |
+| Licence | Proprietary | Proprietary | MIT |
+
+**Caveats.** Microsoft states it is *"not designed as a server inference stack"*. The catalogue is curated, so arbitrary Hugging Face models are not an option the way they are with GenieX. The server binds a **dynamic port**, so discover it from `foundry status` rather than hardcoding. And `foundry report` is a bug-reporting command — it opens a pre-filled GitHub issue in your browser rather than printing a diagnostic.
 
 ---
 
@@ -1352,7 +1419,8 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | Item | Note |
 | --- | --- |
 | Scope of the 0.16.0 regression | Unknown whether it broke EPContext models specifically or QNN more broadly. Worth reporting upstream if reproducible on a second model |
-| C# / .NET path | Untested. The fix is a version pin plus `Config.append_provider`, both of which have .NET equivalents — verify before building on it |
+| C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
+| Tool calling on the NPU | Foundry Local lists 6 NPU models with tool support, all Qwen2.5. Verify tool calls actually work on the NPU variant before designing around it |
 | NPU headroom | Utilization is clamped to 100 % in tooling; raw readings hit 238 %, so whether the NPU is saturated is unknown |
 | `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
