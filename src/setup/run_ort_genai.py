@@ -47,14 +47,15 @@ def _explain(exc: Exception) -> None:
 
     if "GroupQueryAttention" in msg or "present_keys" in msg:
         print(
-            "\n[DIAG] A KV-cache shape mismatch on a CPU-executed attention node.\n"
-            "       This is usually a SYMPTOM, not the cause: QNN declined the\n"
-            "       graph, ORT fell back to CPU, and the EPContext wrapper holds\n"
-            "       no real weights for the CPU to run. Re-run with ORT verbose\n"
-            "       logging to see the provider rejection underneath.\n"
-            "       Note also that 'past_present_share_buffer' models size their\n"
-            "       KV cache from genai_config.json -- overriding max_length can\n"
-            "       produce a similar mismatch on its own."
+            "\n[DIAG] KV-cache shape mismatch in a CPU-executed attention node.\n"
+            "       On this stack that is onnxruntime-genai 0.16.x: it regresses\n"
+            "       EPContext/QNN pipeline models. Measured working on 0.13.2,\n"
+            "       0.14.1 and 0.15.2, so pin one of those:\n"
+            "         uv add 'onnxruntime-genai>=0.13.2,<0.16'\n"
+            "       Two other causes to rule out: QNN not actually attached to\n"
+            "       the config (register_execution_provider_library alone is not\n"
+            "       enough), and overriding max_length on a model that sets\n"
+            "       past_present_share_buffer."
         )
         return
 
@@ -99,12 +100,23 @@ def main() -> int:
 
     import onnxruntime_genai as og
 
+    version = getattr(og, "__version__", "?")
+    print(f"[INFO] onnxruntime-genai {version}")
+    if version.startswith("0.16"):
+        print(
+            "[WARN] 0.16.x regresses EPContext/QNN models: the prompt pass fails\n"
+            "       with a GroupQueryAttention KV-cache shape mismatch. Verified\n"
+            "       working on 0.13.2, 0.14.1 and 0.15.2."
+        )
+
+    qnn_ready = False
     try:
         import onnxruntime_qnn as qnn_ep
 
         og.register_execution_provider_library(
             "QNNExecutionProvider", qnn_ep.get_library_path()
         )
+        qnn_ready = True
         print("[ OK ] QNN execution provider registered.")
     except Exception as exc:  # noqa: BLE001
         print(f"[WARN] QNN unavailable ({type(exc).__name__}: {exc}); using CPU.")
@@ -112,7 +124,16 @@ def main() -> int:
     print(f"[INFO] Loading {fmt.path}")
     load_start = time.perf_counter()
     try:
-        model = og.Model(str(fmt.path))
+        # Registering the library is not enough: the provider must also be
+        # attached to the config, otherwise GenAI builds a CPU-only session and
+        # EPContext nodes have no EP to run on.
+        if qnn_ready and hasattr(og, "Config"):
+            config = og.Config(str(fmt.path))
+            config.clear_providers()
+            config.append_provider("QNNExecutionProvider")
+            model = og.Model(config)
+        else:
+            model = og.Model(str(fmt.path))
         tokenizer = og.Tokenizer(model)
     except Exception as exc:  # noqa: BLE001
         print(f"[FAIL] {type(exc).__name__}: {str(exc)[:300]}")
