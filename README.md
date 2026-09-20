@@ -613,6 +613,28 @@ m = onnx.load("compiled_v81_ctx.onnx", load_external_data=False)
 print(collections.Counter(n.op_type for n in m.graph.node)["EPContext"])   # must be > 0
 ```
 
+**Route A was tested against AI Hub assets and currently fails on this stack.** Both models publish a `w8a8 / ONNX Runtime / Universal` QDQ graph — the correct input for compilation — and AI Hub states each was *"verified with QAIRT 2.45.0.260326154327, ONNX Runtime 1.27.1"*. This machine runs **ONNX Runtime 1.30.0**:
+
+| Model | Result on ORT 1.30.0 |
+| --- | --- |
+| `squeezenet1_1` w8a8 | Loads, but QNN claims **0 of 49 nodes** — profiling shows every node on `CPUExecutionProvider`. `ModelCompiler` fails: *"Conv with domain com.ms.internal.nhwc was inserted using the NHWC format as requested by QNNExecutionProvider, but was not selected by that EP ... could be a bug in layout transformer, or in the GetCapability implementation of the EP"* |
+| `mobilenet_v2` w8a8 | Will not load at all: *"This is an invalid model. Error: two nodes with same node name (node_Conv_239)"* — a validation strictness change |
+
+Two different failures, both consistent with **version skew rather than anything about the chipset or the models**. Take AI Hub's version note literally: pin `onnxruntime` to the stated version in a separate environment before concluding anything about NPU compatibility. Doing so here would mean testing whether `onnxruntime-genai` 0.16 and `onnxruntime-qnn` still work against ORT 1.27.1 — untested.
+
+Verify node assignment rather than trusting a successful `run()`:
+
+```python
+so = ort.SessionOptions(); so.enable_profiling = True
+sess = ort.InferenceSession(model, sess_options=so, providers=["QNNExecutionProvider"],
+                            provider_options=[{"backend_path": "QnnHtp.dll"}])
+sess.run(None, feeds)
+import json, collections
+events = json.load(open(sess.end_profiling()))
+print(collections.Counter(e["args"]["provider"] for e in events
+                          if e.get("cat") == "Node" and "provider" in e.get("args", {})))
+```
+
 **Route B — full QAIRT SDK.** Needed when the graph requires Qualcomm's own quantizer. Broadly: install the QAIRT SDK, convert and quantize with `qairt-converter` / `qairt-quantizer` using a representative calibration set, generate the context binary with `qnn-context-binary-generator` against `QnnHtp.dll` for your SoC, then wrap it with ONNX Runtime's `gen_qnn_ctx_onnx_model.py` and hand-write a `genai_config.json` describing the pipeline stages. Consult [Qualcomm's ONNX model preparation docs](https://docs.qualcomm.com/doc/80-80022-15B/topic/onnx-prepare-model.html) and [ORT's Snapdragon build guide](https://onnxruntime.ai/docs/genai/howto/build-models-for-snapdragon.html) for current commands.
 
 **Neither route has been completed here.** Route A's API is verified working; producing a functioning Phi-4 EPContext model is not. Budget real effort, and weigh it against the GenieX GGUF path above, which already runs Phi-4 on the NPU today.
