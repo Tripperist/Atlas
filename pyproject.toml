@@ -12,6 +12,7 @@ dependencies = [
     "onnx>=1.23.0",
     "onnxruntime-genai>=0.13.2,<0.16",
     "onnxruntime-qnn>=2.6.0",
+    "qai-hub>=0.55.0",
     "qai-hub-models-cli>=0.62.2",
 ]
 

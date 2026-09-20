@@ -825,7 +825,18 @@ Record for each configuration: cold-load time, time to first token, tokens/secon
 
 The Hexagon NPU is a forward-pass inference accelerator. It has no backward-propagation path, no gradient accumulation, and no optimizer state handling. You cannot fine-tune on it.
 
-Local options for gradient work on this machine are limited to the **Adreno GPU via DirectML** or **CPU/WSL2**, both of which are appropriate only for tiny experiments. Plan substantial LoRA/QLoRA training on a **separate CUDA host**. Paid GPU infrastructure requires explicit authorization.
+**Nor can you train on this machine at all, in native Python.** Verified against PyPI: **PyTorch publishes no `win_arm64` wheel in any release**, and `torch-directml` ships only `win_amd64` / `manylinux x86_64`. So the often-repeated "use DirectML through PyTorch on the Adreno GPU" is not achievable here with pip — there is nothing to install.
+
+That leaves, for local gradient work:
+
+| Option | Reality |
+| --- | --- |
+| Native Windows ARM64 PyTorch | ❌ No wheel exists |
+| `torch-directml` on Adreno | ❌ x86-only |
+| WSL2 (Linux aarch64) | ⚠️ `manylinux_2_28_aarch64` wheels exist — CPU only, tiny experiments |
+| Build PyTorch from source | ⚠️ Possible in principle; substantial effort, untested |
+
+Plan substantial LoRA/QLoRA training on a **separate CUDA host**. Paid GPU infrastructure requires explicit authorization. This also means the `qai-hub[torch]` install in Qualcomm's Workbench walkthrough **cannot succeed on this machine** — export your model on the training host, then submit the exported artifact from here.
 
 ### 7.2 AI Hub runtime targets
 
@@ -862,6 +873,38 @@ qai-hub-models demo yolov7 --eval-mode fp
 > **Correction to earlier notes.** `"Snapdragon X Elite CRD"` is the previous generation (HTP 73). Compiling against it will not produce artifacts tuned for this machine's HTP 81.
 
 If native resolution of the source-export dependencies fails on ARM64, prefix with `uvx --from qai-hub-models-cli`. Note that AI Hub compilation and profiling **upload your model to Qualcomm's cloud** — treat it as a data transfer requiring authorization for the artifacts involved.
+
+### 7.4 AI Hub Workbench
+
+Workbench is the cloud optimization service: compile, quantize, run inference and profile on hosted Qualcomm devices. It is a **separate SDK** (`qai-hub`) from the model catalog CLI (`qai-hub-models`), and unlike the catalog it **requires an API token**.
+
+```powershell
+uv add qai-hub
+.\.venv\Scripts\qai-hub.exe configure --api_token <YOUR_TOKEN>   # from the AI Hub web UI
+```
+
+The token is a credential: keep it out of Git and out of shared logs. It lands in `%USERPROFILE%\.qai_hub\client.ini`, which is outside the repo.
+
+```python
+import qai_hub as hub
+
+device = hub.Device("Snapdragon X2 Elite CRD")           # matches §1.2
+compile_job  = hub.submit_compile_job(model=exported, device=device,
+                                      input_specs=..., options="--target_runtime onnx")
+quantize_job = hub.submit_quantize_job(model=..., calibration_data=...,
+                                       weights_dtype=hub.QuantizeDtype.INT8,
+                                       activations_dtype=hub.QuantizeDtype.INT8)
+profile_job  = hub.submit_profile_job(model=target, device=device)
+```
+
+**Where this fits Atlas, and where it does not.**
+
+- ✅ **The right tool for §7 generally** — quantizing and compiling an Atlas-trained model for Snapdragon, once one exists. A profile job reports the compute unit actually used plus per-layer runtime, which is stronger evidence than anything measurable locally.
+- ❌ **Not the tool for LLMs.** Qualcomm's own guidance says so: *"If you're working with a LLM, we recommend following the GenieX Docs."* It will not answer the Phi-4 benchmark in [§11](#11-backlog).
+- ⚠️ **`qai-hub[torch]` will not install here** — see §7.1. Export on the training host; submit from anywhere.
+- ⚠️ Quantization wants **500–1000 calibration samples**, drawn from data you are authorized to upload. Held-out evaluation answers must stay out of calibration data (§9).
+
+Compile and profile jobs upload the model to Qualcomm's cloud. Treat every submission as an outbound data transfer.
 
 ---
 
@@ -1107,6 +1150,7 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
 | Battery operation | Everything measured on AC with `burst`. Deployment behaviour on battery is unknown |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
+| Workbench profile job on hosted X2 Elite | Per-layer runtime and compute-unit reporting is stronger evidence than local counters. Needs an API token (§7.4). Vision/speech models only — not LLMs |
 
 ---
 
