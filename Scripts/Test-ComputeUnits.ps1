@@ -3,7 +3,7 @@
     Compare CPU / GPU / NPU inference on the same prompt to find what is real.
 
 .DESCRIPTION
-    Automates README section 6. This is the script that answers "is the NPU
+    Automates README section 7. This is the script that answers "is the NPU
     actually doing anything?"
 
     The method is comparative, because no single run is self-evident. If

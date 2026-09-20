@@ -9,12 +9,13 @@ This README is the single entry point. It supersedes the former `Setup.MD` and `
 - [3. Choosing a stack](#3-choosing-a-stack)
 - [4. Machine setup](#4-machine-setup)
 - [5. Inference paths](#5-inference-paths)
-- [6. Proving which compute unit actually runs](#6-proving-which-compute-unit-actually-runs)
-- [7. Training and asset optimization](#7-training-and-asset-optimization)
-- [8. Benchmarking](#8-benchmarking)
-- [9. Atlas project scope](#9-atlas-project-scope)
-- [10. Troubleshooting](#10-troubleshooting)
-- [11. Backlog](#11-backlog)
+- [6. Available models](#6-available-models)
+- [7. Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs)
+- [8. Training and asset optimization](#8-training-and-asset-optimization)
+- [9. Benchmarking](#9-benchmarking)
+- [10. Atlas project scope](#10-atlas-project-scope)
+- [11. Troubleshooting](#11-troubleshooting)
+- [12. Backlog](#12-backlog)
 
 ## Automation
 
@@ -26,12 +27,13 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [`Scripts/Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | §4.3 venv + deps | Yes |
 | [`Scripts/Get-SystemInfo.ps1`](Scripts/Get-SystemInfo.ps1) | §1 hardware inventory | Yes, read-only |
 | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | §2 status table | Yes, read-only |
-| [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §6 quick CPU/GPU/NPU check | Yes; runs inference |
-| [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | §8 full benchmark + CPU sampling → CSV | Yes; runs inference |
+| [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §7 quick CPU/GPU/NPU check | Yes; runs inference |
+| [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | §9 full benchmark + CPU sampling → CSV | Yes; runs inference |
 | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | §5 QNN provider + model format | Yes, read-only |
 | [`src/setup/model_format.py`](src/setup/model_format.py) | §5 classify a model directory | Yes, read-only |
 | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
-| [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | §7.4 cloud compile + profile | Uploads model; needs API token |
+| [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | §8.4 cloud compile + profile | Uploads model; needs API token |
+| [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | §6 published perf per model | Yes, read-only; no token |
 
 First run, in order:
 
@@ -209,7 +211,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | Direct NPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_compute)`, luid `0x13d0d` → **100 %** |
 | Direct GPU utilization measurement | ✅ **Verified** | `GPU Engine(*engtype_3d)`, luid `0x133c8` → **87 %** |
 | NPU faster than CPU on sustained load | ✅ **Verified** | 29.1 vs 27.5 tok/s at 4B; CPU throttles 19 %, NPU does not |
-| `--compute` changes placement for QAIRT bundles | ❌ **No effect** | 1.4 % spread — flag is `llama_cpp only`; see [Section 6](#6-proving-which-compute-unit-actually-runs) |
+| `--compute` changes placement for QAIRT bundles | ❌ **No effect** | 1.4 % spread — flag is `llama_cpp only`; see [Section 7](#7-proving-which-compute-unit-actually-runs) |
 
 ---
 
@@ -407,7 +409,7 @@ geniex clean
 
 > **Correction to earlier notes.** `geniex` has **no `--runtime` flag**. The engine is selected automatically by model format; `llama_cpp` and `qairt` appear in help text only as "(llama_cpp only)" / "(qairt only)" qualifiers on other flags.
 >
-> `geniex_llamacpp` and `geniex_qairt` *are* real identifiers — but they belong to **`qai-hub-models fetch --runtime`**, a different tool. Passing them to `geniex` will fail. See [Section 7.2](#72-ai-hub-runtime-targets).
+> `geniex_llamacpp` and `geniex_qairt` *are* real identifiers — but they belong to **`qai-hub-models fetch --runtime`**, a different tool. Passing them to `geniex` will fail. See [Section 8.2](#82-ai-hub-runtime-targets).
 
 ### Method B: GenieX Python SDK
 
@@ -745,7 +747,109 @@ del generator
 
 ---
 
-## 6. Proving which compute unit actually runs
+## 6. Available models
+
+Qualcomm publishes measured performance per model per device, so "how fast is X on my chip" rarely needs benchmarking. Everything below is **Qualcomm's published figure for Snapdragon X2 Elite CRD**, not our measurement:
+
+```bash
+.\.venv\Scripts\python.exe src\setup\model_catalog.py --device "Snapdragon X2 Elite CRD" --out .atlas-local\model_catalog.json
+```
+
+[`model_catalog.py`](src/setup/model_catalog.py) is read-only: it shells out to `qai-hub-models perf`, needs no API token, and uploads nothing. Re-run it to refresh, then pass `--markdown <json>` to regenerate these tables.
+
+### 6.1 Language and vision-language models
+
+Decode rate on the NPU, best across published context lengths. **Prefill matters as much as decode** — see [§9.4](#94-qualcomms-published-numbers-for-this-device).
+
+| Model | Type | NPU tok/s | Ctx | Prefill tok/s | Best for |
+| --- | --- | --- | --- | --- | --- |
+| `qualcomm/Qwen3-0.6B` | LLM | 112.1 | 512 | 7917.9 | Smallest Qwen3; fast drafts, speculative decoding |
+| `qualcomm/Llama-v3.2-1B-Instruct` | LLM | 90.6 | 4096 | 4670.9 | Tiny Llama; edge latency |
+| `qualcomm/Llama-v3.2-3B-Instruct-SSD` | LLM | 77.5 | 4096 | 1990.4 | 3B tuned for speculative decoding |
+| `qualcomm/Qwen3-1.7B` | LLM | 68.4 | 512 | 4297.6 | Small general chat; low latency |
+| `qualcomm/Intern3.5-VL-2B` | VLM | 62.0 | 4096 | 4302.1 | Compact VLM; lowest-latency vision |
+| `qualcomm/Llama-v3.2-3B-Instruct` | LLM | 42.8 | 4096 | 2068.7 | Mid Llama; general assistant |
+| `qualcomm/Qwen3-4B-Instruct-2507` | LLM | 42.6 | 4096 | 2831.5 | Newer 4B instruct tune |
+| `qualcomm/Qwen3-VL-4B-Instruct` | VLM | 39.3 | 4096 | 2594.8 | Vision-language; photos of signs, menus, landmarks |
+| `qualcomm/Qwen3-4B` | LLM | 36.2 | 512 | 2306.7 | Balanced general chat; reasoning-capable |
+| `qualcomm/Phi-3.5-Mini-Instruct` | LLM | 34.2 | 4096 | n/a | Strong instruction following at 3.8B |
+| `qualcomm/Phi-4-Mini-Instruct` | LLM | 26.9 | 512 | 1660.2 | Newer Phi; strong reasoning for size |
+| `qualcomm/Qwen3-8B` | LLM | 25.0 | 4096 | 1895.7 | Largest Qwen3 here; best quality, slowest |
+| `qualcomm/Falcon3-7B-Instruct` | LLM | 24.1 | 4096 | 1048.8 | 7B alternative architecture |
+| `qualcomm/Qwen2.5-VL-7B-Instruct` | VLM | 23.4 | 2048 | 1755.6 | Previous-gen VLM |
+| `qualcomm/Llama3-TAIDE-LX-8B-Chat-Alpha1` | LLM | 22.9 | 4096 | 1308.8 | Traditional Chinese-tuned |
+| `qualcomm/Qwen3-VL-8B-Instruct` | VLM | 22.7 | 4096 | 1809.3 | Larger VLM; better visual reasoning |
+| `qualcomm/Llama-v3.1-8B-Instruct` | LLM | 22.4 | 4096 | 1131.9 | 8B general assistant |
+| `qualcomm/Gemma-4-E4B-it` | VLM | 22.3 | 4096 | 933.8 | Google VLM |
+| `qualcomm/Llama-v3-ELYZA-JP-8B` | LLM | 21.4 | 4096 | 1092.2 | Japanese-tuned |
+| `qualcomm/Llama-v3-8B-Instruct` | LLM | 21.2 | 4096 | 1112.8 | Previous-gen 8B |
+| `qualcomm/Llama-SEA-LION-v3.5-8B-R` | LLM | n/a | n/a | n/a | Southeast Asian languages |
+
+**Running any of them** — all are in the GenieX catalogue:
+
+```powershell
+geniex pull ai-hub-models/Qwen3-4B
+geniex infer qualcomm/Qwen3-4B -p "Plan a day in Lisbon." --compute npu
+geniex serve                                   # OpenAI-compatible, port 18181
+```
+
+`geniex model list` shows the catalogue. For the ONNX Runtime GenAI route instead, see [§5 Method D](#method-d-onnx-runtime-genai--qnn).
+
+### 6.2 Task models
+
+End-to-end NPU latency: for multi-part models the fastest run of **each** component is summed, since Whisper is encoder + decoder and EasyOCR is detector + recognizer. Quoting a single component would understate the real cost.
+
+| Model | Task | NPU latency | Parts | Runtime | Best for |
+| --- | --- | --- | --- | --- | --- |
+| `Whisper-Tiny` | Speech-to-text | 14.04 ms | 2 | Precompiled QAIRT ONNX | Fastest ASR; voice input where accuracy can slip |
+| `Whisper-Base` | Speech-to-text | 24.96 ms | 2 | Precompiled QAIRT ONNX | Small ASR; better accuracy than Tiny |
+| `Distil-Whisper` | Speech-to-text | 65.45 ms | 2 | ONNX Runtime | Distilled Whisper; faster at similar accuracy |
+| `Whisper-Small` | Speech-to-text | 66.92 ms | 2 | Precompiled QAIRT ONNX | Mid ASR; good accuracy/speed balance |
+| `Whisper-Large-V3-Turbo-Quantized` | Speech-to-text | 683.60 ms | 2 | Precompiled QAIRT ONNX | Best ASR accuracy, quantized |
+| `PiperTTS-EN` | Text-to-speech | 38.23 ms | 6 | Voice AI | Lightweight English TTS |
+| `MeloTTS-EN` | Text-to-speech | 184.64 ms | 6 | Voice AI | English speech synthesis for spoken replies |
+| `TrOCR` | OCR | 5.82 ms | 2 | ONNX Runtime | Transformer OCR; handwriting and harder text |
+| `EasyOCR` | OCR | 15.84 ms | 2 | ONNX Runtime | Reads menus, signs, tickets from photos |
+| `OpusMT-En-Es` | Translation | 4.33 ms | 2 | Voice AI | English to Spanish |
+| `OpusMT-Es-En` | Translation | 4.34 ms | 2 | Voice AI | Spanish to English |
+| `OpusMT-En-Zh` | Translation | 4.41 ms | 2 | Voice AI | English to Chinese |
+| `MiniLM-v2` | Embeddings | 0.67 ms | 1 | ONNX Runtime | Compact sentence embeddings |
+| `Nomic-Embed-Text` | Embeddings | 3.45 ms | 1 | ONNX Runtime | Text embeddings for Scout's retrieval index |
+| `SigLIP2` | Image/text | 3.88 ms | 2 | ONNX Runtime | Newer CLIP-style image/text model |
+| `OpenAI-Clip` | Image/text | 13.42 ms | 1 | ONNX Runtime | Image/text similarity; landmark and scene matching |
+
+```powershell
+qai-hub-models fetch whisper_tiny -r precompiled_qnn_onnx -p float -o models
+qai-hub-models info whisper_tiny          # inputs, outputs, licence
+qai-hub-models numerics whisper_tiny      # accuracy metrics
+```
+
+These are **not** GenieX models. They are ONNX/QAIRT assets run through ONNX Runtime with the QNN provider ([§5 Method D](#method-d-onnx-runtime-genai--qnn)) — remember to attach QNN with the policy API, not `providers=[...]`.
+
+### 6.3 Choosing for Scout
+
+| Job | Candidate | Why |
+| --- | --- | --- |
+| Main assistant | `Qwen3-4B-Instruct-2507` | 42.6 tok/s with 2832 prefill — best quality-per-token at 4B |
+| Latency-critical | `Llama-v3.2-3B-Instruct-SSD` | **77.5 tok/s**, nearly 2× the plain 3B at the same parameter count |
+| Draft model | `Qwen3-0.6B` | 112 tok/s, 7918 prefill — pairs with a larger target for speculative decoding |
+| Photos of menus, signs | `Qwen3-VL-4B-Instruct` | 39.3 tok/s VLM; `Intern3.5-VL-2B` at 62.0 if latency dominates |
+| Retrieval embeddings | `MiniLM-v2` (0.67 ms) or `Nomic-Embed-Text` (3.45 ms) | Scout owns the embedding pipeline; changing it is a coordinated decision ([§10](#10-atlas-project-scope)) |
+| Voice input | `Whisper-Tiny` (14 ms) to `Whisper-Small` (67 ms) | 49× spread up to `Large-V3-Turbo` at 684 ms — choose on accuracy need |
+| Reading text in images | `TrOCR` (5.8 ms) or `EasyOCR` (15.8 ms) | Menus, signs, tickets |
+| Translation | `OpusMT-*` (~4.3 ms) | Far cheaper than asking the LLM to translate |
+
+Three things in the numbers that are easy to miss:
+
+- **Speculative decoding is the biggest single win.** `Llama-v3.2-3B-Instruct-SSD` reaches 77.5 tok/s against 42.8 for the same base model — an 81 % gain from the decoding strategy, not the hardware.
+- **Task models are cheap.** Embeddings at 0.67 ms and translation at ~4.3 ms cost a rounding error next to a single LLM token. Routing work to a specialist model beats prompting the LLM to do it.
+- **8B models cluster at 21–25 tok/s** regardless of family. If 4B quality suffices, that tier is roughly twice as fast.
+
+> These are Qualcomm's measurements under their harness. Context length is the configured window, not tokens generated, and rows come from different runtimes — `Phi-3.5-Mini-Instruct` at 34.2 is a QAIRT bundle while `Phi-4-Mini-Instruct` at 26.9 is llama.cpp, so that particular comparison is runtime as much as model. `Llama-SEA-LION-v3.5-8B-R` publishes no X2 Elite data at all. Verify anything you depend on ([§9](#9-benchmarking)).
+
+---
+
+## 7. Proving which compute unit actually runs
 
 A provider appearing in a list, or a busy NPU graph in Task Manager, does **not** prove the whole model executes there. The checks below are comparative because no single run is self-evident.
 
@@ -779,7 +883,7 @@ A **1.4 % spread**: `--compute` does nothing. The CLI help explains why — the 
 
 A **28 % spread**: on llama.cpp, `--compute` genuinely works.
 
-> **This short run is shown because it is misleading.** At only 64 tokens on a cold machine the CPU appears to win. Extending to 400 tokens on a warmed-up machine reverses it — the CPU throttles ~19 % while the NPU holds steady, and the NPU finishes ahead at both model sizes. See [§8.3](#83-what-these-numbers-mean). Compare generation rate rather than wall-clock, and generate enough tokens to reach steady state before drawing a conclusion.
+> **This short run is shown because it is misleading.** At only 64 tokens on a cold machine the CPU appears to win. Extending to 400 tokens on a warmed-up machine reverses it — the CPU throttles ~19 % while the NPU holds steady, and the NPU finishes ahead at both model sizes. See [§9.3](#93-what-these-numbers-mean). Compare generation rate rather than wall-clock, and generate enough tokens to reach steady state before drawing a conclusion.
 
 Note that even here the NPU already wins **first-token latency** (0.00 s vs 0.10 s): prefill is batched, which suits the NPU, while the short decode loop favoured the then-cold CPU.
 
@@ -820,9 +924,9 @@ Record for each configuration: cold-load time, time to first token, tokens/secon
 
 ---
 
-## 7. Training and asset optimization
+## 8. Training and asset optimization
 
-### 7.1 The NPU does not train
+### 8.1 The NPU does not train
 
 The Hexagon NPU is a forward-pass inference accelerator. It has no backward-propagation path, no gradient accumulation, and no optimizer state handling. You cannot fine-tune on it.
 
@@ -839,7 +943,7 @@ That leaves, for local gradient work:
 
 Plan substantial LoRA/QLoRA training on a **separate CUDA host**. Paid GPU infrastructure requires explicit authorization. This also means the `qai-hub[torch]` install in Qualcomm's Workbench walkthrough **cannot succeed on this machine** — export your model on the training host, then submit the exported artifact from here.
 
-### 7.2 AI Hub runtime targets
+### 8.2 AI Hub runtime targets
 
 `qai-hub-models fetch --runtime` and `export --target-runtime` accept these IDs (from `qai-hub-models runtimes`). "Ahead-of-Time" means the asset is compiled per chipset and must match your SoC; "On-Device" means it compiles on first load.
 
@@ -856,7 +960,7 @@ Plan substantial LoRA/QLoRA training on a **separate CUDA host**. Paid GPU infra
 
 Precision values include `q4_0`, `w4a16`, `w8a8`, `w8a16`, `w16a16`, `mxfp4`, and `float`. Always run `fetch <model> -i` first — most models publish only a subset.
 
-### 7.3 Compile, quantize, profile
+### 8.3 Compile, quantize, profile
 
 Once a model is trained and exported to PyTorch or FP32 ONNX, convert it to an NPU-compatible INT4/INT8 layout through AI Hub. Target **`Snapdragon X2 Elite CRD`** — confirmed present in the device catalog with HTP version 81.
 
@@ -875,7 +979,7 @@ qai-hub-models demo yolov7 --eval-mode fp
 
 If native resolution of the source-export dependencies fails on ARM64, prefix with `uvx --from qai-hub-models-cli`. Note that AI Hub compilation and profiling **upload your model to Qualcomm's cloud** — treat it as a data transfer requiring authorization for the artifacts involved.
 
-### 7.4 AI Hub Workbench
+### 8.4 AI Hub Workbench
 
 Workbench is the cloud optimization service: compile, quantize, run inference and profile on hosted Qualcomm devices. It is a **separate SDK** (`qai-hub`) from the model catalog CLI (`qai-hub-models`), and unlike the catalog it **requires an API token**.
 
@@ -925,16 +1029,16 @@ The per-layer split is what makes this worth the round trip: local counters show
 
 **Where this fits Atlas, and where it does not.**
 
-- ✅ **The right tool for §7 generally** — quantizing and compiling an Atlas-trained model for Snapdragon, once one exists. A profile job reports the compute unit actually used plus per-layer runtime, which is stronger evidence than anything measurable locally.
-- ❌ **Not the tool for LLMs.** Qualcomm's own guidance says so: *"If you're working with a LLM, we recommend following the GenieX Docs."* It will not answer the Phi-4 benchmark in [§11](#11-backlog).
-- ⚠️ **`qai-hub[torch]` will not install here** — see §7.1. Export on the training host; submit from anywhere.
-- ⚠️ Quantization wants **500–1000 calibration samples**, drawn from data you are authorized to upload. Held-out evaluation answers must stay out of calibration data (§9).
+- ✅ **The right tool for §8 generally** — quantizing and compiling an Atlas-trained model for Snapdragon, once one exists. A profile job reports the compute unit actually used plus per-layer runtime, which is stronger evidence than anything measurable locally.
+- ❌ **Not the tool for LLMs.** Qualcomm's own guidance says so: *"If you're working with a LLM, we recommend following the GenieX Docs."* It will not answer the Phi-4 benchmark in [§12](#12-backlog).
+- ⚠️ **`qai-hub[torch]` will not install here** — see §8.1. Export on the training host; submit from anywhere.
+- ⚠️ Quantization wants **500–1000 calibration samples**, drawn from data you are authorized to upload. Held-out evaluation answers must stay out of calibration data (§10).
 
 Compile and profile jobs upload the model to Qualcomm's cloud. Treat every submission as an outbound data transfer.
 
 ---
 
-## 8. Benchmarking
+## 9. Benchmarking
 
 ```bash
 .\Scripts\Invoke-Benchmark.ps1 -Model "unsloth/Qwen3-4B-GGUF:Q4_0" -Repeat 3
@@ -942,7 +1046,7 @@ Compile and profile jobs upload the model to Qualcomm's cloud. Treat every submi
 
 Runs each compute unit N times, samples **per-core CPU utilization during** each run, and writes a timestamped CSV to `.atlas-local/benchmarks/` (git-ignored). [`Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) is the quick sanity check; this is the one that produces a recorded result.
 
-### 8.1 Measuring NPU and GPU utilization
+### 9.1 Measuring NPU and GPU utilization
 
 All three accelerators are directly measurable. The NPU is not exotic: it registers as an **MCDM compute accelerator** (device class GUID `{F01A9D53-3FF6-48D2-9F97-C8A7004BE10C}`, which Task Manager reports as *DirectX 12, FL 1.0: Compute*), so Windows exposes it through the ordinary **`GPU Engine`** counter set — under its own adapter LUID with `engtype_compute`. Task Manager's NPU graph reads the same engine.
 
@@ -977,7 +1081,7 @@ Note also that the driver can report **over 100 %** for an adapter aggregating m
 | `--compute npu` | 18.9 | **100** | 5.8 |
 | `--compute gpu` | 18.2 | 0 | **87.3** |
 
-### 8.2 Measured results
+### 9.2 Measured results
 
 Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst`, on AC.
 
@@ -997,7 +1101,7 @@ Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst
 | `gpu` | 54.3 | 3.52 | 27.8 | 0 | 95.0 |
 | `cpu` | 53.4 | 1.79 | 82.5 | 0 | 4.9 |
 
-### 8.3 What these numbers mean
+### 9.3 What these numbers mean
 
 **The NPU wins at both model sizes**, and the margin grows with generation length.
 
@@ -1025,7 +1129,7 @@ CPU throughput fell **19 %** while the NPU held within ~2 tok/s. Any benchmark s
 
 **Caveats.** Single machine, one quantization (Q4_0), one prompt, nothing else running, AC power, `burst` power mode. Battery operation is untested. Thermal state materially changes CPU results, so record run order. Re-measure after driver or firmware updates and note the versions from §1 alongside results.
 
-### 8.4 Qualcomm's published numbers for this device
+### 9.4 Qualcomm's published numbers for this device
 
 Before benchmarking anything yourself, check whether AI Hub already measured it. This is free, instant, and needs no job submission:
 
@@ -1064,9 +1168,9 @@ Time to first token follows prefill: the NPU is **3–4× faster** to start resp
 
 Two things fall out. The QAIRT bundle reaches 34.2 tok/s against 18.1 for llama.cpp on the same NPU — so **runtime choice matters more than compute-unit choice**. And X2 Elite is **3.4× X Elite** on that path, which is why assets and numbers published for X Elite are a poor guide to this machine.
 
-> These are Qualcomm's measurements under their harness, not ours. Context length is the configured window, not the number of tokens generated, so they are not directly comparable with [§8.2](#82-measured-results). Use them as a reference point and a sanity check, not as a substitute for measuring your own model.
+> These are Qualcomm's measurements under their harness, not ours. Context length is the configured window, not the number of tokens generated, so they are not directly comparable with [§9.2](#92-measured-results). Use them as a reference point and a sanity check, not as a substitute for measuring your own model.
 
-### 8.5 Memory
+### 9.5 Memory
 
 This machine has **64 GB of shared system memory**, not a 64 GB model budget. Weights, KV cache, activations, runtime buffers, Windows, and your editor all draw from the same pool. Four-bit weights are roughly `parameters × 0.5 bytes` before quantization metadata and runtime overhead — the Qwen3-4B W4A16 bundle is 3.0 GiB on disk, the Q4_0 GGUF 2.2 GiB.
 
@@ -1076,7 +1180,7 @@ Start with one model, one request, and the default 4096-token context. Increase 
 
 ---
 
-## 9. Atlas project scope
+## 10. Atlas project scope
 
 ### Repository boundaries
 
@@ -1147,7 +1251,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 
 ---
 
-## 10. Troubleshooting
+## 11. Troubleshooting
 
 | Symptom | Check |
 | --- | --- |
@@ -1164,7 +1268,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | Session loads but `get_providers()` shows only CPU | QNN took no nodes. Set `session.disable_cpu_ep_fallback` to turn the silent fallback into an error |
 | `--compute` makes no measurable difference | Expected for QAIRT bundles — the flag is `llama_cpp only`. Test placement with a GGUF model |
 | `pull` says success but nothing downloaded | The name resolved to an already-cached bundle. A real download prints `Location:`. Check `PluginId` in the model's `geniex.json` |
-| NPU looks slower than CPU | Likely a cold machine and too few tokens. Generate ≥400 and repeat — the CPU throttles ~19 %, the NPU does not. See [Section 8](#8-benchmarking) |
+| NPU looks slower than CPU | Likely a cold machine and too few tokens. Generate ≥400 and repeat — the CPU throttles ~19 %, the NPU does not. See [Section 9](#9-benchmarking) |
 | `geniex pull` never finishes | It blocks when stdout is redirected. Run it in a real terminal, not a background job |
 | NPU counter appears to be missing | It is `\GPU Engine(*engtype_compute)`, not an "NPU" counter set. Instances are per-process, so query with a wildcard *while* the workload runs |
 | Accelerator utilization reads 0 | Sampling missed the window. Each `Get-Counter` call costs ~1 s — use one combined call and a longer generation |
@@ -1182,7 +1286,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 
 ---
 
-## 11. Backlog
+## 12. Backlog
 
 ### Benchmark ORT GenAI against GenieX GGUF for Phi-4
 
@@ -1195,7 +1299,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | GenieX GGUF (llama.cpp) | `unsloth/Phi-4-mini-reasoning-GGUF` Q4_0 | 24.1 tok/s |
 | ORT GenAI (EPContext) | `microsoft/Phi-4-mini-reasoning-onnx` qnn-int4 | 17.1 tok/s |
 
-Those are **different quantizations, different runtimes, different token counts, and different thermal states**, so the ~40 % gap is not yet a real result. Section 8 already showed that measuring a cold machine briefly reverses a conclusion outright, so this needs the same discipline.
+Those are **different quantizations, different runtimes, different token counts, and different thermal states**, so the ~40 % gap is not yet a real result. Section 9 already showed that measuring a cold machine briefly reverses a conclusion outright, so this needs the same discipline.
 
 **Why it matters.** Scout needs a runtime decision, and the two paths trade off differently:
 
@@ -1206,7 +1310,7 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Confounder to resolve first.** `qnn-int4` and `Q4_0` are not the same quantization, so part of any gap is the weights rather than the runtime. Either find one model published in both formats, or treat the result as a path comparison rather than a runtime comparison and say so.
 
-**Measure prefill separately from decode.** Qualcomm's own figures ([§8.4](#84-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
+**Measure prefill separately from decode.** Qualcomm's own figures ([§9.4](#94-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
 
 **Also benchmark the native QAIRT path.** Qualcomm measures `phi_3_5_mini_instruct` w4a16 QAIRT at 34.2 tok/s against 18.1 for `phi_4_mini_instruct` q4_0 on llama.cpp NPU. If that ~2× holds, the comparison is really three-way: ORT GenAI, GenieX llama.cpp, and GenieX QAIRT — and the QAIRT bundle may beat both paths measured so far.
 
@@ -1221,9 +1325,9 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
 | Battery operation | Everything measured on AC with `burst`. Deployment behaviour on battery is unknown |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
-| Workbench profile job for a *trained* Atlas model | Done once for SqueezeNet (§7.4, 46/46 layers on NPU). Repeat for real artifacts once Atlas produces one |
+| Workbench profile job for a *trained* Atlas model | Done once for SqueezeNet (§8.4, 46/46 layers on NPU). Repeat for real artifacts once Atlas produces one |
 | NPU headroom | Hosted profile gives per-layer placement but not saturation. Peak memory 32 MB for SqueezeNet suggests ample room; unmeasured for LLMs |
-| Scout's prompt/response ratio | Decides CPU vs NPU. Prefill-heavy favours NPU 3–4×, decode-heavy favours CPU ~25 % (§8.4). Measure real Scout traffic |
+| Scout's prompt/response ratio | Decides CPU vs NPU. Prefill-heavy favours NPU 3–4×, decode-heavy favours CPU ~25 % (§9.4). Measure real Scout traffic |
 | `qualcomm/Phi-3.5-Mini-Instruct` QAIRT | Published at 34.2 tok/s on X2 Elite, ~2× the llama.cpp NPU path. Already in the GenieX catalogue — pull and verify |
 
 ---

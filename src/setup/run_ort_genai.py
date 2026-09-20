@@ -11,7 +11,7 @@ This version takes the model directory as an argument and refuses to start
 until the directory is a layout onnxruntime-genai can actually open, so a
 format mismatch is reported plainly instead of as a parse error.
 
-    python src/setup/run_ort_genai.py --model-dir models/Phi-3-mini-4k-instruct-onnx
+    python src/setup/run_ort_genai.py --model-dir models/Phi-4-mini-reasoning-onnx/npu/qnn-int4
     python src/setup/run_ort_genai.py --model-dir <dir> --prompt "Explain Rayleigh scattering."
 """
 
@@ -33,15 +33,17 @@ def _explain(exc: Exception) -> None:
 
     if "EPContext node" in msg and "not compatible" in msg:
         print(
-            "\n[DIAG] The QNN execution provider refused the pre-compiled context\n"
-            "       binary. These are ahead-of-time compiled for one Hexagon\n"
-            "       architecture and do not run on another:\n"
-            "         soc_model 60 = Snapdragon X Elite  (HTP v73)\n"
-            "         soc_model 88 = Snapdragon X2 Elite (HTP v81)\n"
-            "       Overriding soc_model does not help -- the binary itself is\n"
-            "       built for the other target. Either obtain assets compiled for\n"
-            "       your chipset, recompile from the source ONNX with QAIRT, or\n"
-            "       run the model through GenieX with a GGUF build instead."
+            "\n[DIAG] No execution provider in the session can run the EPContext\n"
+            "       nodes. Read the message literally -- 'not compatible with any\n"
+            "       execution provider ADDED TO THE SESSION'. Almost always this\n"
+            "       means QNN was never attached, not that the binary is wrong for\n"
+            "       your chipset:\n"
+            "         - GenAI: Config.clear_providers() + append_provider(...)\n"
+            "         - plain ORT: set_provider_selection_policy(PREFER_NPU),\n"
+            "           NOT providers=['QNNExecutionProvider'], which is silently\n"
+            "           ignored for this plugin EP\n"
+            "       A genuine chipset mismatch is rarer than it looks: bundles\n"
+            "       declaring soc_model 60 (X Elite) do load on X2 Elite."
         )
         return
 
@@ -195,7 +197,7 @@ def main() -> int:
     print(f"Tokens generated:    {tokens}")
     if elapsed > 0:
         print(f"Throughput:          {tokens / elapsed:.1f} tok/s")
-    print("\n[INFO] Throughput alone does not prove NPU execution. See README section 6.")
+    print("\n[INFO] Throughput alone does not prove NPU execution. See README section 7.")
 
     del generator
     return 0

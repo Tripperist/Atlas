@@ -270,7 +270,7 @@ def main() -> int:
         print(f"{OK} QNN execution provider is available.")
         print(
             f"{INFO} This proves the provider loads. It does NOT prove any model "
-            "executes on the NPU -- see README section 6."
+            "executes on the NPU -- see README section 7."
         )
     else:
         print(f"{FAIL} QNN execution provider is not available.")

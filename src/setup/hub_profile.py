@@ -1,6 +1,6 @@
 """Compile and profile a model on a cloud-hosted Qualcomm device.
 
-Automates README section 7.4. Submits a compile job followed by a profile
+Automates README section 8.4. Submits a compile job followed by a profile
 job, then prints the compute-unit split that the profile reports -- which is
 the one thing local performance counters cannot tell you. Local counters show
 that *an* accelerator is busy; a profile job reports, per layer, which unit
