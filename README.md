@@ -200,7 +200,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | GenieX Python SDK | ⬜ Untested | `geniex==0.7.0` resolves for ARM64 py3.14; not installed |
 | `geniex serve` + OpenAI-compatible client | ⬜ Untested | — |
 | **ONNX Runtime GenAI generating on the NPU** | ✅ **Verified** | Phi-4-mini-reasoning, **17.1 tok/s**, NPU peak **97.7 %** |
-| `onnxruntime-genai` 0.16.0 with EPContext models | ❌ **Regressed** | Fails on the prompt pass; 0.13.2–0.15.2 work |
+| `onnxruntime-genai` 0.16.0 with EPContext models | ❌ **Regressed** | Fails on the prompt pass; 0.13.2–0.15.2 work. Nightly also fails ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
 | **Compiling an EPContext model for this chipset** | ✅ **Verified** | SqueezeNet w8a8 → 1 EPContext node, NPU-only, **0.46 ms** |
 | X Elite context binaries load on X2 Elite | ✅ Verified | All 4 Phi-4 parts load; `soc_model` was a red herring |
 | **Phi-4 on the NPU via GenieX GGUF** | ✅ **Verified** | Phi-4-mini-reasoning Q4_0, **24.1 tok/s** |
@@ -575,6 +575,7 @@ Measured: loads in 5.5 s, **17.1 tok/s**, 389 tokens, **NPU peak 97.7 %** (GPU 5
 | 0.14.1 | ✅ 20.8 tok/s |
 | 0.15.2 | ✅ 18.8 tok/s |
 | **0.16.0** | ❌ fails on the prompt pass |
+| **0.16.0.dev1001407373** (nightly) | ❌ **also fails** — not fixed on main |
 
 On 0.16.0 the failure looks like this, and is easy to misread as a model or hardware problem:
 
@@ -582,6 +583,8 @@ On 0.16.0 the failure looks like this, and is easy to misread as a model or hard
 RuntimeError: ... GroupQueryAttention ... 'present_keys_0' has shape {1,8,80,128}
 but the computed output shape for this run is {1,8,4096,128}
 ```
+
+**Filed upstream as [microsoft/onnxruntime-genai#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)**, with [`repro_genai_016_qnn.py`](src/setup/repro_genai_016_qnn.py) as a standalone reproduction that exits 0 on a working version and 1 on the regression. The ORT-Nightly build was tested too and fails identically, so **staying pinned below 0.16 is the position until that issue moves** — do not assume a newer release fixes it without re-running the repro.
 
 `run_ort_genai.py` warns when it detects 0.16.x. Note that `og.is_qnn_available()` returned `True` on 0.12.0 even though that build has no QNN support — do not rely on it alone.
 
@@ -1374,7 +1377,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | Accelerator utilization reads 0 | Sampling missed the window. Each `Get-Counter` call costs ~1 s — use one combined call and a longer generation |
 | Utilization reads over 100 % | Normal for an adapter aggregating sub-engines; clamp to 100 |
 | `EPContext node ... is not compatible` | QNN is not attached to the session. Use `set_provider_selection_policy(PREFER_NPU)`, or `Config.append_provider` for GenAI. Rarely a chipset issue |
-| `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models. Pin `>=0.13.2,<0.16`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
+| `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models, including the nightly ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)). Pin `>=0.13.2,<0.16`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
 | `provider_options` looks empty | On pipeline models the QNN options live inside each stage, not on the top-level decoder |
 | `huggingface-cli` not found | Superseded by `hf` in `huggingface_hub` 1.x |
 | `pip install` finds no ARM64 wheel | Check Python minor version and ABI. Use `uvx` for x86-constrained tooling; do not silently switch native benchmarks to emulation |
@@ -1453,7 +1456,7 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 
 | Item | Note |
 | --- | --- |
-| Scope of the 0.16.0 regression | Unknown whether it broke EPContext models specifically or QNN more broadly. Worth reporting upstream if reproducible on a second model |
+| Scope of the 0.16.0 regression | Reported as [#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603); reproduces on the nightly, so unfixed on main. Still unknown whether it broke EPContext models specifically or QNN more broadly — a second affected model would strengthen the report. Re-run [`repro_genai_016_qnn.py`](src/setup/repro_genai_016_qnn.py) against new releases before unpinning |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
 | NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
 | `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |

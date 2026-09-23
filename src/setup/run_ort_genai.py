@@ -54,6 +54,8 @@ def _explain(exc: Exception) -> None:
             "       EPContext/QNN pipeline models. Measured working on 0.13.2,\n"
             "       0.14.1 and 0.15.2, so pin one of those:\n"
             "         uv add 'onnxruntime-genai>=0.13.2,<0.16'\n"
+            "       The ORT-Nightly build fails too, so this is unfixed on main:\n"
+            "         https://github.com/microsoft/onnxruntime-genai/issues/2603\n"
             "       Two other causes to rule out: QNN not actually attached to\n"
             "       the config (register_execution_provider_library alone is not\n"
             "       enough), and overriding max_length on a model that sets\n"
@@ -108,7 +110,9 @@ def main() -> int:
         print(
             "[WARN] 0.16.x regresses EPContext/QNN models: the prompt pass fails\n"
             "       with a GroupQueryAttention KV-cache shape mismatch. Verified\n"
-            "       working on 0.13.2, 0.14.1 and 0.15.2."
+            "       working on 0.13.2, 0.14.1 and 0.15.2; the ORT-Nightly build\n"
+            "       fails too, so this is unfixed on main. Upstream issue:\n"
+            "       https://github.com/microsoft/onnxruntime-genai/issues/2603"
         )
 
     qnn_ready = False

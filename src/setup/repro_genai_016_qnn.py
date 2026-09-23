@@ -1,5 +1,9 @@
 """Minimal reproduction: onnxruntime-genai 0.16.0 regresses EPContext/QNN models.
 
+Filed upstream as microsoft/onnxruntime-genai#2603. Reproduces on the 0.16.0
+release and on the ORT-Nightly build 0.16.0.dev1001407373, so it is unfixed on
+main. Re-run this against new releases before unpinning onnxruntime-genai.
+
 Self-contained. Downloads the NPU build of microsoft/Phi-4-mini-reasoning-onnx,
 attaches the QNN execution provider, and runs a single prompt pass.
 
