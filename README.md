@@ -1513,7 +1513,7 @@ loading model...        <- crash here
 
 **Likely cause.** Everything inside GenieX has now been eliminated: the fault survives a version upgrade *and* a complete uninstall/reinstall from a hash-verified installer, with the model cache untouched. So the trigger is outside GenieX. The machine rebooted and Foundry Local was installed between the last working llama.cpp measurements and now, and Foundry Local ships its own QNN and WebGPU execution-provider binaries.
 
-One detail narrows it further:  crashes too, which should not touch the DSP at all. The plugin loads  and sets  during initialisation regardless of the selected compute unit, so a failure initialising the Hexagon backend would take the whole plugin down whichever unit you ask for. That is consistent with a change in the DSP driver or runtime rather than in llama.cpp.
+One detail narrows it further: `--compute cpu` crashes too, which should not touch the DSP at all. The plugin loads `ggml-hexagon.dll` and sets `ADSP_LIBRARY_PATH` during initialisation regardless of the selected compute unit, so a failure initialising the Hexagon backend would take the whole plugin down whichever unit you ask for. That is consistent with a change in the DSP driver or runtime rather than in llama.cpp.
 
 **Why it matters.** It blocks every llama.cpp measurement in [§9](#9-benchmarking) — the `--compute` comparison, the speculative-decoding numbers in [§6.4](#64-what-we-could-and-could-not-verify), and the GPU adapter LUID, which [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) can only derive from a working GGUF. Nothing already recorded is invalidated, but none of it can currently be reproduced.
 
