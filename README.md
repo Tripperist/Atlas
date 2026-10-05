@@ -61,7 +61,7 @@ Everything downstream depends on four facts: the **exact SoC SKU**, the **NPU an
 
 Add `-OutFile inventory.md` to save a copy. The script runs everything in this section and flags a missing NPU driver or a non-ARM64 shell. What it runs, and why each part matters:
 
-All read-only. Run in a native ARM64 PowerShell session:
+All read-only. Run in a native ARM64 PowerShell session — on this machine `pwsh` is **Arm64** while `powershell.exe` (Windows PowerShell 5.1) is **X64**, so use `pwsh`. `Get-SystemInfo.ps1` warns if the shell is not ARM64:
 
 ```powershell
 # Machine, SoC, memory
@@ -251,7 +251,7 @@ Prefer native ARM64 builds throughout. An x64 binary under emulation does not de
 | --- | --- |
 | Git | [Git for Windows](https://git-scm.com/downloads/win), ARM64 build |
 | Editor | [VS Code ARM64](https://code.visualstudio.com/download) + Python and Pylance extensions |
-| Shell | Native ARM64 PowerShell 7+ |
+| Shell | Native ARM64 PowerShell 7+ (`pwsh`). **Not `powershell.exe`** — see below |
 | Python | 3.14 ARM64 (pinned by `.python-version` and `pyproject.toml`) |
 | uv | Manages the venv and one-off tool execution |
 | MSVC / Windows SDK | Only if building a runtime from source; prebuilt packages avoid this |
@@ -269,7 +269,30 @@ GenieX is Qualcomm's on-device inference runtime. It bundles **two** engines and
 - **llama.cpp** — community GGUF models, runs on CPU / GPU / Hexagon HTP
 - **QAIRT (Qualcomm AI Engine Direct)** — precompiled AI Hub bundles, NPU only
 
-Install: download the Windows ARM64 installer from the [GenieX CLI install page](https://geniex.aihub.qualcomm.com/en/run/cli/install) and run it. The installer is **not code-signed** — SmartScreen will warn; choose **More info → Run anyway**.
+**Install.** The [GenieX CLI install page](https://geniex.aihub.qualcomm.com/en/run/cli/install) offers a browser download, but the GitHub release is scriptable and ships a checksum, which is preferable:
+
+```powershell
+$dir = Join-Path $env:TEMP 'geniex-setup'
+New-Item -ItemType Directory -Force -Path $dir | Out-Null
+gh release download v0.8.0 --repo qualcomm/GenieX `
+  --pattern 'geniex-cli-setup-windows-arm64-v0.8.0.exe*' --dir $dir
+
+$exe = Join-Path $dir 'geniex-cli-setup-windows-arm64-v0.8.0.exe'
+$expected = ((Get-Content "$exe.sha256" -Raw) -split '\s+')[0].Trim().ToLower()
+if ((Get-FileHash $exe -Algorithm SHA256).Hash.ToLower() -ne $expected) { throw 'checksum mismatch' }
+
+Start-Process $exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART' -Wait
+```
+
+The installer is **not code-signed** — if you run it interactively, SmartScreen will warn; choose **More info → Run anyway**. Verifying the published SHA256, as above, is the better safeguard.
+
+To uninstall later, use the registry's own entry rather than guessing the filename — the uninstaller is `unins000.exe` or `unins001.exe` depending on install history:
+
+```powershell
+(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' |
+  ForEach-Object { Get-ItemProperty $_.PSPath } |
+  Where-Object DisplayName -match 'GenieX').UninstallString
+```
 
 It installs to `%LOCALAPPDATA%\GenieX CLI\geniex.exe`. If it is not on `PATH` in your session:
 
