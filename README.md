@@ -1465,7 +1465,7 @@ foundry server start
 ```
 
 Sample the NPU counter during the call, the same way [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) does:
-`\GPU Engine(*engtype_compute)\Utilization Percentage`. Do not hardcode the adapter LUID — it changes across reboots; identify it as whichever adapter is busiest during an NPU-targeted run.
+`\GPU Engine(*engtype_compute)\Utilization Percentage`. Do not hardcode the adapter LUID — it changes across reboots. Run [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) to re-derive it.
 
 **Why this model.** Scout needs tool calls, and of Foundry Local's 37 chat/multimodal models only **six** combine NPU placement with tool support — all Qwen2.5:
 
