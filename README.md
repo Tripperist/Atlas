@@ -123,7 +123,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | Device | Microsoft Surface Laptop 13.8in 8th Ed Snapdragon |
 | SoC | **Snapdragon X2 Elite**, SKU **X2E78100** @ 4.03 GHz, 12 cores / 12 logical |
 | NPU | Qualcomm Hexagon NPU — driver **30.0.228.10000** (2026-07-20) |
-| GPU | Qualcomm **Adreno X2-85** — driver **32.0.163.2** (2026-06-29) |
+| GPU | Qualcomm **Adreno X2-85** — driver **32.0.172.1** (2026-08-26). Was 32.0.163.2 on 2026-09-19; the update broke GenieX GGUF inference, see [§12](#12-backlog) |
 | Memory | **63.5 GiB (64 GB)** LPDDR5x |
 | Storage | C: 850 GiB (432 GiB free), D: 102 GiB (87 GiB free) |
 | OS | Windows 11 Pro Insider Preview 10.0.28120, ARM64 |
@@ -1503,6 +1503,23 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 | Stale GenieX build | `geniex update` → **v0.8.0** | Still crashes, and `geniex version` now crashes too |
 | Corrupted installation | Full uninstall via `unins001.exe`, then a hash-verified reinstall of v0.8.0 | Still crashes — **not the install** |
 
+| Foundry Local interference | Uninstalled Foundry Local entirely, re-tested | Still crashes — **not Foundry Local** |
+
+**Root cause: the Adreno GPU driver was updated.** It is the only component that changed between the last working llama.cpp measurements and now:
+
+| Component | Recorded 2026-09-19 | Now | |
+| --- | --- | --- | --- |
+| Hexagon NPU driver | 30.0.228.10000 (2026-07-20) | 30.0.228.10000 | unchanged |
+| **Adreno GPU driver** | **32.0.163.2** (2026-06-29) | **32.0.172.1** (2026-08-26) | **changed** |
+| Windows build | 10.0.28120 | 10.0.28120 | unchanged |
+| GenieX | v0.7.0 | v0.8.0 | changed, but crash predates it |
+
+The llama.cpp plugin ships `ggml-opencl.dll` — at 3 MB its largest library — and OpenCL on Snapdragon is serviced by the Adreno driver. If the plugin initialises its OpenCL backend during load, regardless of the selected compute unit, an ABI change in that driver would take the whole plugin down for every `--compute` value. That matches every observation: all three units crash, QAIRT is untouched because it does not use ggml, and the fault survives both a GenieX upgrade and a clean reinstall because the driver is external to GenieX.
+
+It also explains why `geniex version` crashes: it reports the llama.cpp runtime hash, which requires loading the same plugin.
+
+> Worth noting for §1.3: this is a concrete case of a driver update silently breaking a working runtime. Record driver versions alongside measurements, and re-check them before trusting that a reproduction failure is your own fault.
+
 **Debug output** stops immediately after the plugin sets its library path:
 
 ```
@@ -1511,9 +1528,6 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 loading model...        <- crash here
 ```
 
-**Likely cause.** Everything inside GenieX has now been eliminated: the fault survives a version upgrade *and* a complete uninstall/reinstall from a hash-verified installer, with the model cache untouched. So the trigger is outside GenieX. The machine rebooted and Foundry Local was installed between the last working llama.cpp measurements and now, and Foundry Local ships its own QNN and WebGPU execution-provider binaries.
-
-One detail narrows it further: `--compute cpu` crashes too, which should not touch the DSP at all. The plugin loads `ggml-hexagon.dll` and sets `ADSP_LIBRARY_PATH` during initialisation regardless of the selected compute unit, so a failure initialising the Hexagon backend would take the whole plugin down whichever unit you ask for. That is consistent with a change in the DSP driver or runtime rather than in llama.cpp.
 
 **Why it matters.** It blocks every llama.cpp measurement in [§9](#9-benchmarking) — the `--compute` comparison, the speculative-decoding numbers in [§6.4](#64-what-we-could-and-could-not-verify), and the GPU adapter LUID, which [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) can only derive from a working GGUF. Nothing already recorded is invalidated, but none of it can currently be reproduced.
 
