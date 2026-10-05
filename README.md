@@ -123,7 +123,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | Device | Microsoft Surface Laptop 13.8in 8th Ed Snapdragon |
 | SoC | **Snapdragon X2 Elite**, SKU **X2E78100** @ 4.03 GHz, 12 cores / 12 logical |
 | NPU | Qualcomm Hexagon NPU — driver **30.0.228.10000** (2026-07-20) |
-| GPU | Qualcomm **Adreno X2-85** — driver **32.0.172.1** (2026-08-26). Was 32.0.163.2 on 2026-09-19; the update broke GenieX GGUF inference, see [§12](#12-backlog) |
+| GPU | Qualcomm **Adreno X2-85** — driver **32.0.172.1** (2026-08-26). Was 32.0.163.2 on 2026-09-19; this update is the leading suspect for the GenieX GGUF crash, see [§12](#12-backlog) |
 | Memory | **63.5 GiB (64 GB)** LPDDR5x |
 | Storage | C: 850 GiB (432 GiB free), D: 102 GiB (87 GiB free) |
 | OS | Windows 11 Pro Insider Preview 10.0.28120, ARM64 |
@@ -1528,20 +1528,41 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 
 | Foundry Local interference | Uninstalled Foundry Local entirely, re-tested | Still crashes — **not Foundry Local** |
 
-**Root cause: the Adreno GPU driver was updated.** It is the only component that changed between the last working llama.cpp measurements and now:
+**Leading hypothesis: the Adreno GPU driver update.** This is *not* proven — it is the best explanation consistent with the evidence, and the decisive test has not been run. Treat it accordingly.
+
+**What changed.** Comparing every component recorded in §1.4 against the machine today:
 
 | Component | Recorded 2026-09-19 | Now | |
 | --- | --- | --- | --- |
 | Hexagon NPU driver | 30.0.228.10000 (2026-07-20) | 30.0.228.10000 | unchanged |
 | **Adreno GPU driver** | **32.0.163.2** (2026-06-29) | **32.0.172.1** (2026-08-26) | **changed** |
 | Windows build | 10.0.28120 | 10.0.28120 | unchanged |
-| GenieX | v0.7.0 | v0.8.0 | changed, but crash predates it |
+| GenieX | v0.7.0 | v0.8.0 | changed, but the crash predates it |
 
-The llama.cpp plugin ships `ggml-opencl.dll` — at 3 MB its largest library — and OpenCL on Snapdragon is serviced by the Adreno driver. If the plugin initialises its OpenCL backend during load, regardless of the selected compute unit, an ABI change in that driver would take the whole plugin down for every `--compute` value. That matches every observation: all three units crash, QAIRT is untouched because it does not use ggml, and the fault survives both a GenieX upgrade and a clean reinstall because the driver is external to GenieX.
+The Adreno driver is the only identified change.
 
-It also explains why `geniex version` crashes: it reports the llama.cpp runtime hash, which requires loading the same plugin.
+**Why it is a plausible mechanism.** The llama.cpp plugin requires `ggml-opencl.dll` — confirmed by renaming it aside, which converts the hard crash into a clean `exit=1` *"Ensure all runtime dependencies are correct"* error. OpenCL on Snapdragon is serviced by the Adreno driver. If the plugin initialises its OpenCL backend during load, regardless of the selected compute unit, an ABI change in that driver would take the whole plugin down for every `--compute` value.
 
-> Worth noting for §1.3: this is a concrete case of a driver update silently breaking a working runtime. Record driver versions alongside measurements, and re-check them before trusting that a reproduction failure is your own fault.
+That is consistent with every observation: all three compute units crash, QAIRT is untouched because it does not use ggml, the fault survives both a GenieX upgrade and a hash-verified clean reinstall because the driver is external to GenieX, and `geniex version` crashes too because it reports the llama.cpp runtime hash and must load the same plugin.
+
+**What is missing, and matters.** None of this localises the fault:
+
+- No stack trace and **no faulting module**. `0xC0000409` is `__fastfail`, which bypasses Windows Error Reporting — there is no Application-log event for `geniex.exe`.
+- Renaming `ggml-opencl.dll` aside proves the plugin *needs* it, not that the crash occurs *inside* it.
+- **The driver has not been rolled back**, which is the test that would settle it. `pnputil /enum-drivers` shows only one Qualcomm display package staged (`32.0.172.1`, `qcdx8480.inf`), so 32.0.163.2 would have to be sourced from Microsoft Update or Qualcomm first.
+
+So the honest position is: everything inside GenieX is eliminated, the trigger is external, and a driver ABI change is the most plausible external cause — but an unidentified Windows-side change remains possible.
+
+**Reproduce it:**
+
+```bash
+geniex pull unsloth/Qwen3-0.6B-GGUF:Q4_0 --model-hub hf
+geniex infer unsloth/Qwen3-0.6B-GGUF:Q4_0 -p "Say hi." --max-tokens 16 --think=false
+```
+
+It prints `loading model...` and dies with `0xC0000409` — no message, no stack. The same command against `qualcomm/Qwen3-4B` returns ~35 tok/s and exit 0.
+
+> Worth noting for §1.3 regardless of the eventual cause: a component outside the runtime changed and silently broke it. Record driver versions alongside measurements, and re-check them before assuming a failed reproduction is your own error.
 
 **Debug output** stops immediately after the plugin sets its library path:
 
