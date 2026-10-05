@@ -29,6 +29,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | §2 status table | Yes, read-only |
 | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §7 quick CPU/GPU/NPU check | Yes; runs inference |
 | [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | §9 full benchmark + CPU sampling → CSV | Yes; runs inference |
+| [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | §7 re-derive NPU/GPU adapter LUIDs | Yes; runs inference |
 | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | §5 QNN provider + model format | Yes, read-only |
 | [`src/setup/model_format.py`](src/setup/model_format.py) | §5 classify a model directory | Yes, read-only |
 | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
@@ -1186,10 +1187,19 @@ On this machine the adapters resolve as:
 
 | Adapter LUID | Engine type | Device |
 | --- | --- | --- |
-| `0x00013d0d` | `compute` | Hexagon NPU |
-| `0x000133c8` | `3d` | Adreno X2-85 GPU |
+| `0x0001501b` | `compute` | Hexagon NPU |
+| *(varies)* | `3d` | Adreno X2-85 GPU |
 
-> **These LUIDs are not stable.** A later session on the same machine saw the compute adapter appear as `0x000152a6` instead. Adapter LUIDs are assigned per boot and change on reboot or driver re-enumeration, so **never hardcode them**. `Invoke-Benchmark.ps1` avoids the problem by self-calibrating — it takes whichever adapter is busiest during the `--compute npu` runs as the NPU. Treat the values in this table as an example of the shape, not as constants.
+> **These LUIDs are not stable — do not hardcode them.** The NPU has appeared as `0x00013d0d`, then `0x000152a6`, then `0x0001501b` on this same machine. Adapter LUIDs are assigned per boot and move on reboot or driver re-enumeration, so a recorded value silently reads **zero** later rather than erroring.
+>
+> Re-derive the mapping instead:
+>
+> ```bash
+> .\Scripts\Get-AcceleratorLuid.ps1            # separates NPU / GPU / CPU, needs working GGUF
+> .\Scripts\Get-AcceleratorLuid.ps1 -UseQairt  # NPU only, works when GGUF is broken
+> ```
+>
+> `Invoke-Benchmark.ps1` already self-calibrates for the same reason. The value above was measured on 2026-10-05 and is an example, not a constant.
 
 `Invoke-Benchmark.ps1` does not hardcode these — it self-calibrates by taking whichever adapter is busiest during the `--compute npu` runs as the NPU, and likewise for GPU.
 
@@ -1402,7 +1412,8 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | Utilization reads over 100 % | Normal for an adapter aggregating sub-engines; clamp to 100 |
 | `EPContext node ... is not compatible` | QNN is not attached to the session. Use `set_provider_selection_policy(PREFER_NPU)`, or `Config.append_provider` for GenAI. Rarely a chipset issue |
 | `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)), fixed in **0.17.0**. Upgrade to `>=0.17.0`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
-| Accelerator counter reads 0 at a known LUID | LUIDs change across reboots. Re-identify the adapter rather than reusing a recorded value |
+| Accelerator counter reads 0 at a known LUID | LUIDs change across reboots. Re-run [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) rather than reusing a recorded value |
+| `geniex infer` exits `-1073740791` instantly | `0xC0000409`, a fail-fast crash. Currently affects **all GGUF models** on this machine while QAIRT bundles still run — see [§12](#12-backlog) |
 | `provider_options` looks empty | On pipeline models the QNN options live inside each stage, not on the top-level decoder |
 | `huggingface-cli` not found | Superseded by `hf` in `huggingface_hub` 1.x |
 | `pip install` finds no ARM64 wheel | Check Python minor version and ABI. Use `uvx` for x86-constrained tooling; do not silently switch native benchmarks to emulation |
@@ -1482,6 +1493,7 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 | Item | Note |
 | --- | --- |
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
+| **GenieX crashes on every GGUF model** | `geniex infer` fail-fasts with `0xC0000409` in ~0.2 s on all four cached GGUFs, while `qualcomm/Qwen3-4B:W4A16` (QAIRT) still runs at ~32 tok/s. GenieX is unchanged (v0.7.0, llama.cpp hash `4ff829e`), so something in the environment shifted — the machine rebooted and Foundry Local was installed since these last worked. **Blocks every llama.cpp measurement in §9**, including the `--compute` comparison and the GPU LUID. Try re-pulling one GGUF to separate cache corruption from an environment change |
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
