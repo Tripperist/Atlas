@@ -131,7 +131,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | GenieX chipset detection | `Snapdragon X2 Elite CRD` |
 | AI Hub device target | `Snapdragon X2 Elite CRD` — **HTP version 81**, SoC model 88 |
 | Python | 3.14.7, ARM64, 64-bit (`.venv`) |
-| GenieX CLI | v0.7.0 — QAIRT runtime 2.45, llama.cpp hash `4ff829e` |
+| GenieX CLI | **v0.8.0** (was v0.7.0 — QAIRT 2.45, llama.cpp `4ff829e`). `geniex version` now crashes; `config get chipset` and `list` still work |
 | onnxruntime | 1.30.0 |
 | onnxruntime-genai | 0.16.0 |
 | onnxruntime-qnn | provides `onnxruntime_providers_qnn.dll` |
@@ -1488,12 +1488,40 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 
 **If it fails**, fall back to `qwen2.5-1.5b` to separate a size problem from a tool-calling problem, and compare against the same request on the GPU variant.
 
+### GenieX llama.cpp plugin crashes on every GGUF
+
+**Symptom.** `geniex infer` fail-fasts with `0xC0000409` (`STATUS_STACK_BUFFER_OVERRUN`) in ~0.2 s on **every** GGUF model, for **every** `--compute` value. The QAIRT path is unaffected and still runs `qualcomm/Qwen3-4B:W4A16` at ~30–33 tok/s.
+
+**What has been ruled out:**
+
+| Hypothesis | Test | Result |
+| --- | --- | --- |
+| Corrupt model cache | Removed and re-pulled `unsloth/Qwen3-0.6B-GGUF` | Still crashes — **not the cache** |
+| NPU-specific path | Ran `--compute cpu`, `gpu`, `npu` | All three crash — the whole plugin, not the HTP path |
+| Conflicting DLL on `PATH` | Searched `PATH` for `libomp140`, `ggml*`, `llama*` | No conflicts found |
+| Missing plugin files | Listed the `llama_cpp` plugin directory | All DLLs and `libggml-htp-v81.so` present |
+| Stale GenieX build | `geniex update` → **v0.8.0** | Still crashes, and `geniex version` now crashes too |
+
+**Debug output** stops immediately after the plugin sets its library path:
+
+```
+[plugins/llama_cpp/src/plugin.cpp:91:LlamaPlugin] Setting ADSP_LIBRARY_PATH to
+  ...\GenieX CLI\llama_cpp
+loading model...        <- crash here
+```
+
+**Likely cause.** Something in the environment changed between the working measurements and now: the machine rebooted and Foundry Local was installed, which brings its own QNN and WebGPU execution-provider binaries. GenieX's own files were intact and the fault survived a version upgrade, which points away from GenieX itself.
+
+**Why it matters.** It blocks every llama.cpp measurement in [§9](#9-benchmarking) — the `--compute` comparison, the speculative-decoding numbers in [§6.4](#64-what-we-could-and-could-not-verify), and the GPU adapter LUID, which [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) can only derive from a working GGUF. Nothing already recorded is invalidated, but none of it can currently be reproduced.
+
+**Next steps worth trying:** a clean uninstall and reinstall via `unins001.exe`; testing on a machine without Foundry Local; or reporting upstream at [qualcomm/GenieX](https://github.com/qualcomm/GenieX) with the `--log debug` trace above.
+
 ### Other open threads
 
 | Item | Note |
 | --- | --- |
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
-| **GenieX crashes on every GGUF model** | `geniex infer` fail-fasts with `0xC0000409` in ~0.2 s on all four cached GGUFs, while `qualcomm/Qwen3-4B:W4A16` (QAIRT) still runs at ~32 tok/s. GenieX is unchanged (v0.7.0, llama.cpp hash `4ff829e`), so something in the environment shifted — the machine rebooted and Foundry Local was installed since these last worked. **Blocks every llama.cpp measurement in §9**, including the `--compute` comparison and the GPU LUID. Try re-pulling one GGUF to separate cache corruption from an environment change |
+| **GenieX crashes on every GGUF model** | See the dedicated entry above |
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
