@@ -50,11 +50,10 @@ def _explain(exc: Exception) -> None:
     if "GroupQueryAttention" in msg or "present_keys" in msg:
         print(
             "\n[DIAG] KV-cache shape mismatch in a CPU-executed attention node.\n"
-            "       On this stack that is onnxruntime-genai 0.16.x: it regresses\n"
-            "       EPContext/QNN pipeline models. Measured working on 0.13.2,\n"
-            "       0.14.1 and 0.15.2, so pin one of those:\n"
-            "         uv add 'onnxruntime-genai>=0.13.2,<0.16'\n"
-            "       The ORT-Nightly build fails too, so this is unfixed on main:\n"
+            "       On this stack that is the onnxruntime-genai 0.16.x regression\n"
+            "       in EPContext/QNN pipeline models. Fixed in 0.17.0:\n"
+            "         uv add 'onnxruntime-genai>=0.17.0'\n"
+            "       0.13.2-0.15.2 also work. Upstream issue:\n"
             "         https://github.com/microsoft/onnxruntime-genai/issues/2603\n"
             "       Two other causes to rule out: QNN not actually attached to\n"
             "       the config (register_execution_provider_library alone is not\n"
@@ -110,8 +109,9 @@ def main() -> int:
         print(
             "[WARN] 0.16.x regresses EPContext/QNN models: the prompt pass fails\n"
             "       with a GroupQueryAttention KV-cache shape mismatch. Verified\n"
-            "       working on 0.13.2, 0.14.1 and 0.15.2; the ORT-Nightly build\n"
-            "       fails too, so this is unfixed on main. Upstream issue:\n"
+            "       working on 0.13.2-0.15.2 and fixed in 0.17.0, so upgrade:\n"
+            "         uv add 'onnxruntime-genai>=0.17.0'\n"
+            "       Upstream issue:\n"
             "       https://github.com/microsoft/onnxruntime-genai/issues/2603"
         )
 

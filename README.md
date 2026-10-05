@@ -201,7 +201,7 @@ Prints this table for your machine and exits non-zero if anything fails. Add `-S
 | `geniex serve` + OpenAI-compatible client | ⬜ Untested | — |
 | **ONNX Runtime GenAI generating on the NPU** | ✅ **Verified** | Phi-4-mini-reasoning, **17.1 tok/s**, NPU peak **97.7 %** |
 | `onnxruntime-genai` 0.16.x with EPContext models | ❌ **Regressed** | Fails on the prompt pass; 0.13.2–0.15.2 work ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
-| **`onnxruntime-genai` 0.17.0** | ✅ **Fixed** | Repro passes; 4032-token run completes with the accelerator at 99.7 % |
+| **`onnxruntime-genai` 0.17.0 / 0.17.1** | ✅ **Fixed** | Repro passes on both; 4032-token run completes with the accelerator at 99.7 %. Project pins `>=0.17.0` |
 | **Compiling an EPContext model for this chipset** | ✅ **Verified** | SqueezeNet w8a8 → 1 EPContext node, NPU-only, **0.46 ms** |
 | X Elite context binaries load on X2 Elite | ✅ Verified | All 4 Phi-4 parts load; `soc_model` was a red herring |
 | **Phi-4 on the NPU via GenieX GGUF** | ✅ **Verified** | Phi-4-mini-reasoning Q4_0, **24.1 tok/s** |
@@ -548,7 +548,7 @@ hf download microsoft/Phi-4-mini-reasoning-onnx --include "npu/*" --local-dir mo
 **Running it.** Two requirements beyond downloading the model:
 
 ```powershell
-uv add "onnxruntime-genai>=0.13.2,<0.16"
+uv add "onnxruntime-genai>=0.17.0"
 .\.venv\Scripts\python.exe src\setup\run_ort_genai.py --model-dir models\Phi-4-mini-reasoning-onnx\npu\qnn-int4
 ```
 
@@ -578,6 +578,7 @@ Measured: loads in 5.5 s, **17.1 tok/s**, 389 tokens, **NPU peak 97.7 %** (GPU 5
 | **0.16.0** | ❌ fails on the prompt pass |
 | **0.16.0.dev1001407373** (nightly) | ❌ failed — was not fixed on main at the time |
 | **0.17.0** | ✅ **fixed** — 4032 tokens generated, accelerator at 99.7 % |
+| **0.17.1** | ✅ fixed — repro passes; this is what the project now pins |
 
 On 0.16.0 the failure looks like this, and is easy to misread as a model or hardware problem:
 
@@ -605,7 +606,7 @@ A longer unconstrained run through [`run_ort_genai.py`](src/setup/run_ort_genai.
 
 > Two cautions on that run. Its **9.9 tok/s is not comparable** to the 17.1 tok/s measured on 0.15.2 — it generated 4032 tokens over 412 s against 389 tokens, and [§9.3](#93-what-these-numbers-mean) shows throughput on this machine degrading markedly as it warms. A matched comparison is still owed. And the adapter LUID had **changed since it was last recorded** (see [§7](#7-proving-which-compute-unit-actually-runs)), so the 99.7 % figure is strong evidence rather than a confirmed NPU reading.
 
-The project is still pinned to `>=0.13.2,<0.16` in `pyproject.toml`. That pin can now be lifted to allow 0.17; re-run the repro after changing it.
+**The pin has been lifted.** `pyproject.toml` now requires `onnxruntime-genai>=0.17.0`, which resolves to 0.17.1, and the repro passes on it. The floor is 0.17 rather than 0.13 because 0.16.x is the broken range and there is no reason to allow it back in. Re-run the repro after any future upgrade — this regression shipped in a minor release and was closed before the fix reached the release branch.
 
 `run_ort_genai.py` warns when it detects 0.16.x. Note that `og.is_qnn_available()` returned `True` on 0.12.0 even though that build has no QNN support — do not rely on it alone.
 
@@ -831,7 +832,7 @@ The six NPU models with tool calling are the **Qwen2.5 family**: `qwen2.5-0.5b`,
 | C# support | **First-party SDK** | HTTP only | NuGet, version-sensitive |
 | Model sourcing | Curated catalogue (~50) | Any GGUF on HF + AI Hub | Hand-assembled |
 | EP selection | Automatic | `--compute` flag | Manual, easy to get wrong |
-| Version pinning | Handled | n/a | You must pin `<0.16` |
+| Version pinning | Handled | n/a | Avoid 0.16.x; pin `>=0.17.0` |
 | Speed (Phi-3.5 NPU) | 26.5 tok/s | 34.2 published (QAIRT) | — |
 | Licence | Proprietary | Proprietary | MIT |
 
@@ -1400,7 +1401,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | Accelerator utilization reads 0 | Sampling missed the window. Each `Get-Counter` call costs ~1 s — use one combined call and a longer generation |
 | Utilization reads over 100 % | Normal for an adapter aggregating sub-engines; clamp to 100 |
 | `EPContext node ... is not compatible` | QNN is not attached to the session. Use `set_provider_selection_policy(PREFER_NPU)`, or `Config.append_provider` for GenAI. Rarely a chipset issue |
-| `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)), fixed in **0.17.0**. Upgrade, or pin `>=0.13.2,<0.16`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
+| `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)), fixed in **0.17.0**. Upgrade to `>=0.17.0`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
 | Accelerator counter reads 0 at a known LUID | LUIDs change across reboots. Re-identify the adapter rather than reusing a recorded value |
 | `provider_options` looks empty | On pipeline models the QNN options live inside each stage, not on the top-level decoder |
 | `huggingface-cli` not found | Superseded by `hf` in `huggingface_hub` 1.x |
@@ -1430,7 +1431,7 @@ Those are **different quantizations, different runtimes, different token counts,
 
 **Why it matters.** Scout needs a runtime decision, and the two paths trade off differently:
 
-- **ORT GenAI** — in-process control over the token loop, and the direct route to C# via `Microsoft.ML.OnnxRuntimeGenAI`. Costs a version pin (`>=0.13.2,<0.16`) and a narrow supply of compatible models.
+- **ORT GenAI** — in-process control over the token loop, and the direct route to C# via `Microsoft.ML.OnnxRuntimeGenAI`. Costs a version pin (`>=0.17.0`, avoiding the broken 0.16.x) and a narrow supply of compatible models.
 - **GenieX** — faster in the numbers so far, far easier model sourcing (any GGUF from Hugging Face), and an OpenAI-compatible server. Costs process isolation and an HTTP hop.
 
 If GenieX really is ~40 % faster, that likely outweighs in-process control and C# should talk to `geniex serve`. If the gap closes under fair conditions, ORT GenAI is the cleaner integration. Decide with numbers, not architecture preference.
@@ -1481,8 +1482,8 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 | Item | Note |
 | --- | --- |
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
-| Lift the `onnxruntime-genai` pin | `pyproject.toml` still says `>=0.13.2,<0.16`. 0.17.0 is verified working; raise it and re-run [`repro_genai_016_qnn.py`](src/setup/repro_genai_016_qnn.py) |
-| Re-measure throughput on 0.17.0 | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10x the tokens on a warmed machine. Needs a matched run before concluding anything about a performance change |
+| ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
+| Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
 | NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
 | `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |
