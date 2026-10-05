@@ -1501,6 +1501,7 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 | Conflicting DLL on `PATH` | Searched `PATH` for `libomp140`, `ggml*`, `llama*` | No conflicts found |
 | Missing plugin files | Listed the `llama_cpp` plugin directory | All DLLs and `libggml-htp-v81.so` present |
 | Stale GenieX build | `geniex update` → **v0.8.0** | Still crashes, and `geniex version` now crashes too |
+| Corrupted installation | Full uninstall via `unins001.exe`, then a hash-verified reinstall of v0.8.0 | Still crashes — **not the install** |
 
 **Debug output** stops immediately after the plugin sets its library path:
 
@@ -1510,11 +1511,13 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 loading model...        <- crash here
 ```
 
-**Likely cause.** Something in the environment changed between the working measurements and now: the machine rebooted and Foundry Local was installed, which brings its own QNN and WebGPU execution-provider binaries. GenieX's own files were intact and the fault survived a version upgrade, which points away from GenieX itself.
+**Likely cause.** Everything inside GenieX has now been eliminated: the fault survives a version upgrade *and* a complete uninstall/reinstall from a hash-verified installer, with the model cache untouched. So the trigger is outside GenieX. The machine rebooted and Foundry Local was installed between the last working llama.cpp measurements and now, and Foundry Local ships its own QNN and WebGPU execution-provider binaries.
+
+One detail narrows it further:  crashes too, which should not touch the DSP at all. The plugin loads  and sets  during initialisation regardless of the selected compute unit, so a failure initialising the Hexagon backend would take the whole plugin down whichever unit you ask for. That is consistent with a change in the DSP driver or runtime rather than in llama.cpp.
 
 **Why it matters.** It blocks every llama.cpp measurement in [§9](#9-benchmarking) — the `--compute` comparison, the speculative-decoding numbers in [§6.4](#64-what-we-could-and-could-not-verify), and the GPU adapter LUID, which [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) can only derive from a working GGUF. Nothing already recorded is invalidated, but none of it can currently be reproduced.
 
-**Next steps worth trying:** a clean uninstall and reinstall via `unins001.exe`; testing on a machine without Foundry Local; or reporting upstream at [qualcomm/GenieX](https://github.com/qualcomm/GenieX) with the `--log debug` trace above.
+**Next steps.** Reinstalling is done and did not help, so the remaining options are to test on a machine without Foundry Local, to try uninstalling Foundry Local here and re-testing, or to report it upstream at [qualcomm/GenieX](https://github.com/qualcomm/GenieX) with the `--log debug` trace above and the eliminated hypotheses.
 
 ### Other open threads
 
