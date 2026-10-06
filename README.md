@@ -628,7 +628,7 @@ Okay, let's see. I need to multiply 17 by 23. Hmm,
 
 A longer unconstrained run through [`run_ort_genai.py`](src/setup/run_ort_genai.py) also completed — **4032 tokens**, model load 5.5 s, time to first token 0.00 s, with a compute-engine adapter peaking at **99.7 %** and CPU averaging 63.7 %. The work is still going to the accelerator; the fix did not quietly move it to CPU.
 
-> Two cautions on that run. Its **9.9 tok/s is not comparable** to the 17.1 tok/s measured on 0.15.2 — it generated 4032 tokens over 412 s against 389 tokens, and [§9.3](#93-what-these-numbers-mean) shows throughput on this machine degrading markedly as it warms. A matched comparison is still owed. And the adapter LUID had **changed since it was last recorded** (see [§7](#7-proving-which-compute-unit-actually-runs)), so the 99.7 % figure is strong evidence rather than a confirmed NPU reading.
+> Two cautions on that run. Its **9.9 tok/s is not comparable** to the 17.1 tok/s measured on 0.15.2 — it generated 4032 tokens over 412 s against 389 tokens, and [§9.4](#94-what-these-numbers-mean) shows throughput on this machine degrading markedly as it warms. A matched comparison is still owed. And the adapter LUID had **changed since it was last recorded** (see [§7](#7-proving-which-compute-unit-actually-runs)), so the 99.7 % figure is strong evidence rather than a confirmed NPU reading.
 
 **The pin has been lifted.** `pyproject.toml` now requires `onnxruntime-genai>=0.17.0`, which resolves to 0.17.1, and the repro passes on it. The floor is 0.17 rather than 0.13 because 0.16.x is the broken range and there is no reason to allow it back in. Re-run the repro after any future upgrade — this regression shipped in a minor release and was closed before the fix reached the release branch.
 
@@ -1032,7 +1032,7 @@ A **1.4 % spread**: `--compute` does nothing. The CLI help explains why — the 
 
 A **28 % spread**: on llama.cpp, `--compute` genuinely works.
 
-> **This short run is shown because it is misleading.** At only 64 tokens on a cold machine the CPU appears to win. Extending to 400 tokens on a warmed-up machine reverses it — the CPU throttles ~19 % while the NPU holds steady, and the NPU finishes ahead at both model sizes. See [§9.3](#93-what-these-numbers-mean). Compare generation rate rather than wall-clock, and generate enough tokens to reach steady state before drawing a conclusion.
+> **This short run is shown because it is misleading.** At only 64 tokens on a cold machine the CPU appears to win. Extending to 400 tokens on a warmed-up machine reverses it — the CPU throttles ~19 % while the NPU holds steady, and the NPU finishes ahead at both model sizes. See [§9.4](#94-what-these-numbers-mean). Compare generation rate rather than wall-clock, and generate enough tokens to reach steady state before drawing a conclusion.
 
 Note that even here the NPU already wins **first-token latency** (0.00 s vs 0.10 s): prefill is batched, which suits the NPU, while the short decode loop favoured the then-cold CPU.
 
