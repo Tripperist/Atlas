@@ -133,7 +133,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | GenieX chipset detection | `Snapdragon X2 Elite CRD` |
 | AI Hub device target | `Snapdragon X2 Elite CRD` — **HTP version 81**, SoC model 88 |
 | Python | 3.14.7, ARM64, 64-bit (`.venv`) |
-| GenieX CLI | **v0.7.0** — QAIRT 2.45, llama.cpp `4ff829e`. v0.8.0 is fine for server use; it only penalises one-shot `geniex infer` on the llama.cpp path ([§9.2](#92-measured-results)) |
+| GenieX CLI | **v0.8.0** — QAIRT 2.45, llama.cpp `9425611`. Upgraded from v0.7.0 on 2026-10-05; the only behavioural difference is a one-time per-process init cost on one-shot `geniex infer` over the llama.cpp path ([§9.2](#92-measured-results)), which does not affect `geniex serve` or QAIRT |
 | onnxruntime | 1.30.0 |
 | onnxruntime-genai | 0.16.0 |
 | onnxruntime-qnn | provides `onnxruntime_providers_qnn.dll` |
@@ -205,7 +205,7 @@ PASS   Python venv present              3.14.7 ARM64
 PASS   Python is ARM64                  3.14.7 ARM64
 PASS   QNN execution provider registers onnxruntime 1.30.0
 PASS   onnxruntime-genai sees QNN
-PASS   GenieX CLI installed             v0.7.0
+PASS   GenieX CLI installed             v0.8.0
 PASS   GenieX detects chipset           Snapdragon X2 Elite CRD
 PASS   At least one model cached        see: geniex list
 PASS   qai-hub-models installed         native ARM64
@@ -501,12 +501,27 @@ drivers, OS build, GenieX version, llama.cpp revision and ONNX Runtime versions
 it ran under:
 
 ```
-stack 09770a092b9b  <-- current stack
+stack 09770a092b9b
   adreno 32.0.172.2 | npu 30.0.228.10000 | os 28120 | geniex v0.7.0 | llama.cpp 4ff829e
 
 when             model                        compute tok/s firstTok source
-2026-10-05 20:48 unsloth/Qwen3-1.7B-GGUF:Q4_0 npu     65.2  0.00     Update-Workspace.ps1
+2026-10-05 20:48 unsloth/Qwen3-1.7B-GGUF:Q4_0 npu     65.20    0.00 Update-Workspace.ps1
+
+stack 44a1e6e37bc4  <-- current stack
+  adreno 32.0.172.2 | npu 30.0.228.10000 | os 28120 | geniex v0.8.0 | llama.cpp 9425611
+
+when             model                        compute tok/s firstTok source
+2026-10-05 20:59 unsloth/Qwen3-1.7B-GGUF:Q4_0 npu     62.40    1.20 Update-Workspace.ps1
 ```
+
+That is real output from the v0.7.0 to v0.8.0 upgrade, and it reproduced the
+[§9.2](#92-measured-results) finding without being asked to look for it: throughput moved 65.2 to 62.4
+tok/s, inside run-to-run noise, while first-token went 0.00 to 1.20 s. A
+*latency* change with *throughput* held constant is the signature of an
+initialisation cost rather than a slower runtime. Had the two numbers been
+averaged into one "it got slower" impression, that distinction would have been
+lost -- which is roughly how the original v0.8.0 investigation went wrong before
+being corrected.
 
 The hash is computed from an explicit field list, not from the file, so it
 survives a JSON round-trip and adding a descriptive field later does not

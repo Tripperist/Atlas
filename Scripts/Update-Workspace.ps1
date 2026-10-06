@@ -352,8 +352,16 @@ if (Test-Path $venvPy) {
     $outdated = @($raw -split "`r?`n" | Where-Object {
         $_.Trim() -and $_ -notmatch '^[\s-]+$' -and $_ -notmatch '^atlas\s' -and $_ -notmatch '^Using Python'
     })
-    if ($outdated.Count -gt 1) { $outdated | ForEach-Object { Write-Host ('    ' + $_.TrimEnd()) } }
-    else                       { Write-Host '    all current' }
+    if ($outdated.Count -gt 1) {
+        $outdated | ForEach-Object { Write-Host ('    ' + $_.TrimEnd()) }
+        # uv compares against the latest on PyPI regardless of constraints, so
+        # some of these cannot move: protobuf stays on 6.x because onnx pins it.
+        # Without this note a run after -Apply looks like the upgrade failed.
+        Write-Host '    Some of these are held back by dependency constraints and will' -ForegroundColor DarkGray
+        Write-Host '    remain listed after -Apply. That is uv reporting PyPI latest,' -ForegroundColor DarkGray
+        Write-Host '    not a failed upgrade.' -ForegroundColor DarkGray
+    }
+    else { Write-Host '    all current' }
 }
 
 # --------------------------------------------------------------------- apply
