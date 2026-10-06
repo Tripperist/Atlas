@@ -3,10 +3,10 @@
     Verify the Atlas toolchain and print a pass/fail status table.
 
 .DESCRIPTION
-    Implements the README section 2.1 live environment check. Read-only:
+    Implements the the README "Shared setup / Verify" step. Read-only:
     verifies that each layer is installed and functional.
 
-    It does NOT reproduce the section 2.2 findings ledger, which is larger on
+    It does NOT reproduce the full project findings, which are larger on
     purpose -- most of those rows are conclusions rather than probes, such as
     a negative result about silently ignored provider lists, or a measurement
     taken once under a recorded stack. Nothing here measures throughput or

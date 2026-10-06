@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     The Hexagon NPU is measured through the ordinary `GPU Engine` counter set
-    under its own adapter LUID (README section 7). Those LUIDs are **assigned
+    under its own adapter LUID (the README "Proving which compute unit ran" section). Those LUIDs are **assigned
     per boot** and move on reboot or driver re-enumeration, so a value recorded
     in a previous session will silently read zero later. Three different NPU
     LUIDs have been observed on this machine across reboots.
@@ -55,7 +55,7 @@ $report = [System.Collections.Generic.List[string]]::new()
 function Add-Line { param([string]$Text = '') $script:report.Add($Text) }
 
 if (-not (Get-Command geniex -ErrorAction SilentlyContinue)) {
-    Write-Error 'geniex not found on PATH. See README section 4.2.'
+    Write-Error 'geniex not found on PATH. See the README "GenieX / Install" section.'
     exit 1
 }
 

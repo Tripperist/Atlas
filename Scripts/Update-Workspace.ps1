@@ -3,7 +3,7 @@
     Report drift and available updates across the Atlas toolchain; optionally apply them.
 
 .DESCRIPTION
-    Automates README section 4.6. Reports by default and changes nothing --
+    Automates the README "Keeping the workspace current" section. Reports by default and changes nothing --
     pass -Apply to act. This matches Install-Prerequisites.ps1.
 
     Three classes of component are tracked, because the things that have
@@ -14,7 +14,7 @@
       Drivers and OS    detected ONLY -- never touched by this script
 
     That last class matters most. Adreno driver 32.0.172.1 broke GenieX GGUF
-    inference outright (section 12) and no package manager would have shown
+    inference outright (see docs/ARCHIVE.md) and no package manager would have shown
     it. So drift is measured against a recorded baseline rather than against
     "latest", and the question answered is "what changed since this last
     worked", which is the one that was hard to answer at the time.
@@ -222,7 +222,7 @@ function Get-LatestGeniexTag {
 
     The published .sha256 is always checked. "A corrupted installation" was
     one of the candidates eliminated by hand during the GGUF crash
-    investigation (section 12); verifying here rules it out by construction
+    investigation (see docs/ARCHIVE.md); verifying here rules it out by construction
     next time.
 #>
 function Install-Geniex {
@@ -506,7 +506,7 @@ if (-not $SkipVerify) {
                 -Model $model -Compute 'npu' -TokPerSec $tps -FirstTokenS $ftt -Tokens $tok | Out-Null
             Write-Host ("  recorded under stack {0}; see -History" -f (Get-AtlasShortId $current.id)) -ForegroundColor DarkGray
             Write-Host '  Smoke test only. geniex rounds first-token to 0.1s, so a warm' -ForegroundColor DarkGray
-            Write-Host '  short prompt reads 0.0s. For numbers comparable to section 9.2,' -ForegroundColor DarkGray
+            Write-Host '  short prompt reads 0.0s. For numbers comparable to docs/BENCHMARKS.md,' -ForegroundColor DarkGray
             Write-Host '  run .\Scripts\Invoke-Benchmark.ps1.' -ForegroundColor DarkGray
         }
         else {

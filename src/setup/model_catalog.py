@@ -3,7 +3,7 @@
 Qualcomm publishes measured numbers per model per device, so most questions
 about "how fast is X on my chip" need no benchmarking and no job submission.
 This collects them for the models relevant to a Scout-style travel assistant
-and writes JSON that README section 6 is built from. Use --markdown to render it.
+and writes JSON that docs/BENCHMARKS.md "Model catalogue" is built from. Use --markdown to render it.
 
     python src/setup/model_catalog.py --device "Snapdragon X2 Elite CRD"
     python src/setup/model_catalog.py --only llm --out catalog.json
@@ -212,7 +212,7 @@ def npu_total_latency(rows: list[dict]) -> float | None:
 
 
 def emit_markdown(data: dict) -> str:
-    """Render the collected data as the tables used in README section 6."""
+    """Render the collected data as the tables used in docs/BENCHMARKS.md "Model catalogue"."""
     device = data["device"]
     models = data["models"]
     out: list[str] = []

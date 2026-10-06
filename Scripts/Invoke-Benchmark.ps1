@@ -3,7 +3,7 @@
     Benchmark a model across compute units, sampling CPU, GPU and NPU utilization.
 
 .DESCRIPTION
-    Automates README section 9. Where Test-ComputeUnits.ps1 is a quick three-way
+    Automates docs/BENCHMARKS.md. Where Test-ComputeUnits.ps1 is a quick three-way
     sanity check, this produces a recorded result set: generation rate, first-token
     latency, startup cost, per-core CPU utilization and per-accelerator engine
     utilization sampled DURING each run, written to CSV.
@@ -64,7 +64,7 @@ $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 
 if (-not (Get-Command geniex -ErrorAction SilentlyContinue)) {
-    Write-Error 'geniex not found on PATH. See README section 4.2.'
+    Write-Error 'geniex not found on PATH. See the README "GenieX / Install" section.'
     exit 1
 }
 

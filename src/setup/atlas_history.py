@@ -1,6 +1,6 @@
 """Append benchmark results to the Atlas history from Python.
 
-The history (README section 4.6) stamps every measurement with a short hash of
+The history (the README "Keeping the workspace current" section) stamps every measurement with a short hash of
 the stack it ran under -- drivers, OS build, GenieX version, llama.cpp revision
 and ONNX Runtime versions -- so results taken under different stacks are never
 silently compared.

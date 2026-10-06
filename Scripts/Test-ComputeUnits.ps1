@@ -3,7 +3,7 @@
     Compare CPU / GPU / NPU inference on the same prompt to find what is real.
 
 .DESCRIPTION
-    Automates README section 7. This is the script that answers "is the NPU
+    Automates the README "Proving which compute unit ran" section. This is the script that answers "is the NPU
     actually doing anything?"
 
     The method is comparative, because no single run is self-evident. If
@@ -56,7 +56,7 @@ param(
 $ErrorActionPreference = 'Continue'
 
 if (-not (Get-Command geniex -ErrorAction SilentlyContinue)) {
-    Write-Error 'geniex not found on PATH. See README section 4.2.'
+    Write-Error 'geniex not found on PATH. See the README "GenieX / Install" section.'
     exit 1
 }
 

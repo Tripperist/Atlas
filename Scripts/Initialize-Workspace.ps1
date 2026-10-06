@@ -3,11 +3,11 @@
     Create the native ARM64 Python environment and sync dependencies.
 
 .DESCRIPTION
-    Automates README section 4.3. Creates .venv on the pinned Python version,
+    Automates the README "Python workspace" section. Creates .venv on the pinned Python version,
     syncs dependencies from pyproject.toml, and verifies the result is a
     genuine ARM64 interpreter.
 
-    Optionally sets the model/cache locations from section 4.5 so large
+    Optionally sets the model/cache locations from the README "Where models and data live" section so large
     downloads do not land on the system drive.
 
 .PARAMETER PythonVersion

@@ -201,7 +201,8 @@ def main() -> int:
     print(f"Tokens generated:    {tokens}")
     if elapsed > 0:
         print(f"Throughput:          {tokens / elapsed:.1f} tok/s")
-    print("\n[INFO] Throughput alone does not prove NPU execution. See README section 7.")
+    print("\n[INFO] Throughput alone does not prove NPU execution. "
+          "See 'Proving which compute unit ran' in the README.")
 
     del generator
     return 0

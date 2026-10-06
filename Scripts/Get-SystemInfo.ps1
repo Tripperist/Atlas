@@ -3,7 +3,7 @@
     Collect the Snapdragon hardware inventory Atlas depends on.
 
 .DESCRIPTION
-    Automates README section 1. Read-only: queries CIM/PnP and, when present,
+    Automates the README "Know your machine" section. Read-only: queries CIM/PnP and, when present,
     the GenieX and AI Hub CLIs. Installs and changes nothing.
 
     Captures the four facts everything downstream depends on:
@@ -107,7 +107,7 @@ if (Get-Command geniex -ErrorAction SilentlyContinue) {
     Write-Line "  Pass this exact string to 'qai-hub-models ... --device'."
 }
 else {
-    Write-Line '  geniex not on PATH - see README section 4.2.'
+    Write-Line '  geniex not on PATH - see the README "GenieX / Install" section.'
 }
 
 Write-Line ''

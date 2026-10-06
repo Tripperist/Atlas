@@ -4,7 +4,7 @@
     results in the Atlas benchmark history.
 
 .DESCRIPTION
-    Automates README section 9.3.
+    Automates docs/BENCHMARKS.md "Prefill vs decode".
 
     Invoke-Benchmark.ps1 drives `geniex infer` from a short prompt, where
     prefill is negligible and decode dominates. That understates the NPU
@@ -35,7 +35,7 @@
     which are NPU-targeted by construction.
 
 .PARAMETER Matrix
-    Run the full section 9.3 matrix instead of a single model, ignoring
+    Run the full prefill matrix instead of a single model, ignoring
     -Model, -Plugin and -Device.
 
 .PARAMETER PromptTokens
@@ -67,7 +67,7 @@ param(
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
 
-# The section 9.3 matrix: GenieX's two plugins on Qwen3-4B, plus
+# The prefill matrix from docs/BENCHMARKS.md: GenieX's two plugins on Qwen3-4B, plus
 # Phi-4-mini-reasoning, which is the one model that also exists as an ORT
 # GenAI bundle and so puts all three runtimes on common ground.
 $Section93Cells = @(

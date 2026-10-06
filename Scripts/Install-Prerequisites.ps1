@@ -3,7 +3,7 @@
     Report (and optionally install) the native ARM64 toolchain Atlas needs.
 
 .DESCRIPTION
-    Automates README section 4.1. Safe by default: with no switches it only
+    Automates the README "Native ARM64 toolchain" section. Safe by default: with no switches it only
     REPORTS what is present or missing and installs nothing.
 
     Pass -Install to actually run winget. Each package is installed with
@@ -11,7 +11,7 @@
     inference performance.
 
     GenieX is deliberately excluded -- it ships as an unsigned installer from
-    Qualcomm and is not in winget. See README section 4.2.
+    Qualcomm and is not in winget. See the README "GenieX / Install" section.
 
 .PARAMETER Install
     Actually install missing packages. Without this, the script only reports.
@@ -76,7 +76,7 @@ elseif (-not $Install) {
 }
 else {
     if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
-        Write-Error 'winget not available. Install packages manually - see README section 4.1.'
+        Write-Error 'winget not available. Install packages manually - see the README "Native ARM64 toolchain" section.'
         exit 1
     }
     foreach ($m in $missing) {
@@ -94,4 +94,4 @@ else {
 Write-Host ''
 Write-Host 'GenieX is not available via winget. Download the unsigned Windows' -ForegroundColor DarkGray
 Write-Host 'ARM64 installer from https://geniex.aihub.qualcomm.com/en/run/cli/install' -ForegroundColor DarkGray
-Write-Host 'SmartScreen will warn: More info > Run anyway. See README section 4.2.' -ForegroundColor DarkGray
+Write-Host 'SmartScreen will warn: More info > Run anyway. See the README "GenieX / Install" section.' -ForegroundColor DarkGray

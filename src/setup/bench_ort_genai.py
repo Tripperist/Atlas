@@ -1,6 +1,6 @@
 """Benchmark ONNX Runtime GenAI on the same axes as `geniex-bench`.
 
-README section 9.3 compares GenieX's QAIRT and llama.cpp plugins by prefill
+docs/BENCHMARKS.md "Prefill vs decode" compares GenieX's QAIRT and llama.cpp plugins by prefill
 throughput, decode throughput and time to first token. This puts the ORT GenAI
 path on those same axes so the three runtimes are directly comparable.
 
@@ -13,7 +13,7 @@ Mirrors geniex-bench's method deliberately:
     python src/setup/bench_ort_genai.py --model-dir models/Phi-4-mini-reasoning-onnx/npu/qnn-int4
 
 Requires onnxruntime-genai >=0.13.2 (0.16.x is broken for EPContext models;
-see README section 5 Method D).
+see the README "ONNX Runtime GenAI" section).
 """
 
 from __future__ import annotations

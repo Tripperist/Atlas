@@ -4,7 +4,7 @@
     stays on the NPU while doing so.
 
 .DESCRIPTION
-    Automates the README section 12 backlog item.
+    Automates the the README "Open questions" item on tool calling.
 
     Scout needs tool calls, and "Tools: yes" in the catalogue is not evidence
     of the two things that must both hold:
@@ -29,7 +29,7 @@
       roughly a tool call's length, so only the tools array differs.
 
     `\GPU Engine(*engtype_compute)\Utilization Percentage` is the NPU counter
-    (section 7). The wildcard is re-expanded every sample because those
+    (see the README, "Proving which compute unit ran"). The wildcard is re-expanded every sample because those
     instances are per-process, and no adapter LUID is hardcoded because LUIDs
     change across reboots.
 
@@ -54,7 +54,7 @@ $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
 
 if (-not (Get-Command foundry -ErrorAction SilentlyContinue)) {
-    Write-Host 'foundry not found on PATH. See README section 5.6.' -ForegroundColor Red
+    Write-Host 'foundry not found on PATH. See the README "Foundry Local" section.' -ForegroundColor Red
     exit 1
 }
 

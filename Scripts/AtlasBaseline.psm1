@@ -5,8 +5,8 @@
 .DESCRIPTION
     A benchmark number is meaningless without the stack that produced it. This
     repository learned that twice: an Adreno patch-level driver bump turned a
-    hard crash into 131 tok/s (README section 12), and GenieX v0.8.0 shifted
-    one-shot first-token latency without touching throughput (section 9.2).
+    hard crash into 131 tok/s (the README "Know your machine" section2), and GenieX v0.8.0 shifted
+    one-shot first-token latency without touching throughput (see docs/BENCHMARKS.md).
     Both times the question asked afterwards was "what was installed when that
     number was measured", and the answer had to be reconstructed by hand.
 
@@ -83,7 +83,7 @@ function Get-AtlasState {
     }
     $state.packages = $packages
 
-    # Foundry Local is Method E (README section 5.6). It is deliberately NOT
+    # Foundry Local is Method E (the README "Foundry Local" section). It is deliberately NOT
     # part of the stack identity below: it is a separate runtime that does not
     # execute GenieX or ORT GenAI work, and folding it into the hash would
     # re-key every existing history record on a machine that had not otherwise

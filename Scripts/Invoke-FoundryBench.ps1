@@ -4,7 +4,7 @@
     record the result in the Atlas benchmark history.
 
 .DESCRIPTION
-    Automates README section 5.6 (Method E).
+    Automates the README "Foundry Local" section.
 
     Foundry Local is driven over HTTP rather than by a CLI that prints timings,
     so throughput is measured here: wall time around the request, divided by
@@ -15,7 +15,7 @@
 
     NPU and CPU utilization are sampled during the run, because "it used the
     NPU" is a placement claim that needs evidence. The NPU appears as an
-    ordinary GPU Engine counter under engtype_compute (section 7); the wildcard
+    ordinary GPU Engine counter under engtype_compute (see the README, "Proving which compute unit ran"); the wildcard
     is re-expanded on every sample because those instances are per-process and
     do not exist until the workload starts.
 
@@ -51,7 +51,7 @@ $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
 
 if (-not (Get-Command foundry -ErrorAction SilentlyContinue)) {
-    Write-Host 'foundry not found on PATH. See README section 5.6.' -ForegroundColor Red
+    Write-Host 'foundry not found on PATH. See the README "Foundry Local" section.' -ForegroundColor Red
     exit 1
 }
 

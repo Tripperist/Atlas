@@ -505,3 +505,6 @@ obj/
 # Git safety
 *.orig
 *.patch
+
+# ONNX Runtime profiler dumps, written next to whatever invoked the session
+onnxruntime_profile__*.json
