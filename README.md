@@ -32,6 +32,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | Yes, read-only |
 | [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
 | [§5.6 Method E: Microsoft Foundry Local](#56-method-e-microsoft-foundry-local) | [`Scripts/Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) | Yes; runs inference |
+| [§5.6 Method E: Microsoft Foundry Local](#56-method-e-microsoft-foundry-local) | [`Scripts/Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1) | Yes; runs inference |
 | [§6 Available models](#6-available-models) | [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | Yes; runs inference |
 | [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
@@ -1037,7 +1038,7 @@ cost is substantial", which both numbers support, rather than as a regression.
 
 The script handles both.
 
-For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 81 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
+For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 81 % of the native path while being far easier to consume. Note the CPU cost: substantial on both measurements of it (53.6 % originally, 79.0 % re-measured with a different counter) against ~18 % for GenieX NPU runs, which matters on a machine also running Scout.
 
 **It sidesteps the 0.16 regression by construction**, because it ships and pins its own runtime rather than resolving one from PyPI. `foundry status` reports ORT **1.26.0**.
 
@@ -1051,15 +1052,27 @@ For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle 
 | `Phi-3.5-mini-instruct-generic-gpu` | GPU | WebGpuExecutionProvider | 2.2 GB |
 | `Phi-3.5-mini-instruct-generic-cpu` | CPU | CPUExecutionProvider | 2.5 GB |
 
-**Tool calling and NPU placement do overlap** — relevant because Scout needs tool calls. Of 37 chat/multimodal models:
+**Tool calling and NPU placement barely overlap any more.** Re-checked on
+Foundry Local 0.10.3, `foundry model list` reports only **two** NPU-targeted
+models on this machine, and only one of them supports tools:
 
-| Device | With tools | Without |
-| --- | --- | --- |
-| NPU | **6** | 5 |
-| GPU | 18 | 5 |
-| CPU | 3 | 0 |
+| Model | Size | Device | Tools |
+| --- | --- | --- | --- |
+| `qwen2.5-0.5b` | 442 MB | NPU | **yes** |
+| `phi-3.5-mini` | 2.0 GB | NPU | no |
 
-The six NPU models with tool calling are the **Qwen2.5 family**: `qwen2.5-0.5b`, `qwen2.5-1.5b`, `qwen2.5-7b` and the three `qwen2.5-coder` variants. The NPU models *without* tools are `phi-3.5-mini`, `phi-3-mini-4k`, `phi-3-mini-128k` and the two `deepseek-r1` sizes. Notably the entire `phi-4` family and all of `qwen3` route to **GPU** here, not NPU.
+> **This is a large change from what was recorded here earlier**, which listed
+> 11 NPU models, 6 of them with tools: the whole Qwen2.5 family including
+> `qwen2.5-7b` and the three `qwen2.5-coder` variants. On 0.10.3,
+> `foundry model info qwen2.5-7b` offers **no NPU variant at all** — only
+> `generic-gpu` (WebGPU, 5.2 GB) and `generic-cpu` (6.2 GB). `qwen2.5-1.5b`,
+> `qwen2.5-14b` and every `qwen2.5-coder` size now route to **GPU** as well.
+>
+> Whether Foundry withdrew those variants or re-targeted them for this machine
+> is not something the CLI explains. Either way, **the largest NPU model with
+> tool calling is now `qwen2.5-0.5b` at 442 MB**, which is a steep quality
+> ceiling for Scout and a material argument against depending on Foundry Local
+> for NPU tool calling. The `phi-4` family and all of `qwen3` remain on GPU.
 
 **Where it fits against the other paths:**
 
@@ -1823,40 +1836,53 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **This item is now closed** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)). All three runtimes have been measured on the same axes, and on the same model where one exists in both formats. On Qwen3-4B, QAIRT delivers 2072.0 prefill / 27.8 decode against llama.cpp's 1380.0 / 18.2. On Phi-4-mini-reasoning, llama.cpp NPU gives 1546.0 / 22.4 against ORT GenAI's 436.9 / 17.5 — a 3.5× prefill gap, consistent with that bundle running its 32 attention nodes on CPU. Ordering for prefill-dominated work: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**.
 
-### Verify tool calling on the NPU with `qwen2.5-7b`
+### Verify tool calling on the NPU — MEASURED, with caveats
 
-**What.** Pull `qwen2.5-7b` through Foundry Local, confirm it loads the NPU variant, and verify that **tool calling actually works while running on the NPU** — not just that the catalogue advertises it.
+**Run it:** [`Scripts/Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1)
 
-```powershell
-foundry model info qwen2.5-7b            # confirm an NPU variant with QNNExecutionProvider
-foundry model download qwen2.5-7b        # ~6.8 GB
-foundry server start
-# POST /v1/chat/completions with a `tools` array; assert tool_calls in the response
-```
+The original item targeted `qwen2.5-7b`. **That model no longer has an NPU
+variant** on Foundry Local 0.10.3 ([§5.6](#56-method-e-microsoft-foundry-local)), so the test was run against
+`qwen2.5-0.5b`, now the only NPU model in the catalogue that supports tools.
 
-Sample the NPU counter during the call, the same way [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) does:
-`\GPU Engine(*engtype_compute)\Utilization Percentage`. Do not hardcode the adapter LUID — it changes across reboots. Run [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) to re-derive it.
+Three 25-second windows, same prompt, NPU sampled throughout:
 
-**Why this model.** Scout needs tool calls, and of Foundry Local's 37 chat/multimodal models only **six** combine NPU placement with tool support — all Qwen2.5:
+| Condition | Requests | Tokens | Tool calls | NPU peak |
+| --- | --- | --- | --- | --- |
+| plain, length-matched control | 116 | 1392 | 0 | **56.7 %** |
+| `tool_choice=auto` | 35 | 1424 | 9 | 62.0 % |
+| `tool_choice=required` | 18 | 396 | **18 of 18** | **24.4 %** |
 
-| Model | Size | Device | Tools |
-| --- | --- | --- | --- |
-| `qwen2.5-7b` | 6.8 GB | NPU | yes |
-| `qwen2.5-1.5b` | 1.1 GB | NPU | yes |
-| `qwen2.5-0.5b` | 442 MB | NPU | yes |
-| `qwen2.5-coder-7b` / `-1.5b` / `-0.5b` | 0.4–7.1 GB | NPU | yes |
+**Tool calling works on the NPU variant.** Every forced request returned a
+well-formed `tool_calls` entry with valid JSON arguments. So the catalogue's
+Tools flag is not merely a family-level claim here — it holds for the NPU
+variant specifically, which was the first of the three risks.
 
-Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deepseek-r1-*`) or moves off the NPU (the whole `phi-4` family, all of `qwen3`, routed to GPU here). `qwen2.5-7b` is the largest NPU + tools option, so it sets the quality ceiling for that combination.
+**But the second risk shows a real signal.** Against a *length-matched*
+control, NPU peak falls from 56.7 % to 24.4 % while forced tool calling, and
+throughput drops from 116 requests in the window to 18. That is consistent with
+constrained decoding leaving the accelerated path. It is **not proof**: peak
+sampling over roughly one-second requests is coarse, and the tools schema also
+lengthens the prompt. The direction is consistent across repeated runs.
 
-**Why it is not settled.** Three things could each break it:
+The control had to be length-matched to say anything at all. An unconstrained
+completion generates far more tokens per request, so comparing against one
+would have attributed a duty-cycle difference to a fallback.
 
-- The **Tools** flag may describe the model family rather than the specific NPU variant. The catalogue lists one flag per model while `foundry model info` lists separate NPU/GPU/CPU variants.
-- Tool calling may **force a fallback**. Constrained or grammar-based decoding sometimes runs outside the accelerated path; if so the NPU counter will sit near zero during a tool-calling request even though a plain completion pegs it at 100 %.
-- At 6.8 GB it is the **largest NPU model** in the catalogue. Confirm it loads and holds context without paging — `phi-3.5-mini` at 2.0 GB is the only NPU model measured so far.
+**Under `auto` the model often does not call the tool** — 9 of 35 requests
+here, 0 in an earlier single-shot run. That is a 0.5B model failing to *decide*
+to use a tool, which is a capability limit rather than a runtime one, but it is
+the behaviour Scout would actually get.
 
-**What good looks like.** A tool-calling request returns a well-formed `tool_calls` payload, the NPU counter peaks near 100 % during it, and throughput is within range of the 26.5 tok/s measured for `phi-3.5-mini`. If tool calls work but drop to CPU, that is still a usable answer — it just means Scout pays NPU speed only on plain generation.
+**Not settled:** the third risk is untestable for now. `qwen2.5-7b` was to show
+whether a 6.8 GB NPU model loads and holds context without paging; with no NPU
+variant published, the largest NPU model available is 2.0 GB.
 
-**If it fails**, fall back to `qwen2.5-1.5b` to separate a size problem from a tool-calling problem, and compare against the same request on the GPU variant.
+> **Separate bug found.** `max_tokens=20` on `qwen2.5-0.5b-instruct-qnn-npu`
+> fails with `Non-zero status code returned while running GroupQueryAttention
+> node ... seqlens_k[0] = 63 is out of range [0, 56)`. 40 and 64 succeed. A
+> small generation budget against a longer prompt appears to break that node's
+> sequence-length bookkeeping — worth knowing before trusting short structured
+> replies, which is exactly the shape of a tool call.
 
 ### GenieX llama.cpp GGUF crash — RESOLVED by an Adreno driver update
 
