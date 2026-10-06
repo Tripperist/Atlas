@@ -43,7 +43,11 @@
 param(
     [string]$Model,
     [switch]$UseQairt,
-    [int]$MaxTokens = 300
+    [int]$MaxTokens = 300,
+    # The probe needs the run to last longer than a couple of counter samples
+    # (each Get-Counter call costs ~1s). A prompt that stops early leaves too
+    # few samples to catch the accelerator, which looks like an idle adapter.
+    [string]$Prompt = 'Write a long, detailed essay about the history of maritime navigation. Cover early Polynesian wayfinding, the astrolabe, the marine chronometer, and satellite positioning. Use several paragraphs for each.'
 )
 
 $ErrorActionPreference = 'Continue'
@@ -62,7 +66,7 @@ if (-not $Model) {
 function Measure-Unit {
     param([string]$Unit)
 
-    $cmdArgs = @('infer', $Model, '-p', 'Count slowly from one to fifty, one number per line.',
+    $cmdArgs = @('infer', $Model, '-p', $Prompt,
                  '--max-tokens', "$MaxTokens", '--think=false')
     if ($Unit) { $cmdArgs += @('--compute', $Unit) }
 
@@ -136,6 +140,15 @@ $results = foreach ($u in $units) { Measure-Unit $u }
 Add-Line (($results | Format-Table -AutoSize -Property Compute, Ran, TokPerS, Busiest, Peak, Seconds, Exit |
            Out-String).TrimEnd())
 Add-Line
+
+$short = @($results | Where-Object { $_.Ran -and $_.Seconds -lt 6 -and $_.Busiest -eq '-' })
+if ($short.Count) {
+    Add-Line 'NOTE: some runs finished in under 6s with no adapter seen. Each counter'
+    Add-Line 'query costs about a second, so a short run yields too few samples to'
+    Add-Line 'catch the accelerator. Raise -MaxTokens, or pass a -Prompt that keeps'
+    Add-Line 'the model generating for longer.'
+    Add-Line
+}
 
 $failed = @($results | Where-Object { -not $_.Ran })
 if ($failed.Count -eq $results.Count) {

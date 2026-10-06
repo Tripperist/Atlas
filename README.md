@@ -123,7 +123,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | Device | Microsoft Surface Laptop 13.8in 8th Ed Snapdragon |
 | SoC | **Snapdragon X2 Elite**, SKU **X2E78100** @ 4.03 GHz, 12 cores / 12 logical |
 | NPU | Qualcomm Hexagon NPU — driver **30.0.228.10000** (2026-07-20) |
-| GPU | Qualcomm **Adreno X2-85** — driver **32.0.172.1** (2026-08-26). Was 32.0.163.2 on 2026-09-19; this update is the leading suspect for the GenieX GGUF crash, see [§12](#12-backlog) |
+| GPU | Qualcomm **Adreno X2-85** — driver **32.0.172.2** (2026-09-08). Version 32.0.172.1 broke GenieX GGUF inference entirely; .2 fixed it ([§12](#12-backlog)) |
 | Memory | **63.5 GiB (64 GB)** LPDDR5x |
 | Storage | C: 850 GiB (432 GiB free), D: 102 GiB (87 GiB free) |
 | OS | Windows 11 Pro Insider Preview 10.0.28120, ARM64 |
@@ -1210,8 +1210,8 @@ On this machine the adapters resolve as:
 
 | Adapter LUID | Engine type | Device |
 | --- | --- | --- |
-| `0x0001501b` | `compute` | Hexagon NPU |
-| *(varies)* | `3d` | Adreno X2-85 GPU |
+| `0x000151f3` | `compute` | Hexagon NPU |
+| `0x000148c0` | `3d` | Adreno X2-85 GPU |
 
 > **These LUIDs are not stable — do not hardcode them.** The NPU has appeared as `0x00013d0d`, then `0x000152a6`, then `0x0001501b` on this same machine. Adapter LUIDs are assigned per boot and move on reboot or driver re-enumeration, so a recorded value silently reads **zero** later rather than erroring.
 >
@@ -1436,7 +1436,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | `EPContext node ... is not compatible` | QNN is not attached to the session. Use `set_provider_selection_policy(PREFER_NPU)`, or `Config.append_provider` for GenAI. Rarely a chipset issue |
 | `GroupQueryAttention` / `present_keys` shape error | `onnxruntime-genai` 0.16.x regression with EPContext models ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)), fixed in **0.17.0**. Upgrade to `>=0.17.0`. Also check you did not override `max_length` on a `past_present_share_buffer` model |
 | Accelerator counter reads 0 at a known LUID | LUIDs change across reboots. Re-run [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) rather than reusing a recorded value |
-| `geniex infer` exits `-1073740791` instantly | `0xC0000409`, a fail-fast crash. Currently affects **all GGUF models** on this machine while QAIRT bundles still run — see [§12](#12-backlog) |
+| `geniex infer` exits `-1073740791` instantly | `0xC0000409` fail-fast. Seen when Adreno driver 32.0.172.1 broke the llama.cpp plugin's OpenCL dependency; fixed by 32.0.172.2. Check your GPU driver version ([§12](#12-backlog)) |
 | `provider_options` looks empty | On pipeline models the QNN options live inside each stage, not on the top-level decoder |
 | `huggingface-cli` not found | Superseded by `hf` in `huggingface_hub` 1.x |
 | `pip install` finds no ARM64 wheel | Check Python minor version and ABI. Use `uvx` for x86-constrained tooling; do not silently switch native benchmarks to emulation |
@@ -1511,78 +1511,42 @@ Everything else either loses tool calling (`phi-3.5-mini`, `phi-3-mini-*`, `deep
 
 **If it fails**, fall back to `qwen2.5-1.5b` to separate a size problem from a tool-calling problem, and compare against the same request on the GPU variant.
 
-### GenieX llama.cpp plugin crashes on every GGUF
+### GenieX llama.cpp GGUF crash — RESOLVED by an Adreno driver update
 
-**Symptom.** `geniex infer` fail-fasts with `0xC0000409` (`STATUS_STACK_BUFFER_OVERRUN`) in ~0.2 s on **every** GGUF model, for **every** `--compute` value. The QAIRT path is unaffected and still runs `qualcomm/Qwen3-4B:W4A16` at ~30–33 tok/s.
+**Status: fixed.** A later Adreno driver release restored GGUF inference. This entry is kept because the diagnosis took a long time and the failure mode is worth recognising.
 
-**What has been ruled out:**
+**Symptom (while broken).** `geniex infer` fail-fasted with `0xC0000409` (`STATUS_STACK_BUFFER_OVERRUN`) in ~0.2 s on **every** GGUF model, for **every** `--compute` value, printing only `loading model...`. `geniex version` crashed too, because it reports the llama.cpp runtime hash and must load the same plugin. QAIRT bundles were unaffected throughout.
 
-| Hypothesis | Test | Result |
+**Confirmed cause: the Adreno GPU driver.** Updating it — and nothing else — fixed it:
+
+| | Broken | Fixed |
 | --- | --- | --- |
-| Corrupt model cache | Removed and re-pulled `unsloth/Qwen3-0.6B-GGUF` | Still crashes — **not the cache** |
-| NPU-specific path | Ran `--compute cpu`, `gpu`, `npu` | All three crash — the whole plugin, not the HTP path |
-| Conflicting DLL on `PATH` | Searched `PATH` for `libomp140`, `ggml*`, `llama*` | No conflicts found |
-| Missing plugin files | Listed the `llama_cpp` plugin directory | All DLLs and `libggml-htp-v81.so` present |
-| Stale GenieX build | `geniex update` → **v0.8.0** | Still crashes, and `geniex version` now crashes too |
-| Corrupted installation | Full uninstall via `unins001.exe`, then a hash-verified reinstall of v0.8.0 | Still crashes — **not the install** |
+| **Adreno GPU driver** | **32.0.172.1** (2026-08-26) | **32.0.172.2** (2026-09-08) |
+| Hexagon NPU driver | 30.0.228.10000 | 30.0.228.10000 — unchanged |
+| GenieX | v0.8.0 | v0.8.0 — unchanged |
+| GGUF `--compute cpu` | crash | 139.8 tok/s |
+| GGUF `--compute gpu` | crash | 85.9 tok/s |
+| GGUF `--compute npu` | crash | 131.3 tok/s |
+| `geniex version` | crash | works |
 
-| Foundry Local interference | Uninstalled Foundry Local entirely, re-tested | Still crashes — **not Foundry Local** |
+A **patch-level** driver bump, with the NPU driver and GenieX build held constant. That is the controlled experiment the earlier investigation could not run, because the previous driver was never staged in the driver store and so could not be rolled back.
 
-**Leading hypothesis: the Adreno GPU driver update.** This is *not* proven — it is the best explanation consistent with the evidence, and the decisive test has not been run. Treat it accordingly.
+The plugin requires `ggml-opencl.dll` — renaming it aside converted the hard crash into a clean `exit=1` dependency error — and OpenCL on Snapdragon is serviced by the Adreno driver. So a broken OpenCL ABI took down the whole llama.cpp plugin during initialisation, regardless of which compute unit was requested.
 
-**What changed.** Comparing every component recorded in §1.4 against the machine today:
+**What was eliminated along the way**, each by direct test: the model cache (fresh re-pull), an HTP-specific path (all three `--compute` values crashed), PATH DLL conflicts, missing plugin files, a stale GenieX build (v0.7.0 → v0.8.0), a corrupted installation (hash-verified clean reinstall) and Foundry Local (fully uninstalled). Every one of those was negative, which is what left an external cause as the only candidate.
 
-| Component | Recorded 2026-09-19 | Now | |
-| --- | --- | --- | --- |
-| Hexagon NPU driver | 30.0.228.10000 (2026-07-20) | 30.0.228.10000 | unchanged |
-| **Adreno GPU driver** | **32.0.163.2** (2026-06-29) | **32.0.172.1** (2026-08-26) | **changed** |
-| Windows build | 10.0.28120 | 10.0.28120 | unchanged |
-| GenieX | v0.7.0 | v0.8.0 | changed, but the crash predates it |
+**Lessons worth keeping:**
 
-The Adreno driver is the only identified change.
-
-**Why it is a plausible mechanism.** The llama.cpp plugin requires `ggml-opencl.dll` — confirmed by renaming it aside, which converts the hard crash into a clean `exit=1` *"Ensure all runtime dependencies are correct"* error. OpenCL on Snapdragon is serviced by the Adreno driver. If the plugin initialises its OpenCL backend during load, regardless of the selected compute unit, an ABI change in that driver would take the whole plugin down for every `--compute` value.
-
-That is consistent with every observation: all three compute units crash, QAIRT is untouched because it does not use ggml, the fault survives both a GenieX upgrade and a hash-verified clean reinstall because the driver is external to GenieX, and `geniex version` crashes too because it reports the llama.cpp runtime hash and must load the same plugin.
-
-**What is missing, and matters.** None of this localises the fault:
-
-- No stack trace and **no faulting module**. `0xC0000409` is `__fastfail`, which bypasses Windows Error Reporting — there is no Application-log event for `geniex.exe`.
-- Renaming `ggml-opencl.dll` aside proves the plugin *needs* it, not that the crash occurs *inside* it.
-- **The driver has not been rolled back**, which is the test that would settle it. `pnputil /enum-drivers` shows only one Qualcomm display package staged (`32.0.172.1`, `qcdx8480.inf`), so 32.0.163.2 would have to be sourced from Microsoft Update or Qualcomm first.
-
-So the honest position is: everything inside GenieX is eliminated, the trigger is external, and a driver ABI change is the most plausible external cause — but an unidentified Windows-side change remains possible.
-
-**Reproduce it:**
-
-```bash
-geniex pull unsloth/Qwen3-0.6B-GGUF:Q4_0 --model-hub hf
-geniex infer unsloth/Qwen3-0.6B-GGUF:Q4_0 -p "Say hi." --max-tokens 16 --think=false
-```
-
-It prints `loading model...` and dies with `0xC0000409` — no message, no stack. The same command against `qualcomm/Qwen3-4B` returns ~35 tok/s and exit 0.
-
-> Worth noting for §1.3 regardless of the eventual cause: a component outside the runtime changed and silently broke it. Record driver versions alongside measurements, and re-check them before assuming a failed reproduction is your own error.
-
-**Debug output** stops immediately after the plugin sets its library path:
-
-```
-[plugins/llama_cpp/src/plugin.cpp:91:LlamaPlugin] Setting ADSP_LIBRARY_PATH to
-  ...\GenieX CLI\llama_cpp
-loading model...        <- crash here
-```
-
-
-**Why it matters.** It blocks every llama.cpp measurement in [§9](#9-benchmarking) — the `--compute` comparison, the speculative-decoding numbers in [§6.4](#64-what-we-could-and-could-not-verify), and the GPU adapter LUID, which [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) can only derive from a working GGUF. Nothing already recorded is invalidated, but none of it can currently be reproduced.
-
-**Next steps.** Reinstalling is done and did not help, so the remaining options are to test on a machine without Foundry Local, to try uninstalling Foundry Local here and re-testing, or to report it upstream at [qualcomm/GenieX](https://github.com/qualcomm/GenieX) with the `--log debug` trace above and the eliminated hypotheses.
+- A **patch-level GPU driver change** can take out a runtime that appears to have nothing to do with graphics. Record driver versions alongside measurements (§1.4) and re-check them before assuming a failed reproduction is your own error.
+- `0xC0000409` is `__fastfail`. It produces **no Windows Error Reporting event and no faulting module**, so the usual crash-triage route is unavailable.
+- When a diagnosis rests on correlation plus a plausible mechanism, say so. This was written up as a confirmed root cause before it had been tested, then downgraded to a hypothesis, and only now promoted back on actual evidence.
 
 ### Other open threads
 
 | Item | Note |
 | --- | --- |
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
-| **GenieX crashes on every GGUF model** | See the dedicated entry above |
+| ~~GenieX crashes on every GGUF model~~ | **Resolved** by Adreno driver 32.0.172.2 — see the entry above |
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
