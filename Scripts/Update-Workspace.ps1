@@ -151,6 +151,56 @@ function Compare-Against {
     $rows
 }
 
+<#
+.SYNOPSIS
+    Snapshot every installed distribution and its version.
+
+.DESCRIPTION
+    Used to diff the environment across an upgrade. Reading the installed
+    metadata is authoritative: it does not depend on uv's output format, and it
+    catches transitive packages that a summary line would not mention.
+#>
+function Get-InstalledVersions {
+    param([Parameter(Mandatory)][string]$Py)
+    $code = "import importlib.metadata as m,json;" +
+            "print(json.dumps({(d.metadata['Name'] or '').lower(): d.version for d in m.distributions()}))"
+    $json = & $Py -c $code 2>$null
+    if (-not $json) { return $null }
+    try { $json | ConvertFrom-Json } catch { $null }
+}
+
+<#
+.SYNOPSIS
+    Print every package difference between two snapshots.
+#>
+function Show-PackageDiff {
+    param($Before, $After)
+    if ($null -eq $Before -or $null -eq $After) {
+        Write-Host '    (could not read package metadata; see uv output above)' -ForegroundColor Yellow
+        return
+    }
+    $b = @{}; $Before.PSObject.Properties | ForEach-Object { $b[$_.Name] = $_.Value }
+    $a = @{}; $After.PSObject.Properties  | ForEach-Object { $a[$_.Name] = $_.Value }
+
+    $rows = [System.Collections.Generic.List[object]]::new()
+    foreach ($n in ($b.Keys + $a.Keys | Select-Object -Unique | Sort-Object)) {
+        $was = $b[$n]; $now = $a[$n]
+        if ($was -eq $now) { continue }
+        $change = if (-not $was) { 'added' } elseif (-not $now) { 'removed' } else { 'updated' }
+        $rows.Add([pscustomobject]@{
+            Package = $n
+            From    = $(if ($was) { $was } else { '-' })
+            To      = $(if ($now) { $now } else { '-' })
+            Change  = $change
+        })
+    }
+    if ($rows.Count -eq 0) { Write-Host '    no package changes'; return }
+    $rows | Format-Table -AutoSize -Property Package, From, To, Change |
+        Out-String | ForEach-Object { $_.TrimEnd() -split "`r?`n" } |
+        Where-Object { $_.Trim() } | ForEach-Object { Write-Host ('    ' + $_) }
+    Write-Host ("    {0} package(s) changed" -f $rows.Count)
+}
+
 # ------------------------------------------------------------------- geniex
 
 function Get-LatestGeniexTag {
@@ -372,9 +422,18 @@ if ($Apply) {
     Write-Host '--------'
 
     Write-Host '  uv sync --upgrade'
+    # Snapshot before and after rather than echoing uv's tail: the previous
+    # `Select-Object -Last 5` hid most of what an upgrade did, so confirming
+    # what actually moved meant querying the venv by hand afterwards.
+    $pkgBefore = Get-InstalledVersions -Py $venvPy
     Push-Location $root
-    uv sync --upgrade 2>&1 | Select-Object -Last 5 | ForEach-Object { Write-Host ('    ' + $_) }
+    $syncOut = (uv sync --upgrade 2>&1 | Out-String)
     Pop-Location
+    # uv's own counts, for context; the diff below is the authoritative part.
+    $syncOut -split "`r?`n" |
+        Where-Object { $_ -match '^(Resolved|Prepared|Installed|Uninstalled|Audited|Updated|error|warning)' } |
+        ForEach-Object { Write-Host ('    ' + $_.TrimEnd()) }
+    Show-PackageDiff -Before $pkgBefore -After (Get-InstalledVersions -Py $venvPy)
 
     if ($SkipGeniex) {
         Write-Host '  GenieX: skipped (-SkipGeniex)'

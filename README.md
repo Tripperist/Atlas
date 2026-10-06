@@ -436,7 +436,7 @@ Python packages:
 
 | Class | Example | Handling |
 | --- | --- | --- |
-| Python packages | `onnxruntime-genai` | `-Apply` runs `uv sync --upgrade` |
+| Python packages | `onnxruntime-genai` | `-Apply` runs `uv sync --upgrade` and prints every version that moved |
 | GenieX CLI | v0.7.0 to v0.8.0 | `-Apply` downloads, verifies SHA256, installs silently |
 | Drivers and OS | Adreno, Hexagon, Windows build | **Detected only, never changed** |
 
@@ -458,6 +458,8 @@ model caught it. So any change is followed by a verification pass:
 `Test-Environment.ps1` for load, [`repro_genai_016_qnn.py`](src/setup/repro_genai_016_qnn.py)
 as a regression guard for that exact class of failure, and a short inference
 smoke test. Skip them with `-SkipVerify` / `-SkipBenchmark`.
+
+`-Apply` reports the upgrade by diffing the installed distributions before and after, rather than echoing uv's summary. That catches transitive packages a summary line never mentions, and does not depend on uv's output format staying put.
 
 GenieX is updated from its GitHub release. The Windows ARM64 asset is an Inno
 Setup installer that installs per-user into `%LOCALAPPDATA%\GenieX CLI`, so no
