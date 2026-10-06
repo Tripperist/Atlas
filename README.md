@@ -24,7 +24,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | Step | Script | Safe to run |
 | --- | --- | --- |
 | [§1.1 Run the inventory](#11-run-the-inventory) | [`Scripts/Get-SystemInfo.ps1`](Scripts/Get-SystemInfo.ps1) | Yes, read-only |
-| [§2 Verification status](#2-verification-status) | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
+| [§2.1 Live environment check](#21-live-environment-check) | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
 | [§4.1 Native ARM64 toolchain](#41-native-arm64-toolchain) | [`Scripts/Install-Prerequisites.ps1`](Scripts/Install-Prerequisites.ps1) | Reports only; `-Install` to act |
 | [§4.3 Python workspace](#43-python-workspace) | [`Scripts/Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | Yes |
 | [§4.6 Keeping the workspace current](#46-keeping-the-workspace-current) | [`Scripts/Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
@@ -183,11 +183,51 @@ Qualcomm(R) Adreno(TM) X2-85 GPU                                32.0.163.2      
 
 ## 2. Verification status
 
-```bash
+Two different things live under this heading, and conflating them is a good way
+to trust a number that nothing is still checking. [§2.1](#21-live-environment-check) is what your machine
+reports *right now*. [§2.2](#22-project-findings-ledger) is what this project has established over time,
+including findings no runtime check can reproduce.
+
+### 2.1 Live environment check
+
+```powershell
 .\Scripts\Test-Environment.ps1
 ```
 
-Prints this table for your machine and exits non-zero if anything fails. Add `-SkipNetwork` to skip the AI Hub checks.
+Eleven checks against this machine, exiting non-zero on the first failure count.
+Add `-SkipNetwork` to skip the two that contact AI Hub.
+
+```
+Status Check                            Detail
+------ -----                            ------
+PASS   Shell is ARM64                   Arm64
+PASS   Python venv present              3.14.7 ARM64
+PASS   Python is ARM64                  3.14.7 ARM64
+PASS   QNN execution provider registers onnxruntime 1.30.0
+PASS   onnxruntime-genai sees QNN
+PASS   GenieX CLI installed             v0.7.0
+PASS   GenieX detects chipset           Snapdragon X2 Elite CRD
+PASS   At least one model cached        see: geniex list
+PASS   qai-hub-models installed         native ARM64
+PASS   AI Hub reachable                 devices listed
+PASS   X2 Elite is a valid target       Snapdragon X2 Elite CRD
+```
+
+This is an **install-level** check: it proves each layer loads and talks to the
+next. It does **not** prove a model runs on the NPU, and it measures nothing.
+Use [`Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) ([§7](#7-proving-which-compute-unit-actually-runs)) for placement
+and [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) ([§9](#9-benchmarking)) for throughput.
+
+### 2.2 Project findings ledger
+
+The table below is **not** script output, and it is deliberately larger than
+[§2.1](#21-live-environment-check). It is the accumulated record of what this project has and has not
+established: negative results worth not rediscovering, measurements taken once
+under a recorded stack, and open questions. Most rows are not checkable at
+startup — "`providers=[...]` is silently ignored" and "the SSD 81 % claim is
+unverified" are conclusions, not probes.
+
+Where a row *is* continuously checked, it appears in [§2.1](#21-live-environment-check) above.
 
 | Capability | Status | Evidence |
 | --- | --- | --- |

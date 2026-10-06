@@ -3,9 +3,15 @@
     Verify the Atlas toolchain and print a pass/fail status table.
 
 .DESCRIPTION
-    Automates the README section 2 status table. Read-only: checks that each
-    layer is installed and functional. Does NOT prove any model runs on the
-    NPU -- use Test-ComputeUnits.ps1 for that.
+    Implements the README section 2.1 live environment check. Read-only:
+    verifies that each layer is installed and functional.
+
+    It does NOT reproduce the section 2.2 findings ledger, which is larger on
+    purpose -- most of those rows are conclusions rather than probes, such as
+    a negative result about silently ignored provider lists, or a measurement
+    taken once under a recorded stack. Nothing here measures throughput or
+    proves a model runs on the NPU; use Test-ComputeUnits.ps1 for placement
+    and Invoke-Benchmark.ps1 for throughput.
 
 .PARAMETER SkipNetwork
     Skip checks that contact Qualcomm AI Hub.
