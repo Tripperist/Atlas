@@ -446,6 +446,7 @@ does that.
 | [§10 Benchmarks](#10-benchmarks) | [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) · [`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) · [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) · [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
+| [§6.5 Calling ONNX Runtime directly](#65-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
 | [Compiling your own models](docs/COMPILING.md) | [`hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
 
 ---
@@ -864,39 +865,78 @@ models in [the catalogue](docs/BENCHMARKS.md#task-models) run this way.
 **When it is not:** for an LLM you would be reimplementing the KV cache,
 sampling and stopping logic yourself. Reach for ORT GenAI instead.
 
+**The NuGet packages you choose decide which attachment API works**, and the
+combination that works today is:
+
+```xml
+<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+<PackageReference Include="Qualcomm.ML.OnnxRuntime.QNN" Version="2.6.0" />
+```
+
+That mirrors Python's `onnxruntime` + `onnxruntime-qnn`, and it means QNN
+arrives as a **plugin** execution provider — exactly as it does in Python, with
+the same consequence for how you attach it.
+
 ```csharp
 using Microsoft.ML.OnnxRuntime;
 
+// The QNN natives ship under runtimes/win-arm64/native, not beside the exe.
+string nativeDir = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-arm64", "native");
+Environment.SetEnvironmentVariable(
+    "PATH", nativeDir + ";" + Environment.GetEnvironmentVariable("PATH"));
+
+// Register the plugin, then select it by POLICY. See the warning below.
+OrtEnv.Instance().RegisterExecutionProviderLibrary(
+    "QNNExecutionProvider", Path.Combine(nativeDir, "onnxruntime_providers_qnn.dll"));
+
 var so = new SessionOptions();
+so.SetEpSelectionPolicy(ExecutionProviderDevicePolicy.PREFER_NPU);
 
-// Turn a silent CPU fallback into a hard error. This is a session config
-// entry, not a property.
+// Turn a silent CPU fallback into a hard error. A session config entry,
+// not a property.
 so.AddSessionConfigEntry("session.disable_cpu_ep_fallback", "1");
-
-so.AppendExecutionProvider("QNN", new Dictionary<string, string>
-{
-    ["backend_type"]              = "htp",    // or "gpu" / "cpu"
-    ["htp_performance_mode"]      = "burst",  // match GenieX's default
-    ["enable_htp_fp16_precision"] = "1",
-    ["profiling_level"]           = "off",
-});
 
 using var session = new InferenceSession(modelPath, so);
 ```
 
-> **Untested here** — this repository has no .NET path yet; the equivalent
-> Python is what was measured. Two corrections worth carrying over if you have
-> seen this written elsewhere: the fp16 option is **`enable_htp_fp16_precision`**
-> (`"0"`/`"1"`), not `htp_precision`, and CPU fallback is disabled with the
-> session config entry **`session.disable_cpu_ep_fallback`**, not a
-> `DisableCpuMemCopy` property — that is a different setting and does not
-> affect provider placement. The full option list is in the
-> [QNN EP docs](https://onnxruntime.ai/docs/execution-providers/QNN-ExecutionProvider.html).
+**Measured** with [`src/csharp/QnnProbe`](src/csharp/QnnProbe), which counts
+node placement from the ORT profiler rather than trusting a successful `Run()`:
 
-`QnnHtp.dll` and its matching stub must be resolvable at runtime — next to your
-executable or on `PATH`. The stub is **per HTP generation**: `QnnHtpV81Stub.dll`
-for this machine, `V73` for X Elite. Hardcoding the wrong one is a common cause
-of a session that silently lands on CPU.
+| Attachment | Result |
+| --- | --- |
+| none (baseline) | `CPUExecutionProvider=1` |
+| `AppendExecutionProvider("QNN", opts)` | **throws** — *"QNN execution provider is not supported in this build"* |
+| `SetEpSelectionPolicy(PREFER_NPU)` | **`QNNExecutionProvider=1`** |
+
+```powershell
+dotnet run -c Release --project src\csharp\QnnProbe
+```
+
+> **`AppendExecutionProvider("QNN", ...)` with a provider-options dictionary is
+> the form you will find in most examples, and it does not work with these
+> packages.** QNN is a plugin EP here, and only the policy API resolves it —
+> the same trap as Python's `providers=[...]`, except C# at least throws
+> instead of silently running on CPU. If you are following an example that uses
+> the options dictionary, it assumes the older all-in-one
+> `Microsoft.ML.OnnxRuntime.QNN` package (1.24.x), which compiles QNN into the
+> build. Pick one model or the other; do not mix the advice.
+>
+> Two further corrections worth carrying over if you have seen them elsewhere:
+> the fp16 option is **`enable_htp_fp16_precision`** (`"0"`/`"1"`), not
+> `htp_precision`, which does not exist; and CPU fallback is disabled with the
+> session config entry **`session.disable_cpu_ep_fallback`**, not a
+> `DisableCpuMemCopy` property — that is unrelated to provider placement.
+
+> **`OrtEnv.GetAvailableProviders()` will not show QNN**, before or after
+> registration, even when the graph demonstrably runs on the NPU. Unlike
+> Python, where the plugin does appear in the list, in C# it never does. Do not
+> use it as an availability check — verify with node placement or by setting
+> `session.disable_cpu_ep_fallback` and seeing whether the session still loads.
+
+`QnnHtp.dll` and its matching stub must be resolvable at runtime. The
+`Qualcomm.ML.OnnxRuntime.QNN` package ships both generations —
+`QnnHtpV81Stub.dll` for this machine and `V73` for X Elite — so point the
+loader at `runtimes/win-arm64/native` rather than copying one by hand.
 
 ---
 
@@ -1320,7 +1360,6 @@ Things measured but unresolved, or not yet measured. Resolved items are in the
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | Long-context behaviour | All benchmarks here are short generations. KV cache growth is the likely binding constraint and is unmeasured |
 | Battery operation | Everything was measured on AC in `burst` mode |
-| C# / .NET path | Foundry Local ships a first-party SDK and handles version pinning. Untested here |
 | GenieX Python SDK | Resolves for ARM64 Python 3.14; not installed or tested here |
 | `mobilenet_v2` w8a8 | Will not load (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
 | NPU headroom | Utilization clamps at 100 % in tooling (raw readings hit 238 %). Saturation for LLM workloads is unmeasured |
