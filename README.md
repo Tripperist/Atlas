@@ -238,6 +238,9 @@ flowchart TB
     HTTP --> GX
     HTTP --> FL
 
+    PY -. direct .-> ORTC
+    CS -. direct .-> ORTC
+
     GX --> LC
     GX --> QA
     ORT --> ORTC
@@ -262,6 +265,13 @@ GenAI leaves the choice — and the token loop — to you. GenieX is the outlier
 its own llama.cpp and QAIRT engines bypass ONNX Runtime entirely, which is why
 it is the only route here that accepts GGUF files and the only one that reaches
 the NPU without ONNX in the picture.
+
+**You can also call ONNX Runtime directly**, from Python or C#, skipping all
+three — the dotted lines in the diagram. That is the right level for models
+that are not language models: embeddings, speech-to-text, OCR, translation.
+For an LLM it means writing the KV-cache and sampling logic yourself, which is
+precisely what ONNX Runtime GenAI exists to provide. See
+[section 6.5](#65-calling-onnx-runtime-directly).
 
 ### 3.2 Which one should I use?
 
@@ -840,6 +850,54 @@ AI Hub's ONNX assets target plain ONNX Runtime with the QNN EP and may not ship
 `genai_config.json`. **The reliable source for ORT GenAI models is Microsoft's
 own `*-onnx` Hugging Face repos.**
 
+### 6.5 Calling ONNX Runtime directly
+
+ONNX Runtime GenAI is a layer *on top of* ONNX Runtime that supplies the
+generation loop — KV cache, sampling, chat templating. You can skip it and use
+`Microsoft.ML.OnnxRuntime` (C#) or `onnxruntime` (Python) on their own.
+
+**When that is the right choice:** any model that is not a language model.
+Embeddings, Whisper, OCR and translation assets are plain ONNX graphs with one
+forward pass and no token loop, so the GenAI layer adds nothing. All the task
+models in [the catalogue](docs/BENCHMARKS.md#task-models) run this way.
+
+**When it is not:** for an LLM you would be reimplementing the KV cache,
+sampling and stopping logic yourself. Reach for ORT GenAI instead.
+
+```csharp
+using Microsoft.ML.OnnxRuntime;
+
+var so = new SessionOptions();
+
+// Turn a silent CPU fallback into a hard error. This is a session config
+// entry, not a property.
+so.AddSessionConfigEntry("session.disable_cpu_ep_fallback", "1");
+
+so.AppendExecutionProvider("QNN", new Dictionary<string, string>
+{
+    ["backend_type"]              = "htp",    // or "gpu" / "cpu"
+    ["htp_performance_mode"]      = "burst",  // match GenieX's default
+    ["enable_htp_fp16_precision"] = "1",
+    ["profiling_level"]           = "off",
+});
+
+using var session = new InferenceSession(modelPath, so);
+```
+
+> **Untested here** — this repository has no .NET path yet; the equivalent
+> Python is what was measured. Two corrections worth carrying over if you have
+> seen this written elsewhere: the fp16 option is **`enable_htp_fp16_precision`**
+> (`"0"`/`"1"`), not `htp_precision`, and CPU fallback is disabled with the
+> session config entry **`session.disable_cpu_ep_fallback`**, not a
+> `DisableCpuMemCopy` property — that is a different setting and does not
+> affect provider placement. The full option list is in the
+> [QNN EP docs](https://onnxruntime.ai/docs/execution-providers/QNN-ExecutionProvider.html).
+
+`QnnHtp.dll` and its matching stub must be resolvable at runtime — next to your
+executable or on `PATH`. The stub is **per HTP generation**: `QnnHtpV81Stub.dll`
+for this machine, `V73` for X Elite. Hardcoding the wrong one is a common cause
+of a session that silently lands on CPU.
+
 ---
 
 ## 7. Foundry Local
@@ -1129,6 +1187,24 @@ driver versions.
 | Token-by-token control of generation | **ONNX Runtime GenAI** | The only one that exposes the raw token loop |
 | An MIT-licensed stack | **ONNX Runtime GenAI** | The other two are proprietary |
 | Tool calling on the NPU | **GenieX** with a tool-capable GGUF | Foundry has exactly one NPU model with tools, at 0.5B |
+| To swap between many models | **GenieX**, then Foundry Local | See below — ORT GenAI is the weakest here |
+
+**On running many different models**, the three are not close:
+
+| | Model supply |
+| --- | --- |
+| **GenieX** | Any GGUF on Hugging Face, plus Qualcomm's AI Hub bundles. A `pull` away |
+| **Foundry Local** | A curated catalogue of ~50, plus a documented path to [compile Hugging Face models](https://learn.microsoft.com/en-us/azure/foundry-local/how-to/how-to-compile-hugging-face-models) into it |
+| **ONNX Runtime GenAI** | Needs a directory shipping `genai_config.json`. In practice that means Microsoft's own `*-onnx` repos, and only some of those publish NPU assets |
+
+ORT GenAI's narrowness is structural, not a catalogue gap: its model builder
+accepts `-e` of only `cpu`, `cuda`, `dml`, `webgpu` and `NvTensorRtRtx` — **it
+cannot target QNN**, so you cannot simply build your own NPU bundle with it.
+Microsoft's published NPU models came from a different toolchain.
+
+So if swapping models freely is the priority, GenieX is the strongest and
+Foundry Local the better-supported second. Pick ORT GenAI when you need the
+token loop, and accept that you are choosing from a short list of models.
 
 **Three things that are easy to get wrong:**
 
