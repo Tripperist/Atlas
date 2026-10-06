@@ -271,7 +271,7 @@ three — the dotted lines in the diagram. That is the right level for models
 that are not language models: embeddings, speech-to-text, OCR, translation.
 For an LLM it means writing the KV-cache and sampling logic yourself, which is
 precisely what ONNX Runtime GenAI exists to provide. See
-[section 6.5](#65-calling-onnx-runtime-directly).
+[section 6.6](#66-calling-onnx-runtime-directly).
 
 ### 3.2 Which one should I use?
 
@@ -303,7 +303,7 @@ its models target the NPU.
 | Compute units | CPU, GPU, NPU (llama.cpp) · NPU (QAIRT) | NPU, GPU or CPU — QNN EP `backend_type` | NPU, GPU or CPU — one model variant each |
 | Choose compute explicitly | `--compute` (llama.cpp only) | Policy API | No |
 | OpenAI-compatible server | `geniex serve` | — | Optional, in-process |
-| First-party SDKs | — (CLI and HTTP) | Python, C# | **C#, Python, JS, Rust** |
+| First-party SDKs | — (CLI and HTTP) | Python, C# (both verified on the NPU) | **C#, Python, JS, Rust** |
 | Runs in your process | No | **Yes** | **Yes** (SDK) |
 | Token-level control | No | **Yes** | No — chat API only |
 | Tool calling | Model-dependent | Model-dependent | Catalogue flag; **1 NPU model** |
@@ -440,13 +440,14 @@ does that.
 | [§4.2 Python workspace](#42-python-workspace) | [`Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | Yes |
 | [§4.4 Verify](#44-verify) | [`Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
 | [§6 ONNX Runtime GenAI](#6-onnx-runtime-genai) | [`check_qnn.py`](src/setup/check_qnn.py) · [`model_format.py`](src/setup/model_format.py) | Yes, read-only |
-| [§6.3 Hello world](#63-hello-world) | [`run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
+| [§6.3 Hello world — Python](#63-hello-world--python) | [`run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
 | [§7.5 Tool calling](#75-tool-calling) | [`Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1) | Yes; runs inference |
 | [§8 Proving which compute unit ran](#8-proving-which-compute-unit-ran) | [`Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) · [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
 | [§10 Benchmarks](#10-benchmarks) | [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) · [`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) · [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) · [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
-| [§6.5 Calling ONNX Runtime directly](#65-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
+| [§6.4 Hello world — C#](#64-hello-world--c) | [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) | Yes; runs inference |
+| [§6.6 Calling ONNX Runtime directly](#66-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
 | [Compiling your own models](docs/COMPILING.md) | [`hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
 
 ---
@@ -803,7 +804,7 @@ and `vtcm_mb`. Session-level `ep.context_enable` caches the compiled graph as
 an EPContext binary, which is what the published NPU bundles contain; see
 [docs/COMPILING.md](docs/COMPILING.md#compiling-an-epcontext-model-locally).
 
-### 6.3 Hello world
+### 6.3 Hello world — Python
 
 The only NPU-ready ORT GenAI model confirmed working here is Microsoft's Phi-4
 bundle. There is no smaller option — this path has a narrow model supply.
@@ -835,7 +836,82 @@ declares `soc_model: 60` (X Elite) and all four context binaries load cleanly
 here, with only a benign file-mapping warning. Do not rule out an asset on
 `soc_model` alone.
 
-### 6.4 Model formats
+### 6.4 Hello world — C#
+
+The .NET API mirrors the Python one closely, and it reaches the NPU. Three
+packages, which together match the verified Python stack:
+
+```xml
+<PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.17.1" />
+<PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+<PackageReference Include="Qualcomm.ML.OnnxRuntime.QNN" Version="2.6.0" />
+```
+
+> **Do not reach for `Microsoft.ML.OnnxRuntimeGenAI.QNN`.** It is pinned at
+> **0.13.2**, far behind the 0.17.1 above. 0.13.2 is not in the broken 0.16.x
+> range, so it may well work, but it was not tested here and it mixes the
+> all-in-one packaging model with the plugin one. The combination above is what
+> was measured.
+
+```csharp
+using Microsoft.ML.OnnxRuntimeGenAI;
+
+// The QNN natives ship under runtimes/win-arm64/native, not beside the exe.
+string nativeDir = Path.Combine(AppContext.BaseDirectory, "runtimes", "win-arm64", "native");
+Environment.SetEnvironmentVariable(
+    "PATH", nativeDir + ";" + Environment.GetEnvironmentVariable("PATH"));
+
+// GenAI exposes no registration helper of its own; register through ORT, which
+// is the same native runtime underneath.
+OrtEnv.Instance().RegisterExecutionProviderLibrary(
+    "QNNExecutionProvider", Path.Combine(nativeDir, "onnxruntime_providers_qnn.dll"));
+
+// Registering is NOT enough -- attach the provider to the config, or GenAI
+// builds a CPU-only session and the EPContext nodes have no EP to run on.
+using var config = new Config(modelDir);
+config.ClearProviders();
+config.AppendProvider("QNNExecutionProvider");
+
+using var model = new Model(config);
+using var tokenizer = new Tokenizer(model);
+
+using var genParams = new GeneratorParams(model);
+using var generator = new Generator(model, genParams);
+generator.AppendTokenSequences(tokenizer.Encode("<|user|>\nWhat is 17 times 23?<|end|>\n<|assistant|>"));
+
+using var stream = tokenizer.CreateStream();
+while (!generator.IsDone())
+{
+    generator.GenerateNextToken();
+    Console.Write(stream.Decode(generator.GetSequence(0)[^1]));
+}
+```
+
+**Measured** with [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) on
+Phi-4-mini-reasoning, 64 tokens:
+
+| Metric | Value |
+| --- | --- |
+| Model load | 7.4–8.1 s |
+| Time to first token | 0.19–0.52 s |
+| Decode | 17.7–22.0 tok/s |
+| **NPU peak** | **98.9 %** |
+
+```powershell
+dotnet run -c Release --project src\csharp\GenAiProbe
+```
+
+Two details the run makes visible. The loader reports
+*"Context binary … is 3.2.1. File mapping is only supported for versions >=
+3.3.3"* for each of the four QNN binaries — benign. And it overwrites the
+bundle's declared `soc_model` of **60** (X Elite) without complaint, which is
+the same reason the Python path works on this machine despite the mismatch.
+
+Skipping the registration step fails with *"QNN execution provider is not
+supported in this build"* rather than quietly running on CPU, because this
+bundle names QNN in its own `genai_config.json`.
+
+### 6.5 Model formats
 
 `onnxruntime-genai` requires a directory containing an ONNX graph **plus
 `genai_config.json`**. A GenieX QAIRT bundle contains `genie_config.json` and
@@ -851,7 +927,7 @@ AI Hub's ONNX assets target plain ONNX Runtime with the QNN EP and may not ship
 `genai_config.json`. **The reliable source for ORT GenAI models is Microsoft's
 own `*-onnx` Hugging Face repos.**
 
-### 6.5 Calling ONNX Runtime directly
+### 6.6 Calling ONNX Runtime directly
 
 ONNX Runtime GenAI is a layer *on top of* ONNX Runtime that supplies the
 generation loop — KV cache, sampling, chat templating. You can skip it and use
@@ -1335,7 +1411,7 @@ passes — an accepted baseline is a claim that this combination worked.
 | ONNX session "works" but is slow | QNN probably never attached. `providers=[...]` is silently ignored — use the policy API ([6.2](#62-attaching-the-qnn-provider)) |
 | `EPContext … not compatible with any execution provider added to the session` | Nothing was added to the session. Same cause as above |
 | `GroupQueryAttention … present_keys` shape error | `onnxruntime-genai` 0.16.x. Upgrade to `>=0.17.0` |
-| `og.Model()` cannot load a GenieX model | That is a `genie_config.json` bundle, not `genai_config.json` ([6.4](#64-model-formats)) |
+| `og.Model()` cannot load a GenieX model | That is a `genie_config.json` bundle, not `genai_config.json` ([6.4](#65-model-formats)) |
 | NPU counter reads zero | The adapter LUID changed on reboot, or you enumerated counter instances before starting the workload. Re-derive the LUID |
 | `huggingface-cli: not found` | Superseded in `huggingface_hub` 1.x. Use `hf` |
 | Foundry returns `400` on a model you downloaded | Downloaded is not loaded, and the API wants the variant id, not the alias ([7.2](#72-hello-world--cli-and-http)) |
