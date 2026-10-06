@@ -205,6 +205,7 @@ flowchart TB
     subgraph APP["Your application"]
         PY["Python"]
         CS["C# / .NET"]
+        OTH["JavaScript · Rust"]
         HTTP["Any OpenAI-compatible client"]
     end
 
@@ -217,6 +218,7 @@ flowchart TB
     subgraph EP["Acceleration layer"]
         LC["llama.cpp engine"]
         QA["QAIRT engine"]
+        ORTC["ONNX Runtime"]
         QNN["QNN execution provider"]
     end
 
@@ -228,30 +230,43 @@ flowchart TB
 
     PY --> GX
     PY --> ORT
+    PY --> FL
+    CS --> ORT
     CS --> FL
+    OTH --> FL
     HTTP --> GX
     HTTP --> FL
 
     GX --> LC
     GX --> QA
-    ORT --> QNN
-    FL --> QNN
+    ORT --> ORTC
+    FL --> ORTC
+    ORTC --> QNN
 
     LC --> CPU
     LC --> GPU
     LC --> NPU
     QA --> NPU
     QNN --> NPU
+    ORTC --> CPU
 ```
+
+**Two of the three share a foundation.** ONNX Runtime GenAI and Foundry Local
+both execute through **ONNX Runtime**, reaching the NPU via the QNN execution
+provider; Foundry Local wraps that and chooses the provider for you, while ORT
+GenAI leaves the choice — and the token loop — to you. GenieX is the outlier:
+its own llama.cpp and QAIRT engines bypass ONNX Runtime entirely, which is why
+it is the only route here that accepts GGUF files and the only one that reaches
+the NPU without ONNX in the picture.
 
 ### 3.2 Which one should I use?
 
 ```mermaid
 flowchart TD
-    S["Starting out"] --> Q1{"Building in<br/>C# / .NET?"}
-    Q1 -->|yes| FL["<b>Foundry Local</b><br/>first-party C# SDK<br/>least setup"]
-    Q1 -->|no| Q2{"Need your own<br/>token loop in-process?"}
-    Q2 -->|yes| ORT["<b>ONNX Runtime GenAI</b><br/>full control<br/>slowest prefill"]
+    S["Starting out"] --> Q1{"Need a wide choice<br/>of models?"}
+    Q1 -->|"no, a curated<br/>catalogue is fine"| FL["<b>Foundry Local</b><br/>SDKs: C# · Python · JS · Rust<br/>picks the accelerator for you"]
+    Q1 -->|yes| Q2{"Need token-level<br/>control of generation?"}
+    Q2 -->|yes| ORT["<b>ONNX Runtime GenAI</b><br/>raw token loop<br/>slowest prefill"]
     Q2 -->|no| Q3{"Long prompts,<br/>short replies?"}
     Q3 -->|yes| QA["<b>GenieX</b> + QAIRT bundle<br/>fastest prefill<br/>NPU only"]
     Q3 -->|no| Q4{"Need a specific<br/>model from Hugging Face?"}
@@ -261,7 +276,9 @@ flowchart TD
 
 **If you are unsure, start with GenieX.** It has the widest model support, the
 fastest path to a working token, and an OpenAI-compatible server if you later
-want to call it from somewhere else.
+want to call it from somewhere else. Foundry Local is the least work if its
+catalogue happens to contain what you need — but on this machine only two of
+its models target the NPU.
 
 ### 3.3 Capability matrix
 
@@ -271,9 +288,10 @@ want to call it from somewhere else.
 | Model sourcing | Any GGUF on Hugging Face, plus AI Hub bundles | Hand-assembled; needs `genai_config.json` | Curated catalogue (~50 models) |
 | Compute units | CPU, GPU, NPU (llama.cpp) · NPU (QAIRT) | NPU via QNN EP | Auto-selected per model |
 | Choose compute explicitly | `--compute` (llama.cpp only) | Policy API | No |
-| OpenAI-compatible server | `geniex serve` | — | Built in |
-| C# support | HTTP only | NuGet, version-sensitive | **First-party SDK** |
-| In-process token loop | No | **Yes** | No |
+| OpenAI-compatible server | `geniex serve` | — | Optional, in-process |
+| First-party SDKs | — (CLI and HTTP) | Python, C# | **C#, Python, JS, Rust** |
+| Runs in your process | No | **Yes** | **Yes** (SDK) |
+| Token-level control | No | **Yes** | No — chat API only |
 | Tool calling | Model-dependent | Model-dependent | Catalogue flag; **1 NPU model** |
 | Prefill speed (Qwen3-4B) | **2072 tok/s** (QAIRT) · 1380 (llama.cpp) | 437 tok/s | not measured on this axis |
 | Licence | Proprietary | MIT | Proprietary |
@@ -302,17 +320,20 @@ are that it is proprietary, process-isolated (you talk to it over a CLI or
 HTTP), and its QAIRT engine only accepts precompiled AI Hub bundles.
 
 **ONNX Runtime GenAI gives you the token loop.** If you need to interleave
-retrieval, inspect logits, or implement custom stopping, this is the only
-option here that runs in your process. It is also MIT-licensed. The cost is
-speed — on this hardware its prefill is 3.5× slower than GenieX's llama.cpp
-NPU path, because the available Phi-4 bundle runs its attention layers on CPU.
-Model supply is the other constraint: you need a bundle that ships
-`genai_config.json`, and there are not many.
+retrieval, inspect logits, or implement custom stopping, it is the only option
+here that hands you generation one token at a time. It is also MIT-licensed.
+The cost is speed — on this hardware its prefill is 3.5× slower than GenieX's
+llama.cpp NPU path, because the available Phi-4 bundle runs its attention
+layers on CPU. Model supply is the other constraint: you need a bundle that
+ships `genai_config.json`, and there are not many.
 
-**Foundry Local is the least work**, especially from C#, and it handles runtime
-version pinning for you. The costs are a small curated catalogue and, on this
-machine, a severely limited NPU selection — only two of its models target the
-NPU at all, and only one of those supports tool calling.
+**Foundry Local is the least work.** It ships as an in-process native library
+with first-party SDKs for **C#, Python, JavaScript and Rust**, detects the
+hardware and picks an execution provider itself, and manages the model cache.
+Its OpenAI-compatible REST endpoint is optional — the SDK calls the core
+library directly, with no HTTP hop. The costs are a small curated catalogue
+and, on this machine, a severely limited NPU selection: only two of its models
+target the NPU at all, and only one of those supports tool calling.
 
 ---
 
@@ -406,7 +427,7 @@ does that.
 | [§4.4 Verify](#44-verify) | [`Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
 | [§6 ONNX Runtime GenAI](#6-onnx-runtime-genai) | [`check_qnn.py`](src/setup/check_qnn.py) · [`model_format.py`](src/setup/model_format.py) | Yes, read-only |
 | [§6.3 Hello world](#63-hello-world) | [`run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
-| [§7.4 Tool calling](#74-tool-calling) | [`Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1) | Yes; runs inference |
+| [§7.5 Tool calling](#75-tool-calling) | [`Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1) | Yes; runs inference |
 | [§8 Proving which compute unit ran](#8-proving-which-compute-unit-ran) | [`Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) · [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
 | [§10 Benchmarks](#10-benchmarks) | [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) · [`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) · [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) · [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
@@ -758,10 +779,29 @@ own `*-onnx` Hugging Face repos.**
 
 ## 7. Foundry Local
 
-Microsoft's on-device runtime. It wraps ONNX Runtime, picks an execution
-provider automatically, manages the model cache, and exposes an
-OpenAI-compatible server — with a **first-party C# SDK**, which makes it the
-shortest route from .NET.
+Microsoft's on-device runtime. It wraps ONNX Runtime, detects the hardware and
+picks an execution provider itself, and manages the model cache.
+
+**It is a library, not a daemon.** Your application loads the Foundry Local
+Core API in-process and calls it through a first-party SDK:
+
+| Language | Package |
+| --- | --- |
+| Python | `foundry-local-sdk` (`foundry-local-sdk-winml` on Windows) |
+| C# | `Microsoft.AI.Foundry.Local` (`.WinML` on Windows) |
+| JavaScript | `foundry-local-sdk` |
+| Rust | `foundry-local-sdk` |
+
+On Windows the `-winml` packages integrate with **Windows ML**, which sources
+execution-provider plugins from the OS and Windows Update and handles driver
+compatibility — that is how the Qualcomm NPU provider is registered.
+
+The OpenAI-compatible REST endpoint is **optional**: the SDK can start one
+inside your process for tools that speak HTTP, such as LangChain or Open WebUI,
+but native SDK calls skip it entirely.
+
+Two routes follow — the CLI plus HTTP, which is what this repo measured, and
+the SDK, which is the one you would ship.
 
 > [github.com/microsoft-foundry](https://github.com/microsoft-foundry) is the
 > **Azure** Foundry platform and is cloud-oriented. The on-device project is
@@ -781,7 +821,9 @@ There is no setup script for Foundry in this repo, and
 `Test-Environment.ps1` does not check for it — it is installed and verified by
 hand.
 
-### 7.2 Hello world
+### 7.2 Hello world — CLI and HTTP
+
+This is the path measured in this repo.
 
 ```powershell
 foundry model list                  # catalogue, with the device chosen per model
@@ -823,7 +865,44 @@ print(response.json()["choices"][0]["message"]["content"])
 > fails with *"Model … is not loaded"*. Run `foundry model load <alias>` first.
 > [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) handles both.
 
-### 7.3 Catalogue and device targeting
+### 7.3 Hello world — Python SDK
+
+**Not tested here** — this repo measured the HTTP path above. The SDK is the
+route Microsoft documents for shipping an application, and it avoids both traps
+in the previous section, because the catalogue and the load step are part of
+the API rather than separate CLI state.
+
+```powershell
+pip install foundry-local-sdk-winml openai      # cross-platform: foundry-local-sdk
+```
+
+```python
+from foundry_local_sdk import Configuration, FoundryLocalManager
+
+FoundryLocalManager.initialize(Configuration(app_name="my_app"))
+manager = FoundryLocalManager.instance
+
+# Fetch and register the execution providers for this hardware. On Windows this
+# goes through Windows ML, which is how the Qualcomm NPU provider is obtained.
+manager.download_and_register_eps()
+
+model = manager.catalog.get_model("qwen2.5-0.5b")
+model.download()
+model.load()
+
+client = model.get_chat_client()
+for chunk in client.complete_streaming_chat([{"role": "user", "content": "Why is the sky blue?"}]):
+    if chunk.choices:
+        print(chunk.choices[0].delta.content or "", end="", flush=True)
+
+model.unload()
+```
+
+Adapted from [Microsoft's quickstart](https://learn.microsoft.com/en-us/azure/foundry-local/get-started?pivots=programming-language-python).
+The same lifecycle — get from catalogue, download, load, create a client, run,
+unload — is identical across all four SDK languages.
+
+### 7.4 Catalogue and device targeting
 
 Device targeting is per model and visible: `foundry model list` has a Device
 column showing what this machine will actually use, and
@@ -848,7 +927,7 @@ Everything else — the whole `phi-4` family, all of `qwen3`, every
 placement is the point, that is a short list. The catalogue has changed
 significantly between versions, so **re-check it rather than citing notes**.
 
-### 7.4 Tool calling
+### 7.5 Tool calling
 
 ```powershell
 .\Scripts\Test-ToolCalling.ps1 -Model qwen2.5-0.5b
@@ -965,8 +1044,8 @@ driver versions.
 | The fastest inference available | **GenieX + QAIRT** | 8.7× the CPU's prefill rate; nothing else is close |
 | A specific Hugging Face model | **GenieX + GGUF** | Any GGUF, and `--compute` genuinely works |
 | To swap in for an OpenAI endpoint | **GenieX `serve`** or **Foundry Local** | Both expose `/v1/chat/completions` |
-| C# / .NET | **Foundry Local** | First-party SDK; handles version pinning |
-| Your own token loop | **ONNX Runtime GenAI** | The only in-process option here |
+| A first-party SDK in C#, Python, JS or Rust | **Foundry Local** | In-process native library; handles EP selection and version pinning |
+| Token-by-token control of generation | **ONNX Runtime GenAI** | The only one that exposes the raw token loop |
 | An MIT-licensed stack | **ONNX Runtime GenAI** | The other two are proprietary |
 | Tool calling on the NPU | **GenieX** with a tool-capable GGUF | Foundry has exactly one NPU model with tools, at 0.5B |
 
@@ -1062,7 +1141,7 @@ passes — an accepted baseline is a claim that this combination worked.
 | `og.Model()` cannot load a GenieX model | That is a `genie_config.json` bundle, not `genai_config.json` ([6.4](#64-model-formats)) |
 | NPU counter reads zero | The adapter LUID changed on reboot, or you enumerated counter instances before starting the workload. Re-derive the LUID |
 | `huggingface-cli: not found` | Superseded in `huggingface_hub` 1.x. Use `hf` |
-| Foundry returns `400` on a model you downloaded | Downloaded is not loaded, and the API wants the variant id, not the alias ([7.2](#72-hello-world)) |
+| Foundry returns `400` on a model you downloaded | Downloaded is not loaded, and the API wants the variant id, not the alias ([7.2](#72-hello-world--cli-and-http)) |
 | Foundry returns `500` inside `GroupQueryAttention` | `max_tokens` too small relative to the prompt. Raise it or omit it |
 | `python` reports `AMD64` | You are in an emulated interpreter. Use native ARM64 Python |
 | Exported assets target the wrong generation | `Snapdragon X Elite CRD` is the previous generation (HTP 73). This machine is `Snapdragon X2 Elite CRD` (HTP 81) |
@@ -1113,5 +1192,5 @@ CUDA host; this repository covers inference and evaluation.
 - [qualcomm/ai-hub-models](https://github.com/qualcomm/ai-hub-models)
 - [ONNX Runtime GenAI QNN guidance](https://github.com/microsoft/onnxruntime-genai/blob/main/docs/qnn.md)
 - [QNN Execution Provider](https://github.com/onnxruntime/onnxruntime-qnn/blob/main/docs/execution_providers/QNN-ExecutionProvider.md)
-- [microsoft/foundry-local](https://github.com/microsoft/foundry-local)
+- [microsoft/foundry-local](https://github.com/microsoft/foundry-local) · [architecture](https://learn.microsoft.com/en-us/azure/foundry-local/concepts/foundry-local-architecture) · [quickstart](https://learn.microsoft.com/en-us/azure/foundry-local/get-started)
 - [Windows on Arm overview](https://learn.microsoft.com/en-us/windows/arm/overview)
