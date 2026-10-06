@@ -308,6 +308,7 @@ its models target the NPU.
 | Token-level control | No | **Yes** | No — chat API only |
 | Tool calling | Model-dependent | Model-dependent | Catalogue flag; **1 NPU model** |
 | Prefill speed (Qwen3-4B) | **2072 tok/s** (QAIRT) · 1380 (llama.cpp) | 437 tok/s | not measured on this axis |
+| In-process decode (qwen2.5-0.5b) | — | — | **109 tok/s** via SDK, 28 over HTTP |
 | Licence | Proprietary | MIT | Proprietary |
 
 ### 3.4 What each requires installed
@@ -447,6 +448,7 @@ does that.
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§6.4 Hello world — C#](#64-hello-world--c) | [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) | Yes; runs inference |
+| [§7.3 Hello world — in-process SDK](#73-hello-world--in-process-sdk) | [`bench_foundry_sdk.py`](src/setup/bench_foundry_sdk.py) · [`src/csharp/FoundryProbe`](src/csharp/FoundryProbe) | Yes; runs inference |
 | [§6.6 Calling ONNX Runtime directly](#66-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
 | [Compiling your own models](docs/COMPILING.md) | [`hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
 
@@ -1024,23 +1026,37 @@ picks an execution provider itself, and manages the model cache.
 **It is a library, not a daemon.** Your application loads the Foundry Local
 Core API in-process and calls it through a first-party SDK:
 
-| Language | Package |
-| --- | --- |
-| Python | `foundry-local-sdk` (`foundry-local-sdk-winml` on Windows) |
-| C# | `Microsoft.AI.Foundry.Local` (`.WinML` on Windows) |
-| JavaScript | `foundry-local-sdk` |
-| Rust | `foundry-local-sdk` |
+| Language | Package | Version used here |
+| --- | --- | --- |
+| Python | `foundry-local-sdk` | 2.1.0 |
+| C# | `Microsoft.AI.Foundry.Local` | 2.1.0 |
+| JavaScript | `foundry-local-sdk` | — |
+| Rust | `foundry-local-sdk` | — |
 
-On Windows the `-winml` packages integrate with **Windows ML**, which sources
-execution-provider plugins from the OS and Windows Update and handles driver
+> **Use 2.x, and do not use the `-winml` packages.** SDK **2.0.1 was a
+> breaking release**: the separate `-winml` variants were retired in favour of a
+> single package that detects the hardware itself, and the in-process
+> OpenAI-style clients were replaced by the **Session API**. For C#, that means
+> dropping `.WinML` from the package name. The old variants are frozen at 1.2.4
+> and still on NuGet and PyPI, so it is easy to install the wrong one — and
+> parts of Microsoft's own quickstart still show the 1.x API.
+>
+> It matters beyond the API shape: `foundry-local-sdk-winml` 1.2.4 pulls
+> `onnxruntime-genai-core` **0.14.1**, while 2.1.0 pulls **0.17.1**. On the
+> older one, throughput here was erratic — 103 tok/s on the first run then
+> 9–15 on every run after — and the process **segfaulted on exit**. On 2.1.0
+> it is flat at ~107 tok/s with a clean exit.
+
+On Windows the SDK obtains execution providers through **Windows ML**, which
+sources the plugins from the OS and Windows Update and handles driver
 compatibility — that is how the Qualcomm NPU provider is registered.
 
 The OpenAI-compatible REST endpoint is **optional**: the SDK can start one
 inside your process for tools that speak HTTP, such as LangChain or Open WebUI,
 but native SDK calls skip it entirely.
 
-Two routes follow — the CLI plus HTTP, which is what this repo measured, and
-the SDK, which is the one you would ship.
+Both routes are measured below. **They are not close**: the in-process SDK is
+roughly **four times faster** than the HTTP endpoint on the same model.
 
 > [github.com/microsoft-foundry](https://github.com/microsoft-foundry) is the
 > **Azure** Foundry platform and is cloud-oriented. The on-device project is
@@ -1104,42 +1120,104 @@ print(response.json()["choices"][0]["message"]["content"])
 > fails with *"Model … is not loaded"*. Run `foundry model load <alias>` first.
 > [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) handles both.
 
-### 7.3 Hello world — Python SDK
+### 7.3 Hello world — in-process SDK
 
-**Not tested here** — this repo measured the HTTP path above. The SDK is the
-route Microsoft documents for shipping an application, and it avoids both traps
-in the previous section, because the catalogue and the load step are part of
-the API rather than separate CLI state.
+The SDK loads the Foundry Local Core API into your process; there is no HTTP
+hop and no separate server to start. The shape is **Model → Session → Request →
+Response**, and it is the same in every language binding.
 
 ```powershell
-pip install foundry-local-sdk-winml openai      # cross-platform: foundry-local-sdk
+pip install "foundry-local-sdk>=2.1.0"            # NOT foundry-local-sdk-winml
+dotnet add package Microsoft.AI.Foundry.Local     # 2.1.0; NOT .WinML
 ```
 
 ```python
-from foundry_local_sdk import Configuration, FoundryLocalManager
+from foundry_local_sdk import ChatSession, Configuration, FoundryLocalManager, MessageItem, Request
 
 FoundryLocalManager.initialize(Configuration(app_name="my_app"))
 manager = FoundryLocalManager.instance
 
-# Fetch and register the execution providers for this hardware. On Windows this
-# goes through Windows ML, which is how the Qualcomm NPU provider is obtained.
+# Execution providers are acquired through Windows ML on first use. 2.x picks
+# the provider itself -- the model variant decides NPU, GPU or CPU.
 manager.download_and_register_eps()
 
 model = manager.catalog.get_model("qwen2.5-0.5b")
-model.download()
+if not model.is_cached:          # a property in 2.x, not a method
+    model.download()
 model.load()
 
-client = model.get_chat_client()
-for chunk in client.complete_streaming_chat([{"role": "user", "content": "Why is the sky blue?"}]):
-    if chunk.choices:
-        print(chunk.choices[0].delta.content or "", end="", flush=True)
+session = ChatSession(model)
+session.set_streaming(True)
 
-model.unload()
+request = Request()
+request.add_item(MessageItem.user("Why is the sky blue?"))
+for item in session.process_streaming_request(request):
+    print(item.get_simple_text() or "", end="", flush=True)
 ```
 
-Adapted from [Microsoft's quickstart](https://learn.microsoft.com/en-us/azure/foundry-local/get-started?pivots=programming-language-python).
-The same lifecycle — get from catalogue, download, load, create a client, run,
-unload — is identical across all four SDK languages.
+```csharp
+using Microsoft.AI.Foundry.Local;
+using Microsoft.Extensions.Logging;
+
+// Pass a REAL logger. A null one turns any startup failure into an
+// ArgumentNullException thrown from inside the exception constructor, which
+// hides the actual cause.
+using var loggerFactory = LoggerFactory.Create(
+    b => b.AddConsole().SetMinimumLevel(Microsoft.Extensions.Logging.LogLevel.Warning));
+
+await FoundryLocalManager.CreateAsync(
+    new Configuration { AppName = "my_app" }, loggerFactory.CreateLogger("app"), null);
+var manager = FoundryLocalManager.Instance;
+await manager.DownloadAndRegisterEpsAsync(null);
+
+var catalog = await manager.GetCatalogAsync();
+var model = await catalog.GetModelAsync("qwen2.5-0.5b");
+if (!await model.IsCachedAsync()) await model.DownloadAsync(null);
+await model.LoadAsync();
+
+using var session = new ChatSession(model);
+session.SetStreaming(true);
+
+using var request = new Request();
+request.AddItem(MessageItem.User("Why is the sky blue?"), false);
+await foreach (var item in session.ProcessStreamingRequestAsync(request, default))
+{
+    if (item is MessageItem m) Console.Write(m.GetSimpleText());
+}
+```
+
+The C# project needs `<RuntimeIdentifier>win-arm64</RuntimeIdentifier>`; the
+package is RID-specific and the build fails without it.
+
+**Measured** on `qwen2.5-0.5b` (NPU variant), 400 tokens, with
+[`bench_foundry_sdk.py`](src/setup/bench_foundry_sdk.py) and
+[`src/csharp/FoundryProbe`](src/csharp/FoundryProbe):
+
+| Route | tok/s | First token | Model load |
+| --- | --- | --- | --- |
+| **C# in-process SDK** | **109.3** | 0.08 s | 2.9 s |
+| **Python in-process SDK** | **107.3** | 0.07 s | 2.9 s |
+| CLI + HTTP endpoint | 27.6 | — | server start |
+
+The two SDKs agree to within 2 %, which is what you would hope for from one
+native core behind two bindings.
+
+> **The ~4× gap is not purely the HTTP hop.** The CLI that serves the endpoint
+> is versioned separately and is older — CLI 0.10.3, reporting Foundry Local
+> Core 1.0.0 and ORT 1.26.0 — while the SDK measured here is 2.1.0 carrying ORT
+> GenAI 0.17.1. So the comparison mixes transport with runtime vintage. The
+> direction is not in doubt; the exact split is unattributed.
+
+**This supersedes the earlier HTTP-only figures.** Anything in this repository
+measured through `Invoke-FoundryBench.ps1` describes the endpoint, not Foundry
+Local's ceiling.
+
+> **`phi-3.5-mini` does not work through the SDK**, though it works fine over
+> HTTP. Loading succeeds, then generation fails at generator creation with
+> *"Non-zero status code returned while running GroupQueryAttention node …
+> `cos_cache` dimension 0 shall not be less than total_sequence_length"*,
+> independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Logged in
+> [open questions](#13-open-questions).
 
 ### 7.4 Catalogue and device targeting
 
@@ -1299,7 +1377,7 @@ driver versions.
 | The fastest inference available | **GenieX + QAIRT** | 8.7× the CPU's prefill rate; nothing else is close |
 | A specific Hugging Face model | **GenieX + GGUF** | Any GGUF, and `--compute` genuinely works |
 | To swap in for an OpenAI endpoint | **GenieX `serve`** or **Foundry Local** | Both expose `/v1/chat/completions` |
-| A first-party SDK in C#, Python, JS or Rust | **Foundry Local** | In-process native library; handles EP selection and version pinning |
+| A first-party SDK in C#, Python, JS or Rust | **Foundry Local** | In-process native library; handles EP selection and version pinning. Use the SDK, not its HTTP endpoint — it is ~4× faster |
 | Token-by-token control of generation | **ONNX Runtime GenAI** | The only one that exposes the raw token loop |
 | An MIT-licensed stack | **ONNX Runtime GenAI** | The other two are proprietary |
 | Tool calling on the NPU | **GenieX** with a tool-capable GGUF | Foundry has exactly one NPU model with tools, at 0.5B |
@@ -1434,6 +1512,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
+| **`phi-3.5-mini` fails through the Foundry SDK** | Works over the HTTP endpoint at 27.7 tok/s, but through the 2.1.0 Session API it fails at generator creation: *`cos_cache` dimension 0 shall not be less than total_sequence_length*, in `GroupQueryAttention`, independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Same node as the `max_tokens` bug above, so possibly one underlying defect |
 | **`GetAvailableProviders()` omits QNN in C#** | It never lists QNN, before or after registration, even while the graph demonstrably runs on the NPU at 98.9 %. Python does list it. Ruled out first-call caching. Unclear whether this is intended for plugin EPs or a gap in the C# binding — worth asking upstream |
 
 ### Measured, but not settled
@@ -1448,7 +1527,6 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Foundry Local SDK** | Only the CLI plus HTTP path was measured. The in-process SDK — C#, Python, JavaScript, Rust — is the one you would ship, skips the HTTP hop, and is likely faster. Nothing here measures it |
 | **Upstream llama.cpp on the NPU** | The Hexagon backend needs signed HTP ops libraries and has you enable test signing machine-wide, so it was not attempted. The OpenCL/Adreno backend needs no such thing and is the cheaper experiment |
 | Ollama / LM Studio | Reported as CPU-only on Windows on Arm, but not verified here. Both build on llama.cpp, so the Hexagon backend above is the thing to watch |
 | `Microsoft.ML.OnnxRuntimeGenAI.QNN` | Pinned at 0.13.2 against the 0.17.1 used here. Outside the broken 0.16.x range so it may work, but it mixes the all-in-one packaging model with the plugin one. Untested |

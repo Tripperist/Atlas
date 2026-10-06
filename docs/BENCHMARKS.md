@@ -214,6 +214,33 @@ cost is substantial", which both numbers support, rather than as a regression.
 > real client would actually see, but it is **not** comparable to
 > `geniex-bench`'s isolated decode rate in [prefill vs decode](#prefill-vs-decode).
 
+### In-process SDK vs the HTTP endpoint
+
+`qwen2.5-0.5b` (NPU variant), 400 tokens, SDK 2.1.0:
+
+| Route | tok/s | First token | Model load |
+| --- | --- | --- | --- |
+| **C# in-process SDK** | **109.3** | 0.08 s | 2.9 s |
+| **Python in-process SDK** | **107.3** | 0.07 s | 2.9 s |
+| CLI + HTTP endpoint | 27.6 | — | server start |
+
+The two SDK bindings agree to within 2 %, as they should — one native core
+behind two wrappers. Against the HTTP endpoint the gap is about **4x**.
+
+**The gap is not purely transport.** The CLI serving the endpoint is versioned
+separately and is older (CLI 0.10.3, Foundry Local Core 1.0.0, ORT 1.26.0) than
+the SDK measured here (2.1.0, ORT GenAI 0.17.1), so runtime vintage is mixed in
+with the HTTP hop. The direction is not in doubt; the split is unattributed.
+
+**Every other Foundry figure in this file was taken over HTTP** and therefore
+describes the endpoint rather than Foundry Local's ceiling. Read them that way.
+
+> Measured with [`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
+> [`src/csharp/FoundryProbe`](../src/csharp/FoundryProbe). The retired
+> `foundry-local-sdk-winml` 1.2.4 was also tried: throughput was erratic (103
+> tok/s on the first run, then 9–15) and the process segfaulted on exit. Use
+> 2.x.
+
 ### All three compute units, same model
 
 Foundry Local publishes one variant per compute unit. `qwen2.5-0.5b`, 400
