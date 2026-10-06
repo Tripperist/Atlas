@@ -63,15 +63,24 @@ $baselinePath = Join-Path $root '.atlas-local\baseline.json'
 
 # ----------------------------------------------------------------- observe
 
+$NotDetected = 'NOT DETECTED'
+
 function Get-CurrentState {
     $state = [ordered]@{ recorded = (Get-Date -Format 's') }
 
+    # Matched by device name, which on this machine resolves to
+    # "Qualcomm(R) Adreno(TM) X2-85 GPU" and
+    # "Snapdragon(R) X2 Elite - X2E78100 - Qualcomm(R) Hexagon(TM) NPU".
+    # If a rename ever breaks the match, record NOT DETECTED rather than a
+    # null: a null would read as "(none)" in both columns and compare equal,
+    # so a driver change would go silently unnoticed -- the exact failure this
+    # script exists to catch.
     $drivers = Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue
-    $adreno = $drivers | Where-Object { $_.DeviceName -match 'Adreno' }  | Select-Object -First 1
-    $npu    = $drivers | Where-Object { $_.DeviceName -match 'Hexagon' } | Select-Object -First 1
+    $adreno = $drivers | Where-Object { $_.DeviceName -match 'Adreno' }          | Select-Object -First 1
+    $npu    = $drivers | Where-Object { $_.DeviceName -match 'Hexagon|NPU' } | Select-Object -First 1
     $state.drivers = [ordered]@{
-        adreno = $adreno.DriverVersion
-        npu    = $npu.DriverVersion
+        adreno = if ($adreno) { $adreno.DriverVersion } else { $script:NotDetected }
+        npu    = if ($npu)    { $npu.DriverVersion }    else { $script:NotDetected }
     }
     $state.os = (Get-CimInstance Win32_OperatingSystem).BuildNumber
 
@@ -102,11 +111,17 @@ function Get-CurrentState {
 
 function New-DriftRow {
     param([string]$Name, $Was, $Now, [string]$Updatable)
+    $wasText = if ($null -ne $Was -and "$Was".Trim()) { "$Was" } else { '(none)' }
+    $nowText = if ($null -ne $Now -and "$Now".Trim()) { "$Now" } else { '(none)' }
+    # Appearing and disappearing both count as drift. Only "absent in both"
+    # is unchanged -- requiring both sides to be present would hide a
+    # component that vanished between runs.
+    $changed = ($wasText -ne $nowText) -and -not ($wasText -eq '(none)' -and $nowText -eq '(none)')
     [pscustomobject]@{
         Component = $Name
-        Baseline  = if ($Was) { "$Was" } else { '(none)' }
-        Current   = if ($Now) { "$Now" } else { '(none)' }
-        Changed   = [bool]($Was -and $Now -and "$Was" -ne "$Now")
+        Baseline  = $wasText
+        Current   = $nowText
+        Changed   = [bool]$changed
         Updatable = $Updatable
     }
 }
@@ -171,6 +186,21 @@ Write-Host ''
 $rows = Compare-Against -Current $current -Baseline $baseline
 $rows | Format-Table -AutoSize -Property Component, Baseline, Current, Changed, Updatable |
         Out-String | Write-Host
+
+$undetected = @($rows | Where-Object {
+    $_.Updatable -eq 'detect only' -and ($_.Current -eq $NotDetected -or $_.Current -eq '(none)')
+})
+if ($undetected.Count -gt 0) {
+    Write-Host 'WARNING: a driver could not be identified:' -ForegroundColor Red
+    foreach ($u in $undetected) { Write-Host ("  {0}" -f $u.Component) -ForegroundColor Red }
+    Write-Host 'The device-name match in Get-CurrentState needs updating. Until then'  -ForegroundColor Red
+    Write-Host 'this script cannot tell you whether that driver changed, which is the' -ForegroundColor Red
+    Write-Host 'one thing it is here to do. Check manually:'                           -ForegroundColor Red
+    Write-Host '  Get-CimInstance Win32_PnPSignedDriver |'                             -ForegroundColor DarkGray
+    Write-Host '    Where-Object { $_.DeviceName -match ''Qualcomm|Snapdragon'' } |'      -ForegroundColor DarkGray
+    Write-Host '    Select-Object DeviceName, DriverVersion'                              -ForegroundColor DarkGray
+    Write-Host ''
+}
 
 $drifted = @($rows | Where-Object { $_.Changed })
 if ($drifted.Count -gt 0) {

@@ -21,22 +21,22 @@ This README is the single entry point. It supersedes the former `Setup.MD` and `
 
 Every manual sequence below is wrapped in a script. Each section still explains what the steps do and why — run the script, read the section when something fails.
 
-| Script | Automates | Safe to run |
+| Step | Script | Safe to run |
 | --- | --- | --- |
-| [`Scripts/Install-Prerequisites.ps1`](Scripts/Install-Prerequisites.ps1) | §4.1 toolchain | Reports only; `-Install` to act |
-| [`Scripts/Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | §4.3 venv + deps | Yes |
-| [`Scripts/Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | §4.6 drift + updates | Reports only; `-Apply` to act |
-| [`Scripts/Get-SystemInfo.ps1`](Scripts/Get-SystemInfo.ps1) | §1 hardware inventory | Yes, read-only |
-| [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | §2 status table | Yes, read-only |
-| [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §7 quick CPU/GPU/NPU check | Yes; runs inference |
-| [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | §9 full benchmark + CPU sampling → CSV | Yes; runs inference |
-| [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | §7 re-derive NPU/GPU adapter LUIDs | Yes; runs inference |
-| [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | §5 QNN provider + model format | Yes, read-only |
-| [`src/setup/model_format.py`](src/setup/model_format.py) | §5 classify a model directory | Yes, read-only |
-| [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
-| [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | §8.4 cloud compile + profile | Uploads model; needs API token |
-| [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | §6 published perf per model | Yes, read-only; no token |
-| [`src/setup/bench_ort_genai.py`](src/setup/bench_ort_genai.py) | §9.3 ORT GenAI prefill/decode | Yes; runs inference |
+| [§1.1 Run the inventory](#11-run-the-inventory) | [`Scripts/Get-SystemInfo.ps1`](Scripts/Get-SystemInfo.ps1) | Yes, read-only |
+| [§2 Verification status](#2-verification-status) | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
+| [§4.1 Native ARM64 toolchain](#41-native-arm64-toolchain) | [`Scripts/Install-Prerequisites.ps1`](Scripts/Install-Prerequisites.ps1) | Reports only; `-Install` to act |
+| [§4.3 Python workspace](#43-python-workspace) | [`Scripts/Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | Yes |
+| [§4.6 Keeping the workspace current](#46-keeping-the-workspace-current) | [`Scripts/Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
+| [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/model_format.py`](src/setup/model_format.py) | Yes, read-only |
+| [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | Yes, read-only |
+| [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
+| [§6 Available models](#6-available-models) | [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
+| [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | Yes; runs inference |
+| [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
+| [§8.4 AI Hub Workbench](#84-ai-hub-workbench) | [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
+| [§9 Benchmarking](#9-benchmarking) | [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | Yes; runs inference |
+| [§9.3 Prefill vs decode, measured with `geniex-bench`](#93-prefill-vs-decode-measured-with-geniex-bench) | [`src/setup/bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 
 First run, in order:
 
@@ -431,7 +431,7 @@ worked.
 
 ## 5. Inference paths
 
-### Method A: GenieX CLI (recommended first)
+### 5.1 Method A: GenieX CLI (recommended first)
 
 GenieX requires a model to be **cached before inference** — `pull` first, then `infer`.
 
@@ -491,7 +491,7 @@ geniex clean
 >
 > `geniex_llamacpp` and `geniex_qairt` *are* real identifiers — but they belong to **`qai-hub-models fetch --runtime`**, a different tool. Passing them to `geniex` will fail. See [Section 8.2](#82-ai-hub-runtime-targets).
 
-### Method B: GenieX Python SDK
+### 5.2 Method B: GenieX Python SDK
 
 Untested here. Install with `uv add geniex`.
 
@@ -509,7 +509,7 @@ for chunk in model.generate(prompt, max_new_tokens=256, stream=True):
 model.close()
 ```
 
-### Method C: OpenAI-compatible local server
+### 5.3 Method C: OpenAI-compatible local server
 
 For LangChain, AutoGen, CrewAI, or any OpenAI-shaped client.
 
@@ -551,9 +551,9 @@ if __name__ == "__main__":
 
 > **Corrections to earlier notes.** The URL `http://127.0.0` was truncated and missing `/v1/chat/completions`, and `response.json()['choices']['message']` was missing the `[0]` index — `choices` is a list.
 
-### Method D: ONNX Runtime GenAI + QNN
+### 5.4 Method D: ONNX Runtime GenAI + QNN
 
-Use this when you need your own token loop, or when Python is a stepping stone to a C# application — the .NET API mirrors it closely. **This works**: Phi-4-mini-reasoning runs on the Hexagon NPU at ~17 tok/s with the NPU measured at 97.7 % — see [Phi-4 on the NPU](#phi-4-on-the-npu). Two things have to be right, and both fail silently if they are not: the model format, and the `onnxruntime-genai` version.
+Use this when you need your own token loop, or when Python is a stepping stone to a C# application — the .NET API mirrors it closely. **This works**: Phi-4-mini-reasoning runs on the Hexagon NPU at ~17 tok/s with the NPU measured at 97.7 % — see [Phi-4 on the NPU](#55-phi-4-on-the-npu). Two things have to be right, and both fail silently if they are not: the model format, and the `onnxruntime-genai` version.
 
 ```bash
 .\.venv\Scripts\python.exe src\setup\check_qnn.py --model-dir "$env:USERPROFILE\.cache\geniex\models\qualcomm\Qwen3-4B"
@@ -605,7 +605,7 @@ For `qwen3_4b` today that returns only `q4_0/geniex_llamacpp`, `w4a16/genie`, an
 
 Even then, AI Hub's ONNX assets target plain ONNX Runtime with the QNN EP; `onnxruntime-genai` additionally needs `genai_config.json`, which those bundles may not contain. The reliable source for ORT-GenAI models is Microsoft's own `*-onnx` Hugging Face repos, which ship `genai_config.json` alongside the graph.
 
-### Phi-4 on the NPU
+### 5.5 Phi-4 on the NPU
 
 Microsoft publishes a correctly-formatted ORT GenAI NPU bundle for Phi-4, and **it runs on Snapdragon X2 Elite** despite declaring `soc_model: 60` (X Elite). Both repos, verified against the Hugging Face API:
 
@@ -851,7 +851,7 @@ del generator
 
 ---
 
-### Method E: Microsoft Foundry Local
+### 5.6 Method E: Microsoft Foundry Local
 
 Microsoft's on-device runtime. It wraps ONNX Runtime, picks an execution provider automatically, manages the model cache, and exposes an OpenAI-compatible server — **with a first-party C# SDK**, which makes it the most direct route to Scout of anything here.
 
@@ -881,7 +881,7 @@ The winget installer is `foundry-0.10.3-win-arm64-winml.msix` — a native ARM64
 
 For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
 
-**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — inside the range we verified working in [Method D](#method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
+**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — inside the range we verified working in [Method D](#54-method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
 
 **Device targeting is per model, and visible.** `foundry model list` has a Device column showing what this machine will actually use, and `foundry model info <model>` lists every variant with its execution provider:
 
@@ -962,7 +962,7 @@ geniex infer qualcomm/Qwen3-4B -p "Plan a day in Lisbon." --compute npu
 geniex serve                                   # OpenAI-compatible, port 18181
 ```
 
-`geniex model list` shows the catalogue. For the ONNX Runtime GenAI route instead, see [§5 Method D](#method-d-onnx-runtime-genai--qnn).
+`geniex model list` shows the catalogue. For the ONNX Runtime GenAI route instead, see [§5 Method D](#54-method-d-onnx-runtime-genai--qnn).
 
 ### 6.2 Task models
 
@@ -993,7 +993,7 @@ qai-hub-models info whisper_tiny          # inputs, outputs, licence
 qai-hub-models numerics whisper_tiny      # accuracy metrics
 ```
 
-These are **not** GenieX models. They are ONNX/QAIRT assets run through ONNX Runtime with the QNN provider ([§5 Method D](#method-d-onnx-runtime-genai--qnn)) — remember to attach QNN with the policy API, not `providers=[...]`.
+These are **not** GenieX models. They are ONNX/QAIRT assets run through ONNX Runtime with the QNN provider ([§5 Method D](#54-method-d-onnx-runtime-genai--qnn)) — remember to attach QNN with the policy API, not `providers=[...]`.
 
 ### 6.3 Choosing for Scout
 
@@ -1368,7 +1368,7 @@ Measured with [`bench_ort_genai.py`](src/setup/bench_ort_genai.py), which mirror
 
 **ORT GenAI is the weakest path on prefill by a wide margin** — 256.5 tok/s against 1543.0 for the same model on GenieX's llama.cpp NPU, a **6× gap**, and marginally *below* llama.cpp running on CPU. Decode is comparable to llama.cpp NPU (14.1 vs 15.2), with both well behind CPU.
 
-**The architecture explains it.** As recorded in [§5 Method D](#method-d-onnx-runtime-genai--qnn), this bundle's graph is a hybrid: **36 `EPContext` nodes** that QNN executes on the NPU, plus **32 `GroupQueryAttention` nodes that run on CPU**. Prefill is attention-heavy across all 512 positions, so pushing attention to the CPU costs exactly where the NPU should be strongest. That it still reports ~98 % NPU utilization is a good illustration of why a utilization figure is not a throughput measurement.
+**The architecture explains it.** As recorded in [§5 Method D](#54-method-d-onnx-runtime-genai--qnn), this bundle's graph is a hybrid: **36 `EPContext` nodes** that QNN executes on the NPU, plus **32 `GroupQueryAttention` nodes that run on CPU**. Prefill is attention-heavy across all 512 positions, so pushing attention to the CPU costs exactly where the NPU should be strongest. That it still reports ~98 % NPU utilization is a good illustration of why a utilization figure is not a throughput measurement.
 
 **Conclusion for runtime selection.** On prefill-dominated work, the ordering is unambiguous: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**. ORT GenAI's value is in-process control of the token loop and a first-party C# path — not speed. If Scout needs that control, the cost is roughly 6× on prefill against the GenieX paths; if it does not, `geniex serve` is both faster and simpler.
 
@@ -1546,7 +1546,7 @@ Keep model locations configurable. Never assume a `D:` path exists on a training
 | `--port` rejected on `serve` | Use `--host 127.0.0.1:<port>` |
 | `QNNExecutionProvider` missing from providers | Call `ort.register_execution_provider_library(...)` first — it is a plugin, not built in |
 | `og.Model()` fails to parse the model dir | Run `check_qnn.py --model-dir <dir>` — it names the format. `genai_config.json` is required; `genie_config.json` + `part*_of_*.bin` is a QAIRT bundle that will not load |
-| `set_input_ids` / `compute_logits` AttributeError | Removed in onnxruntime-genai 0.16. Use `append_tokens` and drop `compute_logits` — see [Method D](#method-d-onnx-runtime-genai--qnn) |
+| `set_input_ids` / `compute_logits` AttributeError | Removed in onnxruntime-genai 0.16. Use `append_tokens` and drop `compute_logits` — see [Method D](#54-method-d-onnx-runtime-genai--qnn) |
 | Session loads but `get_providers()` shows only CPU | QNN took no nodes. Set `session.disable_cpu_ep_fallback` to turn the silent fallback into an error |
 | `--compute` makes no measurable difference | Expected for QAIRT bundles — the flag is `llama_cpp only`. Test placement with a GGUF model |
 | `pull` says success but nothing downloaded | The name resolved to an already-cached bundle. A real download prints `Location:`. Check `PluginId` in the model's `geniex.json` |
@@ -1672,7 +1672,7 @@ The plugin requires `ggml-opencl.dll` — renaming it aside converted the hard c
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
 | ~~NPU first-token regression~~ | **Closed, not reported.** Scoped down to a ~1.5 s one-time init cost on the llama.cpp path, visible only in one-shot `geniex infer`; QAIRT and `geniex serve` steady state are unaffected ([§9.2](#92-measured-results)). An upstream issue was drafted and deliberately dropped — too small to be worth a maintainer's attention, and the first draft mischaracterised it as a 13–18× prefill regression. Revisit only if one-shot CLI latency starts to matter |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
-| C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
+| C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#56-method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
 | NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
 | `ort.ModelCompiler` NHWC failure | Fails on both ORT 1.27.0 and 1.30.0 where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | Long-context behaviour | All benchmarks are short generations. KV cache growth is the likely binding constraint for Scout and is unmeasured |
