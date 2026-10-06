@@ -35,6 +35,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | §5 Method D generation loop | Yes |
 | [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | §8.4 cloud compile + profile | Uploads model; needs API token |
 | [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | §6 published perf per model | Yes, read-only; no token |
+| [`src/setup/bench_ort_genai.py`](src/setup/bench_ort_genai.py) | §9.3 ORT GenAI prefill/decode | Yes; runs inference |
 
 First run, in order:
 
@@ -1302,6 +1303,24 @@ geniex-bench --plugin qairt     --device npu -m 'qualcomm/Qwen3-4B:W4A16'     -r
 | llama.cpp | GPU | Q4_0 | 1570 ms | 326.8 | 22.4 |
 | llama.cpp | CPU | Q4_0 | 2144 ms | 238.9 | 28.5 |
 
+**Same model across runtimes — `Phi-4-mini-reasoning`, 512-token prompt, 128 generated, 3 repetitions:**
+
+The Qwen3-4B table above compares GenieX's two plugins, but Qwen3 has no ORT GenAI build. Phi-4-mini-reasoning exists as both a GGUF and a Microsoft ORT GenAI NPU bundle, so it puts all three runtimes on one model:
+
+| Runtime | Plugin / device | Quantization | TTFT | Prefill tok/s | Decode tok/s |
+| --- | --- | --- | --- | --- | --- |
+| GenieX | llama.cpp, NPU | Q4_0 | **335 ms** | **1543.0** | 15.2 |
+| GenieX | llama.cpp, CPU | Q4_0 | 1713 ms | 299.0 | **31.6** |
+| ONNX Runtime GenAI | QNN EP, NPU | qnn-int4 | 1996 ms | 256.5 | 14.1 |
+
+Measured with [`bench_ort_genai.py`](src/setup/bench_ort_genai.py), which mirrors `geniex-bench`'s method: a fixed-length prompt of random token ids, a fixed generated-token count, and prefill timed separately from decode.
+
+**ORT GenAI is the weakest path on prefill by a wide margin** — 256.5 tok/s against 1543.0 for the same model on GenieX's llama.cpp NPU, a **6× gap**, and marginally *below* llama.cpp running on CPU. Decode is comparable to llama.cpp NPU (14.1 vs 15.2), with both well behind CPU.
+
+**The architecture explains it.** As recorded in [§5 Method D](#method-d-onnx-runtime-genai--qnn), this bundle's graph is a hybrid: **36 `EPContext` nodes** that QNN executes on the NPU, plus **32 `GroupQueryAttention` nodes that run on CPU**. Prefill is attention-heavy across all 512 positions, so pushing attention to the CPU costs exactly where the NPU should be strongest. That it still reports ~98 % NPU utilization is a good illustration of why a utilization figure is not a throughput measurement.
+
+**Conclusion for runtime selection.** On prefill-dominated work, the ordering is unambiguous: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**. ORT GenAI's value is in-process control of the token loop and a first-party C# path — not speed. If Scout needs that control, the cost is roughly 6× on prefill against the GenieX paths; if it does not, `geniex serve` is both faster and simpler.
+
 **This reframes the CPU-versus-NPU question entirely.**
 
 - **Prefill is where the NPU earns its place.** QAIRT on NPU is **8.7×** the CPU's prefill rate, and llama.cpp on NPU is **5.9×**. Time to first token drops from 2.14 s to 0.25 s — a difference a user feels directly.
@@ -1526,7 +1545,7 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Measure prefill separately from decode.** Qualcomm's own figures ([§9.4](#95-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
 
-**The QAIRT-vs-llama.cpp half is now answered** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)): on the same NPU and model, QAIRT delivers 2079.7 prefill / 29.5 decode against llama.cpp's 1414.8 / 16.5 — 1.5× and 1.8× respectively, confirming the ~2× inferred from Qualcomm's figures. What remains is placing **ORT GenAI** on the same axes, since its numbers were taken with short prompts and no prefill measurement.
+**This item is now closed** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)). All three runtimes have been measured on the same axes, and on the same model where one exists in both formats. On Qwen3-4B, QAIRT delivers 2079.7 prefill / 29.5 decode against llama.cpp's 1414.8 / 16.5. On Phi-4-mini-reasoning, llama.cpp NPU gives 1543.0 / 15.2 against ORT GenAI's 256.5 / 14.1 — a 6× prefill gap, explained by that bundle running its 32 attention nodes on CPU. Ordering for prefill-dominated work: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**.
 
 ### Verify tool calling on the NPU with `qwen2.5-7b`
 
