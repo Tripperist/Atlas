@@ -214,6 +214,30 @@ cost is substantial", which both numbers support, rather than as a regression.
 > real client would actually see, but it is **not** comparable to
 > `geniex-bench`'s isolated decode rate in [prefill vs decode](#prefill-vs-decode).
 
+### All three compute units, same model
+
+Foundry Local publishes one variant per compute unit. `qwen2.5-0.5b`, 400
+tokens, 3 runs, over the HTTP endpoint:
+
+| Variant | Execution provider | Size | tok/s | NPU peak | CPU mean |
+| --- | --- | --- | --- | --- | --- |
+| `-generic-gpu` | WebGPU | 700 MB | **42.7** | 0 % | 14.5 % |
+| `-generic-cpu` | CPU | 822 MB | 40.5 | 0 % | 43.9 % |
+| `-qnn-npu` | QNN (HTP) | 442 MB | 27.6 | 63.6 % | 61.0 % |
+
+The NPU variant is the slowest, and the counters confirm each variant used the
+unit its name claims — NPU peak is 0 % for both the GPU and CPU variants.
+
+**This is the expected result for this workload, not a contradiction of the
+GenieX numbers above.** A 0.5B model answering a short prompt is almost
+entirely decode, the phase where the NPU has no advantage. The NPU variant was
+also by far the least consistent, at 17.4 / 18.5 / 46.8 tok/s across its three
+runs, against 39.0–43.3 for CPU.
+
+It is a useful counterexample to "put it on the NPU": at this model size and
+prompt length, the Adreno GPU is both the fastest option and the cheapest in
+CPU time.
+
 ### Tool calling and NPU placement
 
 Three 25-second windows against `qwen2.5-0.5b-instruct-qnn-npu`, NPU sampled

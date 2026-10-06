@@ -219,7 +219,8 @@ flowchart TB
         LC["llama.cpp engine"]
         QA["QAIRT engine"]
         ORTC["ONNX Runtime"]
-        QNN["QNN execution provider"]
+        QNN["QNN EP<br/>htp · gpu · cpu"]
+        OEP["WebGPU EP · CPU EP"]
     end
 
     subgraph HW["Snapdragon X2 Elite"]
@@ -242,13 +243,16 @@ flowchart TB
     ORT --> ORTC
     FL --> ORTC
     ORTC --> QNN
+    ORTC --> OEP
 
     LC --> CPU
     LC --> GPU
     LC --> NPU
     QA --> NPU
     QNN --> NPU
-    ORTC --> CPU
+    QNN --> GPU
+    OEP --> GPU
+    OEP --> CPU
 ```
 
 **Two of the three share a foundation.** ONNX Runtime GenAI and Foundry Local
@@ -286,7 +290,7 @@ its models target the NPU.
 | --- | --- | --- | --- |
 | Vendor | Qualcomm | Microsoft | Microsoft |
 | Model sourcing | Any GGUF on Hugging Face, plus AI Hub bundles | Hand-assembled; needs `genai_config.json` | Curated catalogue (~50 models) |
-| Compute units | CPU, GPU, NPU (llama.cpp) · NPU (QAIRT) | NPU via QNN EP | Auto-selected per model |
+| Compute units | CPU, GPU, NPU (llama.cpp) · NPU (QAIRT) | NPU, GPU or CPU — QNN EP `backend_type` | NPU, GPU or CPU — one model variant each |
 | Choose compute explicitly | `--compute` (llama.cpp only) | Policy API | No |
 | OpenAI-compatible server | `geniex serve` | — | Optional, in-process |
 | First-party SDKs | — (CLI and HTTP) | Python, C# | **C#, Python, JS, Rust** |
@@ -657,6 +661,41 @@ Qualcomm publishes measured performance per model per device, so "how fast is
 X on my chip" rarely needs benchmarking — see the
 [model catalogue](docs/BENCHMARKS.md#model-catalogue).
 
+### 5.8 Using llama.cpp without GenieX
+
+GenieX bundles llama.cpp, but it is not the only way to reach it. Upstream
+llama.cpp has **official Windows-on-Snapdragon support**, with three backends:
+
+| Backend | Reaches | Practical cost |
+| --- | --- | --- |
+| CPU (ARM64) | CPU | None — a normal build |
+| OpenCL | Adreno GPU | Needs the Qualcomm OpenCL SDK. **No test signing required** |
+| Hexagon | Hexagon NPU | Needs the Hexagon SDK **and signed HTP ops libraries** |
+
+```powershell
+python scripts\snapdragon\setup-sdk.py --opencl     # or --hexagon
+cmake --preset arm64-windows-snapdragon-release -B build-wos
+```
+
+**The Hexagon backend is the catch.** Its HTP ops libraries must be included in
+a digitally signed `.cat` file, and the upstream documentation has you enable
+test signing (`bcdedit /set TESTSIGNING ON`) to run an unsigned build. That is
+a machine-wide security posture change, not a build flag.
+
+**This is the clearest argument for GenieX.** It ships a prebuilt, signed
+llama.cpp with working HTP support, so the NPU path costs an installer rather
+than a code-signing certificate and a reboot into test signing. If you only
+want the Adreno GPU, upstream llama.cpp with the OpenCL backend is a reasonable
+alternative with no such constraint.
+
+> **Ollama and LM Studio** are the usual follow-up question. Both build on
+> llama.cpp and ship Windows ARM64 builds, but reports through 2025–2026
+> consistently describe them as **CPU-only on Windows on Arm**, with NPU and
+> GPU acceleration still outstanding
+> ([ollama#5360](https://github.com/ollama/ollama/issues/5360)). Neither was
+> tested here — check the current state before relying on either for
+> accelerated inference.
+
 ---
 
 ## 6. ONNX Runtime GenAI
@@ -726,6 +765,32 @@ before the registration call.
 
 **Always verify.** A successful `run()` is not evidence of placement — see
 [section 8](#8-proving-which-compute-unit-ran).
+
+**The QNN provider is not NPU-only.** It has three backends, selected with
+`backend_type` (or a `backend_path` such as `QnnHtp.dll`):
+
+| `backend_type` | Target | Notes |
+| --- | --- | --- |
+| `htp` | Hexagon NPU | The default. **Quantized models only** |
+| `gpu` | Adreno GPU | Accepts float models, no quantization needed |
+| `cpu` | CPU | Reference implementation, for testing |
+
+Three constraints follow from choosing `htp`, and they explain most "why will
+this model not run on the NPU" questions:
+
+- **Quantized, in QDQ form.** Float32 must be converted to int8/uint8/int16/
+  uint16 with Quantize–Dequantize nodes. Quantization itself runs on x64; only
+  inference runs on ARM64.
+- **Fixed input shapes.** Dynamic dimensions are not supported.
+- **A subset of operators.** Anything unsupported either falls back to CPU or
+  errors, depending on `session.disable_cpu_ep_fallback`.
+
+Other provider options worth knowing: `htp_performance_mode` (`burst`,
+`balanced`, `sustained_high_performance` …) — set this to `burst` when
+benchmarking, to match what GenieX does by default — plus `profiling_level`
+and `vtcm_mb`. Session-level `ep.context_enable` caches the compiled graph as
+an EPContext binary, which is what the published NPU bundles contain; see
+[docs/COMPILING.md](docs/COMPILING.md#compiling-an-epcontext-model-locally).
 
 ### 6.3 Hello world
 
@@ -914,6 +979,22 @@ column showing what this machine will actually use, and
 | Phi-3.5-mini-instruct-generic-gpu | GPU | WebGpuExecutionProvider | 2.2 GB |
 | Phi-3.5-mini-instruct-generic-cpu | CPU | CPUExecutionProvider    | 2.5 GB |
 ```
+
+**All three compute units are reachable**, one model variant each. Measured on
+`qwen2.5-0.5b`, 400 tokens, 3 runs, over the HTTP endpoint:
+
+| Variant | Execution provider | Size | tok/s | NPU peak | CPU mean |
+| --- | --- | --- | --- | --- | --- |
+| `-generic-gpu` | WebGPU | 700 MB | **42.7** | 0 % | 14.5 % |
+| `-generic-cpu` | CPU | 822 MB | 40.5 | 0 % | 43.9 % |
+| `-qnn-npu` | QNN (HTP) | 442 MB | 27.6 | 63.6 % | 61.0 % |
+
+> **The NPU is the slowest of the three here, and that is expected.** This is a
+> 0.5B model answering a short prompt, so the run is almost entirely decode —
+> the phase where the NPU has no advantage (see [Key concepts](#1-key-concepts)).
+> The NPU variant was also the least consistent, at 17.4 / 18.5 / 46.8 tok/s
+> across its three runs. Do not read this as "the NPU is slow"; read it as
+> "a tiny model with a short prompt is the wrong workload for it".
 
 **On this machine, only two catalogue models target the NPU:**
 
@@ -1191,6 +1272,7 @@ CUDA host; this repository covers inference and evaluation.
 - [GenieX — what is GenieX](https://geniex.aihub.qualcomm.com/en/get-started/what-is-geniex) · [CLI install](https://geniex.aihub.qualcomm.com/en/run/cli/install) · [qualcomm/GenieX](https://github.com/qualcomm/GenieX)
 - [qualcomm/ai-hub-models](https://github.com/qualcomm/ai-hub-models)
 - [ONNX Runtime GenAI QNN guidance](https://github.com/microsoft/onnxruntime-genai/blob/main/docs/qnn.md)
-- [QNN Execution Provider](https://github.com/onnxruntime/onnxruntime-qnn/blob/main/docs/execution_providers/QNN-ExecutionProvider.md)
+- [QNN Execution Provider](https://onnxruntime.ai/docs/execution-providers/QNN-ExecutionProvider.html) — backends, QDQ requirements, context binaries, provider options
+- [llama.cpp on Windows on Snapdragon](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/snapdragon/windows.md) · [Hexagon backend](https://github.com/ggml-org/llama.cpp/blob/master/docs/backend/hexagon/README.md)
 - [microsoft/foundry-local](https://github.com/microsoft/foundry-local) · [architecture](https://learn.microsoft.com/en-us/azure/foundry-local/concepts/foundry-local-architecture) · [quickstart](https://learn.microsoft.com/en-us/azure/foundry-local/get-started)
 - [Windows on Arm overview](https://learn.microsoft.com/en-us/windows/arm/overview)

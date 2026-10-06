@@ -190,8 +190,17 @@ $maxNpu  = ($rows | Measure-Object NPUPeak -Maximum).Maximum
 Write-Host ("mean {0:N1} tok/s | NPU peak {1:N1}% | CPU mean {2:N1}%" -f $meanTps, $maxNpu, $meanCpu)
 
 if (-not $NoRecord) {
+    # Derive the compute unit from the resolved variant rather than assuming the
+    # NPU: Foundry publishes one variant per unit, and the GPU and CPU ones were
+    # being recorded as NPU runs.
+    $unit = switch -Regex ($resolved) {
+        'qnn-npu'     { 'npu';  break }
+        'generic-gpu' { 'gpu';  break }
+        'generic-cpu' { 'cpu';  break }
+        default       { 'auto' }
+    }
     Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-FoundryBench.ps1' `
-        -Model $Model -Compute 'foundry/npu' `
+        -Model $Model -Compute "foundry/$unit" `
         -TokPerSec ([math]::Round($meanTps, 1)) `
         -Tokens ([int](($rows | Measure-Object Tokens -Average).Average)) `
         -Extra @{ runs = $rows.Count; npuPeak = $maxNpu; cpuMean = [math]::Round($meanCpu, 1)
