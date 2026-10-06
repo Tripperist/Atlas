@@ -827,7 +827,7 @@ The winget installer is `foundry-0.10.3-win-arm64-winml.msix` — a native ARM64
 | CPU mean | 53.6 % |
 | Wall | ~13.2 s |
 
-For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#94-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
+For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
 
 **It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — inside the range we verified working in [Method D](#method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
 
@@ -876,7 +876,7 @@ Qualcomm publishes measured performance per model per device, so "how fast is X 
 
 ### 6.1 Language and vision-language models
 
-Decode rate on the NPU, best across published context lengths. **Prefill matters as much as decode** — see [§9.4](#94-qualcomms-published-numbers-for-this-device).
+Decode rate on the NPU, best across published context lengths. **Prefill matters as much as decode** — see [§9.4](#95-qualcomms-published-numbers-for-this-device).
 
 | Model | Type | NPU tok/s | Ctx | Prefill tok/s | Best for |
 | --- | --- | --- | --- | --- | --- |
@@ -1282,9 +1282,40 @@ Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst
 >
 > **This is a real trade-off for Scout.** Its prompts are long and replies often short, which is prefill-dominated, so a 1.3 s penalty before the first token outweighs an 8 % throughput gain. On that workload v0.7.0 is the better build. A chat workload generating long prose would prefer v0.8.0 at 4B.
 
-### 9.3 What these numbers mean
+### 9.3 Prefill vs decode, measured with `geniex-bench`
 
-**The NPU wins at both model sizes on throughput**, and the ordering has now held across a GenieX major version and two Adreno driver updates. Note that its **first-token advantage did not survive** the move to v0.8.0 — see the caveat in [§9.2](#92-measured-results).
+The runs above use short prompts, so prefill is negligible and decode dominates. That understates the NPU badly. `geniex-bench` — shipped in the GenieX releases, llama-bench style — reports prefill and decode separately against a fixed 512-token prompt, which is far closer to a retrieval-augmented workload.
+
+```powershell
+gh release download v0.7.0 --repo qualcomm/GenieX --pattern 'geniex-bench-windows-arm64-v0.7.0.zip*'
+# then, per cell:
+geniex-bench --plugin llama_cpp --device npu -m 'unsloth/Qwen3-4B-GGUF:Q4_0' -r 3
+geniex-bench --plugin qairt     --device npu -m 'qualcomm/Qwen3-4B:W4A16'     -r 3
+```
+
+**Qwen3-4B, 512-token prompt, 128 generated, 3 repetitions, GenieX v0.7.0:**
+
+| Plugin | Device | Quantization | TTFT | Prefill tok/s | Decode tok/s |
+| --- | --- | --- | --- | --- | --- |
+| **qairt** | **NPU** | W4A16 | **246 ms** | **2079.7** | **29.5** |
+| llama.cpp | NPU | Q4_0 | 365 ms | 1414.8 | 16.5 |
+| llama.cpp | GPU | Q4_0 | 1570 ms | 326.8 | 22.4 |
+| llama.cpp | CPU | Q4_0 | 2144 ms | 238.9 | 28.5 |
+
+**This reframes the CPU-versus-NPU question entirely.**
+
+- **Prefill is where the NPU earns its place.** QAIRT on NPU is **8.7×** the CPU's prefill rate, and llama.cpp on NPU is **5.9×**. Time to first token drops from 2.14 s to 0.25 s — a difference a user feels directly.
+- **Decode is much closer.** QAIRT NPU 29.5 against CPU 28.5 is roughly a tie; llama.cpp NPU at 16.5 is actually *slower* than CPU.
+- **The runtime matters more than the compute unit.** On the same NPU, QAIRT delivers 2079.7 / 29.5 against llama.cpp's 1414.8 / 16.5 — **1.5× the prefill and 1.8× the decode**. This confirms the ~2× gap inferred from Qualcomm's published figures in [§9.5](#95-qualcomms-published-numbers-for-this-device).
+- **The GPU is not competitive** on either axis here.
+
+**For Scout, this settles the earlier ambiguity.** Retrieval-augmented prompts are long and replies are often short or structured, so the workload is prefill-dominated — and prefill is exactly where the NPU wins by 6–9×. The short-prompt benchmarks in §9.2, which showed the NPU only marginally ahead, were measuring the wrong thing for this use case.
+
+> Measured on GenieX v0.7.0. Decode figures here are lower than §9.2 because `geniex-bench` runs with a 512-token context already filled, whereas §9.2 starts from a short prompt — longer context means slower decode, the same effect visible in Qualcomm's own 512-vs-4096 figures ([§9.5](#95-qualcomms-published-numbers-for-this-device)).
+
+### 9.4 What these numbers mean
+
+**The NPU wins at both model sizes on throughput**, and the ordering has now held across a GenieX major version and two Adreno driver updates. But the short prompts used here understate it: with a realistic 512-token prompt the NPU leads prefill by 6–9× ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)). Note also that its first-token advantage **did not survive** the move to v0.8.0 — see the caveat in [§9.2](#92-measured-results).
 
 > **Correction.** An earlier revision of this README claimed the CPU won. That was an artifact of benchmarking a cold machine with short generations. Longer runs on a warmed-up machine reverse the result. The measurement method mattered more than the hardware.
 
@@ -1310,7 +1341,7 @@ CPU throughput fell **19 %** while the NPU held within ~2 tok/s. Any benchmark s
 
 **Caveats.** Single machine, one quantization (Q4_0), one prompt, nothing else running, AC power, `burst` power mode. Battery operation is untested. Thermal state materially changes CPU results, so record run order. Re-measure after driver or firmware updates and note the versions from §1 alongside results.
 
-### 9.4 Qualcomm's published numbers for this device
+### 9.5 Qualcomm's published numbers for this device
 
 Before benchmarking anything yourself, check whether AI Hub already measured it. This is free, instant, and needs no job submission:
 
@@ -1351,7 +1382,7 @@ Two things fall out. The QAIRT bundle reaches 34.2 tok/s against 18.1 for llama.
 
 > These are Qualcomm's measurements under their harness, not ours. Context length is the configured window, not the number of tokens generated, so they are not directly comparable with [§9.2](#92-measured-results). Use them as a reference point and a sanity check, not as a substitute for measuring your own model.
 
-### 9.5 Memory
+### 9.6 Memory
 
 This machine has **64 GB of shared system memory**, not a 64 GB model budget. Weights, KV cache, activations, runtime buffers, Windows, and your editor all draw from the same pool. Four-bit weights are roughly `parameters × 0.5 bytes` before quantization metadata and runtime overhead — the Qwen3-4B W4A16 bundle is 3.0 GiB on disk, the Q4_0 GGUF 2.2 GiB.
 
@@ -1493,9 +1524,9 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Confounder to resolve first.** `qnn-int4` and `Q4_0` are not the same quantization, so part of any gap is the weights rather than the runtime. Either find one model published in both formats, or treat the result as a path comparison rather than a runtime comparison and say so.
 
-**Measure prefill separately from decode.** Qualcomm's own figures ([§9.4](#94-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
+**Measure prefill separately from decode.** Qualcomm's own figures ([§9.4](#95-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
 
-**Also benchmark the native QAIRT path.** Qualcomm measures `phi_3_5_mini_instruct` w4a16 QAIRT at 34.2 tok/s against 18.1 for `phi_4_mini_instruct` q4_0 on llama.cpp NPU. If that ~2× holds, the comparison is really three-way: ORT GenAI, GenieX llama.cpp, and GenieX QAIRT — and the QAIRT bundle may beat both paths measured so far.
+**The QAIRT-vs-llama.cpp half is now answered** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)): on the same NPU and model, QAIRT delivers 2079.7 prefill / 29.5 decode against llama.cpp's 1414.8 / 16.5 — 1.5× and 1.8× respectively, confirming the ~2× inferred from Qualcomm's figures. What remains is placing **ORT GenAI** on the same axes, since its numbers were taken with short prompts and no prefill measurement.
 
 ### Verify tool calling on the NPU with `qwen2.5-7b`
 
