@@ -498,8 +498,9 @@ this project's hardest debugging sessions ended with the question *what was
 installed when that number was measured*, answered by hand.
 
 So every benchmark run — from `Update-Workspace.ps1`,
-[`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) and
-[`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) alike — is appended to
+[`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1),
+[`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) and
+[`bench_ort_genai.py`](src/setup/bench_ort_genai.py) alike — is appended to
 `.atlas-local/benchmarks/history.jsonl`, stamped with a short hash of the
 drivers, OS build, GenieX version, llama.cpp revision and ONNX Runtime versions
 it ran under:
@@ -533,6 +534,13 @@ invalidate existing history. Each record embeds its full state snapshot, so the
 history stays readable after `baseline.json` is replaced. The format is JSON
 Lines and append-only: records are never rewritten, so the file concatenates and
 diffs cleanly and a crashed run costs at most its own line.
+
+The Python harness does **not** reimplement state capture or hashing. It shells
+out to [`AtlasBaseline.psm1`](Scripts/AtlasBaseline.psm1) through
+[`atlas_history.py`](src/setup/atlas_history.py), because a second implementation
+would have to agree with the first exactly and any drift would split one machine
+into two apparent stacks — the very confusion the history prevents. Verified: both
+sides derive the same id for the same machine.
 
 Prefill is stored as its own field rather than folded into throughput, because
 short-prompt decode rates hid a 6–9× NPU prefill advantage in this project until
@@ -1521,16 +1529,27 @@ The Qwen3-4B table above compares GenieX's two plugins, but Qwen3 has no ORT Gen
 | --- | --- | --- | --- | --- | --- |
 | GenieX | llama.cpp, NPU | Q4_0 | **325 ms** | **1590.2** | 19.9 |
 | GenieX | llama.cpp, CPU | Q4_0 | 1715 ms | 298.6 | **32.1** |
-| ONNX Runtime GenAI | QNN EP, NPU | qnn-int4 | 1996 ms | 256.5 | 14.1 * |
+| ONNX Runtime GenAI | QNN EP, NPU | qnn-int4 | 1172 ms | 436.9 | 17.5 |
 
-\* The two GenieX rows were re-measured on v0.8.0; CPU prefill reproduced to
-0.1 % (299.0 to 298.6) and NPU to 3 % (1543.0 to 1590.2). **The ORT GenAI row
-was not re-run** — it does not go through GenieX, so a GenieX upgrade cannot
-move it. It is carried over from its original measurement.
+All three rows are now re-measured on the current stack.
+
+> **The ORT GenAI row moved a lot, and that is itself the finding.** It had
+> been recorded at 1996 ms / 256.5 prefill / 14.1 decode; re-run with
+> [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) it gives **1172 ms /
+> 436.9 / 17.5** — a **1.7× prefill improvement** across three very tight
+> repetitions (436.3, 441.6, 432.9 tok/s), so it is not noise.
+>
+> **The cause is unknown**, because the original measurement predates the
+> benchmark history and so carries no record of the stack it ran under. The
+> ONNX Runtime versions are unchanged (1.30.0 / 0.17.1 / QNN 2.6.0) and this
+> path does not touch GenieX, which rules out the obvious candidates and
+> leaves the driver, the OS build or thermal state — none of which can now be
+> checked retroactively. This is exactly the gap the history was added to
+> close, demonstrated at its own expense.
 
 Measured with [`bench_ort_genai.py`](src/setup/bench_ort_genai.py), which mirrors `geniex-bench`'s method: a fixed-length prompt of random token ids, a fixed generated-token count, and prefill timed separately from decode.
 
-**ORT GenAI is the weakest path on prefill by a wide margin** — 256.5 tok/s against 1590.2 for the same model on GenieX's llama.cpp NPU, a **6× gap**, and marginally *below* llama.cpp running on CPU. Decode is comparable to llama.cpp NPU (14.1 vs 19.9), with both well behind CPU.
+**ORT GenAI is still the weakest path on prefill** — 436.9 tok/s against 1546.0 for the same model on GenieX's llama.cpp NPU, a **3.5× gap**. The earlier figure put it *below* llama.cpp on CPU; at 436.9 against 296.6 it is now clearly **above** CPU, so that particular claim no longer holds. Decode is comparable to llama.cpp NPU (17.5 vs 22.4), with both behind CPU.
 
 **The architecture explains it.** As recorded in [§5 Method D](#54-method-d-onnx-runtime-genai--qnn), this bundle's graph is a hybrid: **36 `EPContext` nodes** that QNN executes on the NPU, plus **32 `GroupQueryAttention` nodes that run on CPU**. Prefill is attention-heavy across all 512 positions, so pushing attention to the CPU costs exactly where the NPU should be strongest. That it still reports ~98 % NPU utilization is a good illustration of why a utilization figure is not a throughput measurement.
 
@@ -1760,7 +1779,7 @@ If GenieX really is ~40 % faster, that likely outweighs in-process control and C
 
 **Measure prefill separately from decode.** Qualcomm's own figures ([§9.4](#95-qualcomms-published-numbers-for-this-device)) show the two phases favouring different compute units — NPU 3–4× on prefill, CPU ~25 % on decode. A single tok/s number averages away the distinction that actually decides the runtime for Scout, whose prompts are long and replies often short.
 
-**This item is now closed** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)). All three runtimes have been measured on the same axes, and on the same model where one exists in both formats. On Qwen3-4B, QAIRT delivers 2072.0 prefill / 27.8 decode against llama.cpp's 1380.0 / 18.2. On Phi-4-mini-reasoning, llama.cpp NPU gives 1590.2 / 19.9 against ORT GenAI's 256.5 / 14.1 — a 6× prefill gap, explained by that bundle running its 32 attention nodes on CPU. Ordering for prefill-dominated work: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**.
+**This item is now closed** ([§9.3](#93-prefill-vs-decode-measured-with-geniex-bench)). All three runtimes have been measured on the same axes, and on the same model where one exists in both formats. On Qwen3-4B, QAIRT delivers 2072.0 prefill / 27.8 decode against llama.cpp's 1380.0 / 18.2. On Phi-4-mini-reasoning, llama.cpp NPU gives 1546.0 / 22.4 against ORT GenAI's 436.9 / 17.5 — a 3.5× prefill gap, consistent with that bundle running its 32 attention nodes on CPU. Ordering for prefill-dominated work: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**.
 
 ### Verify tool calling on the NPU with `qwen2.5-7b`
 

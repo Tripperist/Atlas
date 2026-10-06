@@ -27,6 +27,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import atlas_history  # noqa: E402
 from model_format import classify  # noqa: E402
 
 
@@ -37,6 +38,15 @@ def main() -> int:
     parser.add_argument("--n-gen", type=int, default=128, help="Tokens to generate.")
     parser.add_argument("--repetitions", type=int, default=3)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--label",
+        help="Model name for the benchmark history; defaults to the directory name.",
+    )
+    parser.add_argument(
+        "--no-record",
+        action="store_true",
+        help="Print results without appending them to the benchmark history.",
+    )
     parser.add_argument(
         "--cpu-only",
         action="store_true",
@@ -126,11 +136,43 @@ def main() -> int:
         print("\nno successful repetitions")
         return 1
 
+    mean_prefill = statistics.mean(prefills)
+    mean_decode = statistics.mean(decodes)
+    ttft_ms = args.n_prompt / mean_prefill * 1000
     print(
-        f"\n[result] ttft {args.n_prompt / statistics.mean(prefills) * 1000:.1f} ms  "
-        f"prefill {statistics.mean(prefills):.1f} tok/s  "
-        f"decode {statistics.mean(decodes):.1f} tok/s"
+        f"\n[result] ttft {ttft_ms:.1f} ms  "
+        f"prefill {mean_prefill:.1f} tok/s  "
+        f"decode {mean_decode:.1f} tok/s"
     )
+
+    if not args.no_record:
+        # The same history Invoke-Benchmark.ps1 and Invoke-PrefillBench.ps1
+        # write to, so all three runtimes land on one timeline under the
+        # stack that produced them.
+        # The leaf of an ORT GenAI model path is a quantisation folder
+        # ("qnn-int4"), which says nothing about the model. Prefer the
+        # top-level directory under models/ when there is one.
+        label = args.label
+        if not label:
+            parts = Path(args.model_dir).resolve().parts
+            label = parts[parts.index("models") + 1] if "models" in parts else Path(args.model_dir).name
+        device = "cpu" if provider == "cpu" else "npu"
+        stack = atlas_history.record(
+            source="bench_ort_genai.py",
+            model=label,
+            compute=f"ort_genai/{device}",
+            tok_per_sec=round(mean_decode, 2),
+            first_token_s=round(ttft_ms / 1000, 3),
+            tokens=args.n_gen,
+            prefill_tps=round(mean_prefill, 1),
+            prompt_tokens=args.n_prompt,
+            extra={"repetitions": len(prefills), "harness": "bench_ort_genai.py"},
+        )
+        if stack:
+            print(f"[history] recorded under stack {stack}")
+            print(r"[history] view with: .\Scripts\Update-Workspace.ps1 -History")
+        else:
+            print("[history] not recorded (PowerShell module unavailable)")
     return 0
 
 
