@@ -1408,16 +1408,37 @@ Note also that the driver can report **over 100 %** for an adapter aggregating m
 
 Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst`, on AC.
 
-**Current — 2026-10-05**, GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2:
+**Current — 2026-10-05**, GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2, stack `44a1e6e37bc4`:
 
 | Model | Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-4B | `npu` | **30.6** | 1.37 | 10.19 | 17.1 | 100 | 4.7 |
-| Qwen3-4B | `cpu` | 28.2 | **0.17** | 2.44 | 81.9 | 0 | 5.0 |
-| Qwen3-4B | `gpu` | 21.6 | 0.20 | 6.04 | 16.6 | 0 | 83.0 |
-| Qwen3-1.7B | `npu` | **60.8** | 1.27 | 7.57 | 20.6 | 100 | 4.4 |
-| Qwen3-1.7B | `cpu` | 55.4 | **0.07** | 2.64 | 75.7 | 0 | 4.7 |
-| Qwen3-1.7B | `gpu` | 42.6 | 0.10 | 3.76 | 23.2 | 0 | 81.8 |
+| Qwen3-4B | `npu` | **30.5** | 1.53 | 9.54 | 17.8 | 100 | 4.9 |
+| Qwen3-4B | `cpu` | 28.7 | **0.20** | 2.82 | 81.8 | 0 | 4.8 |
+| Qwen3-4B | `gpu` | 24.0 | 0.20 | 5.92 | 17.9 | 0 | 87.9 |
+| Qwen3-1.7B | `npu` | **61.3** | 1.13 | 4.78 | 25.2 | 100 | 4.9 |
+| Qwen3-1.7B | `cpu` | 51.0 | 0.20 | 3.26 | 72.8 | 0 | 52.1 * |
+| Qwen3-1.7B | `gpu` | 47.9 | **0.10** | 3.66 | 26.4 | 0 | 89.9 |
+
+\* Peak columns aggregate by maximum, so one contended sample is enough to
+raise them. The GPU was otherwise idle across that run's other two repetitions.
+
+> **These are a re-measurement**, taken after GenieX was uninstalled, reverted to
+> v0.7.0, and reinstalled at v0.8.0. Against the earlier independent run on the
+> same stack, the agreement is uneven in an informative way:
+>
+> | Compute | Spread between the two runs |
+> | --- | --- |
+> | `npu` | **0.3 % and 0.8 %** |
+> | `cpu` | 1.8 % and 7.9 % |
+> | `gpu` | 11 % and 12 % |
+>
+> The NPU is by far the most repeatable unit on this machine. The CPU varies
+> within a single run as well — the three Qwen3-1.7B repetitions came in at
+> 38.4, 61.5 and 53.2 tok/s — which is the thermal behaviour described in
+> [§9.4](#94-what-these-numbers-mean) showing up directly. **Treat a single CPU or GPU number here as
+> approximate; treat the ordering as solid.** Any CPU-versus-NPU comparison
+> drawn from one short run is unsafe, which is exactly the error made earlier in
+> this project.
 
 **Previous — 2026-09-19**, GenieX v0.7.0 (llama.cpp `4ff829e`), Adreno driver 32.0.163.2:
 
