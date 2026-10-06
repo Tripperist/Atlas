@@ -1877,12 +1877,54 @@ the behaviour Scout would actually get.
 whether a 6.8 GB NPU model loads and holds context without paging; with no NPU
 variant published, the largest NPU model available is 2.0 GB.
 
-> **Separate bug found.** `max_tokens=20` on `qwen2.5-0.5b-instruct-qnn-npu`
-> fails with `Non-zero status code returned while running GroupQueryAttention
-> node ... seqlens_k[0] = 63 is out of range [0, 56)`. 40 and 64 succeed. A
-> small generation budget against a longer prompt appears to break that node's
-> sequence-length bookkeeping — worth knowing before trusting short structured
-> replies, which is exactly the shape of a tool call.
+> **A separate bug was found while running this** and is tracked as its own
+> item below: a small `max_tokens` fails inside `GroupQueryAttention`. It
+> matters here because short structured replies are exactly the shape of a
+> tool call.
+
+### Foundry Local: small `max_tokens` fails in `GroupQueryAttention`
+
+**What.** On Foundry Local 0.10.3, a request to `qwen2.5-0.5b-instruct-qnn-npu`
+with a `max_tokens` that is small relative to the prompt fails outright:
+
+```
+Non-zero status code returned while running GroupQueryAttention node.
+Name:'/model/layers.0/attn/GroupQueryAttention'
+Status Message: seqlens_k[0] = 63 is out of range [0, 56)
+```
+
+**Measured.** `seqlens_k` is always `prompt_tokens - 1`, and the reported valid
+range grows with `max_tokens` — so the KV buffer is being sized from
+`max_tokens` without fully accounting for the prompt, and a small budget leaves
+a buffer shorter than the prompt itself.
+
+| Prompt tokens | `max_tokens` | Result |
+| --- | --- | --- |
+| 64 | 8 / 16 / 20 / 24 | fail, range 44 / 52 / 56 / 60 |
+| 64 | 28 | fail, range 64 — off by one against `seqlens_k=64` |
+| 64 | 32 / 36 / 40 | **ok** |
+| 256 | 32 | fail, range 249 |
+| 256 | 64 / 128 / 256 | **ok** |
+
+The threshold scales with prompt length: a 64-token prompt needs
+`max_tokens >= 32`, a 256-token prompt needs `>= 64`. The exact sizing rule has
+not been derived — the constant implied at 64 tokens does not hold at 256 — so
+treat the table as the evidence rather than inferring a formula from it.
+
+**Why it matters.** This is not an edge case for Scout. A tool call is a short,
+structured reply, and capping `max_tokens` is the obvious way to bound one. The
+failure is a hard 500 from the server, not a truncated answer, so it would
+surface as an outage rather than as degraded output.
+
+**Workaround.** Do not set a tight `max_tokens`. Scale it with prompt length or
+omit it and stop on `finish_reason`. Costs nothing when generation stops early
+on its own.
+
+**Not yet done.** Only reproduced on one model and one Foundry version, and not
+checked against ONNX Runtime GenAI directly — which would separate a Foundry
+bug from an upstream `GroupQueryAttention` one and decide where it should be
+reported. The same node already appears in [§9.3](#93-prefill-vs-decode-measured-with-geniex-bench) as the CPU-resident part of
+the Phi-4 ORT GenAI bundle, so upstream is plausible.
 
 ### GenieX llama.cpp GGUF crash — RESOLVED by an Adreno driver update
 
