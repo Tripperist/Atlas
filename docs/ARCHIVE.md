@@ -406,3 +406,6 @@ Every claim an earlier revision of the README stated and later had to withdraw.
 | NPU first-token regression | **Closed, not reported.** Scoped to a one-time init cost; upstream issue drafted and deliberately dropped |
 | Benchmark ORT GenAI against GenieX GGUF for Phi-4 | **Closed.** All three runtimes measured on the same axes; see BENCHMARKS |
 | Verify tool calling on the NPU | **Measured, with caveats.** Works on the NPU variant; NPU utilization during forced tool calls is well below a length-matched control. Redirected from `qwen2.5-7b`, which no longer has an NPU variant |
+| C# / .NET path | **Closed.** Both routes proven on the NPU: ONNX Runtime directly (`QnnProbe`, QNN placement confirmed from the profiler) and ONNX Runtime GenAI (`GenAiProbe`, 17.7–22.0 tok/s at 98.9 % NPU) |
+| Does Foundry Local reach CPU and GPU? | **Closed.** Yes — one model variant per compute unit, all three measured |
+| Can llama.cpp be reached without GenieX? | **Closed as a question.** Yes: upstream has CPU, OpenCL/Adreno and Hexagon backends on Windows. The Hexagon one needs signed HTP libraries, which is why it stays an untested path rather than a recommendation |

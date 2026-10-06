@@ -1423,22 +1423,45 @@ passes — an accepted baseline is a claim that this combination worked.
 
 ## 13. Open questions
 
-Things measured but unresolved, or not yet measured. Resolved items are in the
+Things measured but unresolved, or not yet measured. Resolved items move to the
 [archive](docs/ARCHIVE.md#closed-backlog-items).
+
+### Bugs with a reproduction
 
 | Item | Status |
 | --- | --- |
-| **Foundry `max_tokens` bug** | Reproducible on `qwen2.5-0.5b-instruct-qnn-npu`: a small `max_tokens` fails inside `GroupQueryAttention`. Not yet reproduced against ONNX Runtime GenAI directly, which would decide whether it is a Foundry or an upstream bug |
-| **Tool calling and NPU placement** | NPU utilization falls to 24.4 % during forced tool calls against 56.7 % for a length-matched control. Consistent with constrained decoding leaving the accelerated path; not proven |
-| **Large NPU models** | The largest NPU model available through Foundry is 2.0 GB, so whether a ~7 GB NPU model holds context without paging is untestable here |
-| **Speculative decoding** | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
-| `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B |
-| `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` where the `ep.context_*` session options succeed. Possibly an ORT bug |
-| Long-context behaviour | All benchmarks here are short generations. KV cache growth is the likely binding constraint and is unmeasured |
-| Battery operation | Everything was measured on AC in `burst` mode |
+| **Foundry `max_tokens` fails in `GroupQueryAttention`** | Reproducible on `qwen2.5-0.5b-instruct-qnn-npu`: a `max_tokens` small relative to the prompt returns a hard 500. A 64-token prompt needs `>= 32`, a 256-token prompt `>= 64`. **Next step:** reproduce against ONNX Runtime GenAI directly, which decides whether this is a Foundry bug or an upstream one and therefore where to report it |
+| `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
+| `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |
+| `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
+| **`GetAvailableProviders()` omits QNN in C#** | It never lists QNN, before or after registration, even while the graph demonstrably runs on the NPU at 98.9 %. Python does list it. Ruled out first-call caching. Unclear whether this is intended for plugin EPs or a gap in the C# binding — worth asking upstream |
+
+### Measured, but not settled
+
+| Item | Status |
+| --- | --- |
+| **Tool calling leaves the accelerated path** | NPU utilization falls to 24.4 % during forced tool calls against 56.7 % for a length-matched control, with throughput dropping from 116 requests to 18. Consistent with constrained decoding running off the NPU, but peak sampling over ~1 s requests is coarse and the tools schema lengthens the prompt. **Next step:** a longer-running tool-call workload, or ORT profiling of the session |
+| **The NPU loses at small model sizes** | On Foundry's `qwen2.5-0.5b`, WebGPU gives 42.7 tok/s and CPU 40.5 against the NPU's 27.6. Expected for a decode-dominated run, but only measured at 0.5B. **Next step:** the same three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
+| NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
+
+### Untested paths
+
+| Item | Status |
+| --- | --- |
+| **Foundry Local SDK** | Only the CLI plus HTTP path was measured. The in-process SDK — C#, Python, JavaScript, Rust — is the one you would ship, skips the HTTP hop, and is likely faster. Nothing here measures it |
+| **Upstream llama.cpp on the NPU** | The Hexagon backend needs signed HTP ops libraries and has you enable test signing machine-wide, so it was not attempted. The OpenCL/Adreno backend needs no such thing and is the cheaper experiment |
+| Ollama / LM Studio | Reported as CPU-only on Windows on Arm, but not verified here. Both build on llama.cpp, so the Hexagon backend above is the thing to watch |
+| `Microsoft.ML.OnnxRuntimeGenAI.QNN` | Pinned at 0.13.2 against the 0.17.1 used here. Outside the broken 0.16.x range so it may work, but it mixes the all-in-one packaging model with the plugin one. Untested |
 | GenieX Python SDK | Resolves for ARM64 Python 3.14; not installed or tested here |
-| `mobilenet_v2` w8a8 | Will not load (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
-| NPU headroom | Utilization clamps at 100 % in tooling (raw readings hit 238 %). Saturation for LLM workloads is unmeasured |
+
+### Not yet measured
+
+| Item | Status |
+| --- | --- |
+| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured |
+| **Large NPU models** | The largest NPU model Foundry publishes is 2.0 GB, so whether a ~7 GB NPU model holds context without paging cannot be tested through it. GenieX can load larger GGUFs, which is the route to try |
+| Battery operation | Everything was measured on AC in `burst` power mode. Deployment behaviour on battery is unknown |
+| Speculative decoding | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
 
 ---
 
