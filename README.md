@@ -131,7 +131,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | GenieX chipset detection | `Snapdragon X2 Elite CRD` |
 | AI Hub device target | `Snapdragon X2 Elite CRD` — **HTP version 81**, SoC model 88 |
 | Python | 3.14.7, ARM64, 64-bit (`.venv`) |
-| GenieX CLI | **v0.8.0** (was v0.7.0 — QAIRT 2.45, llama.cpp `4ff829e`). `geniex version` now crashes; `config get chipset` and `list` still work |
+| GenieX CLI | **v0.8.0** — QAIRT 2.45, llama.cpp `9425611` (was v0.7.0 / `4ff829e`) |
 | onnxruntime | 1.30.0 |
 | onnxruntime-genai | 0.16.0 |
 | onnxruntime-qnn | provides `onnxruntime_providers_qnn.dll` |
@@ -1245,25 +1245,39 @@ Note also that the driver can report **over 100 %** for an adapter aggregating m
 
 Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst`, on AC.
 
-**`unsloth/Qwen3-4B-GGUF`:**
+**Current — 2026-10-05**, GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2:
 
-| Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
-| --- | --- | --- | --- | --- | --- | --- |
-| `npu` | **29.1** | 0.10 | 6.30 | 18.9 | 100 | 5.8 |
-| `cpu` | 27.5 | 0.23 | 2.29 | 83.8 | 0 | 5.1 |
-| `gpu` | 24.6 | 0.20 | 5.27 | 18.2 | 0 | 87.3 |
+| Model | Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-4B | `npu` | **30.6** | 1.37 | 10.19 | 17.1 | 100 | 4.7 |
+| Qwen3-4B | `cpu` | 28.2 | **0.17** | 2.44 | 81.9 | 0 | 5.0 |
+| Qwen3-4B | `gpu` | 21.6 | 0.20 | 6.04 | 16.6 | 0 | 83.0 |
+| Qwen3-1.7B | `npu` | **60.8** | 1.27 | 7.57 | 20.6 | 100 | 4.4 |
+| Qwen3-1.7B | `cpu` | 55.4 | **0.07** | 2.64 | 75.7 | 0 | 4.7 |
+| Qwen3-1.7B | `gpu` | 42.6 | 0.10 | 3.76 | 23.2 | 0 | 81.8 |
 
-**`unsloth/Qwen3-1.7B-GGUF`:**
+**Previous — 2026-09-19**, GenieX v0.7.0 (llama.cpp `4ff829e`), Adreno driver 32.0.163.2:
 
-| Compute | Tok/s | Startup (s) | CPU % | NPU peak | GPU peak |
-| --- | --- | --- | --- | --- | --- |
-| `npu` | **65.3** | 4.51 | 27.0 | 100 | 5.3 |
-| `gpu` | 54.3 | 3.52 | 27.8 | 0 | 95.0 |
-| `cpu` | 53.4 | 1.79 | 82.5 | 0 | 4.9 |
+| Model | Compute | Tok/s | First token (s) | Startup (s) |
+| --- | --- | --- | --- | --- |
+| Qwen3-4B | `npu` | 29.1 | **0.10** | 6.30 |
+| Qwen3-4B | `cpu` | 27.5 | 0.23 | 2.29 |
+| Qwen3-4B | `gpu` | 24.6 | 0.20 | 5.27 |
+| Qwen3-1.7B | `npu` | 65.3 | **0.00** | 4.51 |
+| Qwen3-1.7B | `cpu` | 53.4 | 0.03 | 1.79 |
+| Qwen3-1.7B | `gpu` | 49.0 | 0.10 | 3.52 |
+
+**Throughput ordering is unchanged** — NPU > CPU > GPU at both sizes, across a GenieX major version and two driver updates. That is a reassuring sign the ordering is a property of the hardware rather than of one build.
+
+> **But first-token latency on the NPU regressed sharply: from ~0.0–0.1 s to ~1.3 s**, while CPU went the other way (0.03 → 0.07 s and 0.23 → 0.17 s). NPU startup also rose, 6.30 → 10.19 s at 4B. This **inverts the prefill advantage** recorded in [§9.4](#94-qualcomms-published-numbers-for-this-device), where Qualcomm's published figures show the NPU leading prefill 3–4×.
+>
+> **Do not attribute this to the driver.** Two things changed together — GenieX v0.7.0 → v0.8.0 (a different llama.cpp build) and the Adreno driver — so this is a confounded comparison. Isolating it would mean installing v0.7.0 on the current driver, which has not been done.
+>
+> It matters for Scout, whose prompts are long and replies often short: a 1.3 s penalty before the first token is significant for a prefill-dominated workload, and would weigh against the NPU if it persists. Filed in [§12](#12-backlog).
 
 ### 9.3 What these numbers mean
 
-**The NPU wins at both model sizes**, and the margin grows with generation length.
+**The NPU wins at both model sizes on throughput**, and the ordering has now held across a GenieX major version and two Adreno driver updates. Note that its **first-token advantage did not survive** the move to v0.8.0 — see the caveat in [§9.2](#92-measured-results).
 
 > **Correction.** An earlier revision of this README claimed the CPU won. That was an artifact of benchmarking a cold machine with short generations. Longer runs on a warmed-up machine reverse the result. The measurement method mattered more than the hardware.
 
@@ -1548,6 +1562,7 @@ The plugin requires `ggml-opencl.dll` — renaming it aside converted the hard c
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
 | ~~GenieX crashes on every GGUF model~~ | **Resolved** by Adreno driver 32.0.172.2 — see the entry above |
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
+| **NPU first-token regression** | TTFT on the llama.cpp NPU path went from ~0.0–0.1 s to ~1.3 s between 2026-09-19 and 2026-10-05, and NPU startup rose 6.3 → 10.2 s at 4B. GenieX v0.7.0→v0.8.0 and the Adreno driver changed together, so it is confounded. Install v0.7.0 on the current driver to isolate it. Matters for Scout, which is prefill-dominated |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
 | NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
