@@ -25,6 +25,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | --- | --- | --- |
 | [`Scripts/Install-Prerequisites.ps1`](Scripts/Install-Prerequisites.ps1) | §4.1 toolchain | Reports only; `-Install` to act |
 | [`Scripts/Initialize-Workspace.ps1`](Scripts/Initialize-Workspace.ps1) | §4.3 venv + deps | Yes |
+| [`Scripts/Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | §4.6 drift + updates | Reports only; `-Apply` to act |
 | [`Scripts/Get-SystemInfo.ps1`](Scripts/Get-SystemInfo.ps1) | §1 hardware inventory | Yes, read-only |
 | [`Scripts/Test-Environment.ps1`](Scripts/Test-Environment.ps1) | §2 status table | Yes, read-only |
 | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | §7 quick CPU/GPU/NPU check | Yes; runs inference |
@@ -375,6 +376,56 @@ $env:HF_HOME        = 'D:\atlas\cache\huggingface'  # honored by huggingface_hub
 `geniex --data-dir` sets the same thing per-invocation, and [`Initialize-Workspace.ps1 -CacheRoot`](Scripts/Initialize-Workspace.ps1) sets both for you. The `ATLAS_DATA_DIR` / `ATLAS_MODEL_DIR` / `ATLAS_RUN_DIR` names from earlier notes are a **proposed convention — nothing reads them yet.**
 
 Budget for source weights, converted copies, temporary conversion files, and caches. The Qwen3-4B W4A16 bundle alone is 3.0 GiB. Keep model locations configurable; never hardcode a `D:` path that a training host will not have.
+
+### 4.6 Keeping the workspace current
+
+The toolchain here moves fast and its pieces update independently. Run:
+
+```powershell
+.\Scripts\Update-Workspace.ps1          # report drift and available updates
+.\Scripts\Update-Workspace.ps1 -Apply   # upgrade Python deps, then verify
+.\Scripts\Update-Workspace.ps1 -Accept  # record current state as the baseline
+```
+
+It reports by default and changes nothing, like `Install-Prerequisites.ps1`.
+
+The script tracks three classes of component and treats them differently,
+because the things that have actually broken this workspace were not all
+Python packages:
+
+| Class | Example | Handling |
+| --- | --- | --- |
+| Python packages | `onnxruntime-genai` | Detected; `-Apply` runs `uv sync --upgrade` |
+| GenieX CLI | v0.7.0 to v0.8.0 | Detected; update is a deliberate installer swap |
+| Drivers and OS | Adreno, Hexagon, Windows build | **Detected only, never changed** |
+
+Two lessons are built into that split.
+
+**Not every breaking change is a package.** Adreno driver `32.0.172.1` broke
+GenieX GGUF inference outright (§11) and `32.0.172.2` fixed it. No package
+manager would have surfaced either. So the script compares against a recorded
+baseline rather than against "latest": it answers *what changed since this last
+worked*, which was the hard question at the time. A driver or OS change is
+called out explicitly, because it is the class most likely to be mistaken for a
+bug in your own code.
+
+**Being current is not the same as working.** `onnxruntime-genai` 0.16.0 was
+the current release and could not run EPContext/QNN models at all
+([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603), fixed in
+0.17.0). A version check would have called that an upgrade; only running the
+model caught it. So any change is followed by a verification pass:
+`Test-Environment.ps1` for load, [`repro_genai_016_qnn.py`](src/setup/repro_genai_016_qnn.py)
+as a regression guard for that exact class of failure, and a short inference
+smoke test. Skip them with `-SkipVerify` / `-SkipBenchmark`.
+
+GenieX is detected but never updated automatically: it is a signed-installer
+swap, and a version change has shifted measured behaviour before (§9.2).
+Drivers are never touched at all.
+
+The baseline lives in `.atlas-local/baseline.json`, git-ignored because driver
+versions are per-machine. Record a new one with `-Accept` **after** verification
+passes, not before. An accepted baseline is a claim that this combination
+worked.
 
 ---
 
