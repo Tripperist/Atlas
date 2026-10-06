@@ -326,13 +326,32 @@ else {
 
 if (Test-Path $venvPy) {
     Write-Host '  Python packages:'
-    Push-Location $root
-    # Drop uv's rule line, and drop the local project: `atlas` resolves to an
-    # unrelated PyPI package of the same name, so it always reports as
+    # Run this from a directory with no pyproject.toml and point uv at the venv
+    # explicitly. Invoked inside the project, `uv pip list --outdated` can
+    # auto-sync it: on first use here it upgraded qai-hub, qai-hub-models-cli,
+    # onnx, botocore and wcwidth in the venv and rewrote uv.lock. That is
+    # unacceptable for a command whose contract is to report and change
+    # nothing. A neutral working directory gives uv no project to act on.
+    $lockPath   = Join-Path $root 'uv.lock'
+    $lockBefore = if (Test-Path $lockPath) { (Get-FileHash $lockPath -Algorithm SHA256).Hash } else { $null }
+    Push-Location ([System.IO.Path]::GetTempPath())
+    try   { $raw = (uv pip list --outdated --python $venvPy 2>$null | Out-String) }
+    finally { Pop-Location }
+
+    # Belt and braces: if a future uv finds a way to touch the lock anyway,
+    # say so rather than leaving the venv and the lock quietly out of step.
+    if ($lockBefore -and (Get-FileHash $lockPath -Algorithm SHA256).Hash -ne $lockBefore) {
+        Write-Host '    WARNING: uv.lock changed during a read-only check.' -ForegroundColor Yellow
+        Write-Host '    Inspect with: git diff uv.lock' -ForegroundColor Yellow
+        Write-Host '    Realign the environment with: uv sync' -ForegroundColor Yellow
+    }
+
+    # Drop uv's banner and rule lines, and the local project: `atlas` resolves
+    # to an unrelated PyPI package of the same name, so it always reports as
     # outdated and upgrading it would install a stranger's code.
-    $outdated = @((uv pip list --outdated 2>$null | Out-String) -split "`r?`n" |
-                  Where-Object { $_.Trim() -and $_ -notmatch '^[\s-]+$' -and $_ -notmatch '^atlas\s' })
-    Pop-Location
+    $outdated = @($raw -split "`r?`n" | Where-Object {
+        $_.Trim() -and $_ -notmatch '^[\s-]+$' -and $_ -notmatch '^atlas\s' -and $_ -notmatch '^Using Python'
+    })
     if ($outdated.Count -gt 1) { $outdated | ForEach-Object { Write-Host ('    ' + $_.TrimEnd()) } }
     else                       { Write-Host '    all current' }
 }

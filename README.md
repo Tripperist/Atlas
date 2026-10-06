@@ -435,6 +435,14 @@ only the Python side. Drivers are never touched at all.
 > v0.8.0 difference is a one-time per-process initialisation cost on the
 > llama.cpp path (§9.2), which does not affect `geniex serve` or QAIRT.
 
+> One trap worth recording, since it defeats the point of a report-only mode:
+> run inside the project, `uv pip list --outdated` can **auto-sync the
+> environment**. Its first use here upgraded `qai-hub`, `qai-hub-models-cli`,
+> `onnx`, `botocore` and `wcwidth` in the venv and rewrote `uv.lock`. The
+> script therefore runs it from a neutral working directory with an explicit
+> `--python`, so uv has no project to act on, and checks the lock's hash
+> afterwards to catch any future regression.
+
 The baseline lives in `.atlas-local/baseline.json`, git-ignored because driver
 versions are per-machine. Record a new one with `-Accept` **after** verification
 passes, not before. An accepted baseline is a claim that this combination
