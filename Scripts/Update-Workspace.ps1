@@ -102,7 +102,8 @@ if ($History) {
             Select-Object @{n = 'when';     e = { ([datetime]$_.ts).ToString('yyyy-MM-dd HH:mm') } },
                           @{n = 'model';    e = { $_.model } },
                           @{n = 'compute';  e = { $_.compute } },
-                          @{n = 'tok/s';    e = { $_.tokPerSec } },
+                          @{n = 'prefill';  e = { if ($_.PSObject.Properties['prefillTps'] -and $null -ne $_.prefillTps) { $_.prefillTps } else { '-' } } },
+                          @{n = 'decode';   e = { $_.tokPerSec } },
                           @{n = 'firstTok'; e = { $_.firstTokenS } },
                           @{n = 'source';   e = { $_.source } } |
             Format-Table -AutoSize | Out-String | Write-Host

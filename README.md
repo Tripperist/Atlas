@@ -36,6 +36,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
 | [§8.4 AI Hub Workbench](#84-ai-hub-workbench) | [`src/setup/hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
 | [§9 Benchmarking](#9-benchmarking) | [`Scripts/Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) | Yes; runs inference |
+| [§9.3 Prefill vs decode, measured with `geniex-bench`](#93-prefill-vs-decode-measured-with-geniex-bench) | [`Scripts/Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) | Yes; runs inference |
 | [§9.3 Prefill vs decode, measured with `geniex-bench`](#93-prefill-vs-decode-measured-with-geniex-bench) | [`src/setup/bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 
 First run, in order:
@@ -496,8 +497,9 @@ A throughput number means little without the stack that produced it. Both of
 this project's hardest debugging sessions ended with the question *what was
 installed when that number was measured*, answered by hand.
 
-So every benchmark run — from `Update-Workspace.ps1` and from
-[`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) alike — is appended to
+So every benchmark run — from `Update-Workspace.ps1`,
+[`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) and
+[`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) alike — is appended to
 `.atlas-local/benchmarks/history.jsonl`, stamped with a short hash of the
 drivers, OS build, GenieX version, llama.cpp revision and ONNX Runtime versions
 it ran under:
@@ -531,6 +533,10 @@ invalidate existing history. Each record embeds its full state snapshot, so the
 history stays readable after `baseline.json` is replaced. The format is JSON
 Lines and append-only: records are never rewritten, so the file concatenates and
 diffs cleanly and a crashed run costs at most its own line.
+
+Prefill is stored as its own field rather than folded into throughput, because
+short-prompt decode rates hid a 6–9× NPU prefill advantage in this project until
+the two were measured apart. Records that predate the field show `-`.
 
 Results recorded under different stacks are **not** directly comparable, and
 `-History` groups them so that is visible rather than assumed. Shared state
@@ -1471,11 +1477,15 @@ raise them. The GPU was otherwise idle across that run's other two repetitions.
 The runs above use short prompts, so prefill is negligible and decode dominates. That understates the NPU badly. `geniex-bench` — shipped in the GenieX releases, llama-bench style — reports prefill and decode separately against a fixed 512-token prompt, which is far closer to a retrieval-augmented workload.
 
 ```powershell
-gh release download v0.8.0 --repo qualcomm/GenieX --pattern 'geniex-bench-windows-arm64-v0.8.0.zip*'
-# then, per cell:
-geniex-bench --plugin llama_cpp --device npu -m 'unsloth/Qwen3-4B-GGUF:Q4_0' -r 3
-geniex-bench --plugin qairt     --device npu -m 'qualcomm/Qwen3-4B:W4A16'     -r 3
+.\Scripts\Invoke-PrefillBench.ps1 -Matrix     # the whole table below
+.\Scripts\Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
 ```
+
+`geniex-bench` ships as a per-release archive rather than with the CLI, so the
+script fetches the build matching the **installed** GenieX version and verifies
+its SHA256. Benchmarking a v0.7.0 harness against a v0.8.0 runtime would quietly
+compare two different things. Results are appended to the benchmark history
+([§4.6](#46-keeping-the-workspace-current)) with prefill and decode kept as separate fields.
 
 **Qwen3-4B, 512-token prompt, 128 generated, 3 repetitions, GenieX v0.8.0, stack `44a1e6e37bc4`:**
 
@@ -1491,6 +1501,13 @@ geniex-bench --plugin qairt     --device npu -m 'qualcomm/Qwen3-4B:W4A16'     -r
 > the third independent line of evidence that v0.8.0's one-shot
 > `geniex infer` penalty is a per-process initialisation cost and **not** a
 > prefill regression: `geniex-bench` measures after warm-up and sees nothing.
+>
+> A second pass through `Invoke-PrefillBench.ps1` reproduced the NPU and GPU
+> prefill figures to within 3 % (qairt 2072.0 to 2105.0, llama.cpp NPU 1380.0 to
+> 1390.1, GPU 327.6 to 322.4). **Qwen3-4B CPU prefill did not**, coming in at
+> 209.0 against 239.5 — a 13 % swing, while Phi-4 CPU prefill moved only 0.7 %.
+> That is the same picture as [§9.2](#92-measured-results): the CPU is the least repeatable unit on this
+> machine, on prefill as well as decode.
 >
 > Decode is the noisier axis. llama.cpp NPU decode read higher here (16.5 to
 > 18.2) while qairt read lower (29.5 to 27.8); both are single cells rather

@@ -171,6 +171,11 @@ function Add-AtlasBenchmarkRecord {
         [Nullable[double]]$TokPerSec,
         [Nullable[double]]$FirstTokenS,
         [Nullable[int]]$Tokens,
+        # Prefill is a separate axis, not a variant of throughput: short-prompt
+        # decode rates hid a 6-9x NPU prefill advantage in this project until
+        # the two were measured apart. Records carrying it keep them apart.
+        [Nullable[double]]$PrefillTps,
+        [Nullable[int]]$PromptTokens,
         [string]$CsvPath,
         [hashtable]$Extra
     )
@@ -188,6 +193,8 @@ function Add-AtlasBenchmarkRecord {
         tokPerSec   = $TokPerSec
         firstTokenS = $FirstTokenS
         tokens      = $Tokens
+        prefillTps  = $PrefillTps
+        promptTokens = $PromptTokens
         csv         = $CsvPath
         state       = $State
     }
