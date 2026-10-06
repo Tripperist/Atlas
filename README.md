@@ -131,7 +131,7 @@ Captured 2026-09-19. Update this table when firmware, OS build, or package versi
 | GenieX chipset detection | `Snapdragon X2 Elite CRD` |
 | AI Hub device target | `Snapdragon X2 Elite CRD` — **HTP version 81**, SoC model 88 |
 | Python | 3.14.7, ARM64, 64-bit (`.venv`) |
-| GenieX CLI | **v0.7.0** — QAIRT 2.45, llama.cpp `4ff829e`. Deliberately *not* v0.8.0: that build regresses NPU first-token latency 13–18× ([§9.2](#92-measured-results)) |
+| GenieX CLI | **v0.7.0** — QAIRT 2.45, llama.cpp `4ff829e`. v0.8.0 is fine for server use; it only penalises one-shot `geniex infer` on the llama.cpp path ([§9.2](#92-measured-results)) |
 | onnxruntime | 1.30.0 |
 | onnxruntime-genai | 0.16.0 |
 | onnxruntime-qnn | provides `onnxruntime_providers_qnn.dll` |
@@ -1269,18 +1269,18 @@ Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `--power-mode burst
 
 **Throughput ordering is unchanged** — NPU > CPU > GPU at both sizes, across a GenieX major version and two driver updates. That is a reassuring sign the ordering is a property of the hardware rather than of one build.
 
-> **First-token latency on the NPU regressed sharply in GenieX v0.8.0: ~0.1 s → ~1.3 s.** Isolated by installing v0.7.0 on the *current* driver, so the driver is ruled out:
+> **A first-token penalty appears in v0.8.0 — but only for one-shot `geniex infer` on the llama.cpp path.** The original reading of this as a general NPU prefill regression was wrong. Measured on the same machine and Adreno driver 32.0.172.2:
 >
-> | Model | GenieX | NPU tok/s | NPU first token |
+> | How it is driven | Plugin | v0.7.0 | v0.8.0 |
 > | --- | --- | --- | --- |
-> | Qwen3-4B | v0.7.0 | 28.2 | **0.10 s** |
-> | Qwen3-4B | v0.8.0 | **30.6** | 1.37 s |
-> | Qwen3-1.7B | v0.7.0 | **61.1** | **0.07 s** |
-> | Qwen3-1.7B | v0.8.0 | 60.8 | 1.27 s |
+> | `geniex infer`, one-shot | llama.cpp NPU | 0.10 s | **1.6–1.8 s** |
+> | `geniex infer`, one-shot | QAIRT NPU | 0.10 s | **0.1 s** — unaffected |
+> | `geniex-bench`, 512-tok prompt | llama.cpp NPU | 365 ms | **375 ms** — unaffected |
+> | `geniex-bench`, 512-tok prompt | QAIRT NPU | 246 ms | **246 ms** — unaffected |
 >
-> v0.8.0 buys about 8 % more throughput at 4B and nothing at 1.7B, in exchange for a **13–18× worse time to first token**. Adreno driver 32.0.172.2 and the model files were identical across all four rows; only the GenieX build changed.
+> Over `geniex serve`, the first request costs 13.8 s (model load plus init) and subsequent ones settle at 3.9 s for 120 tokens — about the pure generation time. So the penalty is a **one-time, per-process initialisation cost**, which `geniex-bench` hides by measuring after warm-up and a server pays only at startup.
 >
-> **This is a real trade-off for Scout.** Its prompts are long and replies often short, which is prefill-dominated, so a 1.3 s penalty before the first token outweighs an 8 % throughput gain. On that workload v0.7.0 is the better build. A chat workload generating long prose would prefer v0.8.0 at 4B.
+> **Practical impact is therefore narrow.** It hurts repeated one-shot CLI invocations. It does **not** affect `geniex serve`, which is how Scout would consume this, and does not touch QAIRT at all. The §9.2 figures above were measured with one-shot `geniex infer`, which is why v0.8.0 looks worse there than it is.
 
 ### 9.3 Prefill vs decode, measured with `geniex-bench`
 
@@ -1600,7 +1600,7 @@ The plugin requires `ggml-opencl.dll` — renaming it aside converted the hard c
 | ~~Scope of the 0.16.0 regression~~ | **Closed.** Fixed in 0.17.0 via PR #2565 and verified here ([#2603](https://github.com/microsoft/onnxruntime-genai/issues/2603)) |
 | ~~GenieX crashes on every GGUF model~~ | **Resolved** by Adreno driver 32.0.172.2 — see the entry above |
 | ~~Lift the `onnxruntime-genai` pin~~ | **Done.** Now `>=0.17.0`, resolving to 0.17.1, with the repro passing |
-| ~~NPU first-token regression~~ | **Isolated:** GenieX v0.8.0, not the driver. v0.7.0 on the same driver gives 0.07–0.10 s against v0.8.0's 1.27–1.37 s ([§9.2](#92-measured-results)). Worth reporting upstream at [qualcomm/GenieX](https://github.com/qualcomm/GenieX) |
+| ~~NPU first-token regression~~ | **Scoped down.** v0.8.0 adds a ~1.5 s one-time init cost on the llama.cpp path, visible only in one-shot `geniex infer`. QAIRT and `geniex serve` steady state are unaffected ([§9.2](#92-measured-results)). Minor; report upstream only if it proves to matter |
 | Re-measure throughput on 0.17.x | The 4032-token run gave 9.9 tok/s against 17.1 on 0.15.2, but over 10× the tokens on a warmed machine. Needs a matched run — same prompt, same token budget, cold start — before concluding anything about a performance change |
 | C# / .NET path | Foundry Local ships a first-party C# SDK and handles the version pin itself ([§5 Method E](#method-e-microsoft-foundry-local)) — likely the shortest route for Scout. Untested |
 | NPU headroom | Utilization is clamped to 100 % in tooling (raw readings hit 238 %), and a hosted profile gives per-layer placement but not saturation. SqueezeNet peaked at 32 MB, suggesting room; unmeasured for LLMs |
