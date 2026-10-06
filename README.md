@@ -439,6 +439,7 @@ Python packages:
 | --- | --- | --- |
 | Python packages | `onnxruntime-genai` | `-Apply` runs `uv sync --upgrade` and prints every version that moved |
 | GenieX CLI | v0.7.0 to v0.8.0 | `-Apply` downloads, verifies SHA256, installs silently |
+| Foundry Local | 0.10.3 | Detected only; install with `winget` ([§5.6](#56-method-e-microsoft-foundry-local)) |
 | Drivers and OS | Adreno, Hexagon, Windows build | **Detected only, never changed** |
 
 Two lessons are built into that split.
@@ -527,6 +528,13 @@ initialisation cost rather than a slower runtime. Had the two numbers been
 averaged into one "it got slower" impression, that distinction would have been
 lost -- which is roughly how the original v0.8.0 investigation went wrong before
 being corrected.
+
+Foundry Local is tracked for drift but **deliberately excluded from the stack
+identity**. It is a separate runtime that does not execute GenieX or ORT GenAI
+work, and folding it in would re-key every existing record on a machine that had
+not otherwise changed. If its mere presence is ever shown to move another
+runtime's numbers, it belongs in the identity and the re-key is worth paying
+once.
 
 The hash is computed from an explicit field list, not from the file, so it
 survives a JSON round-trip and adding a descriptive field later does not
@@ -1006,7 +1014,7 @@ The winget installer is `foundry-0.10.3-win-arm64-winml.msix` — a native ARM64
 
 For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
 
-**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — inside the range we verified working in [Method D](#54-method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
+**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — but only once the service has run; with it stopped the same field reads `0.0.0`, and 0.10.3 has no `foundry service` subcommand to start it without loading a model — inside the range we verified working in [Method D](#54-method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
 
 **Device targeting is per model, and visible.** `foundry model list` has a Device column showing what this machine will actually use, and `foundry model info <model>` lists every variant with its execution provider:
 
@@ -1538,6 +1546,13 @@ All three rows are now re-measured on the current stack.
 > [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) it gives **1172 ms /
 > 436.9 / 17.5** — a **1.7× prefill improvement** across three very tight
 > repetitions (436.3, 441.6, 432.9 tok/s), so it is not noise.
+>
+> **One candidate has been tested and ruled out.** Foundry Local was fully
+> uninstalled during the crash investigation, so its absence was a plausible
+> explanation. Reinstalling it (0.10.3, service idle) and re-running gave
+> **404.2 tok/s prefill against 436.9** — within the run-to-run variance seen
+> elsewhere here, and nowhere near the old 256.5. So Foundry's presence does not
+> account for it. A *running* Foundry service remains untested.
 >
 > **The cause is unknown**, because the original measurement predates the
 > benchmark history and so carries no record of the stack it ran under. The

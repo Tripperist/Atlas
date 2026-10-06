@@ -83,6 +83,22 @@ function Get-AtlasState {
     }
     $state.packages = $packages
 
+    # Foundry Local is Method E (README section 5.6). It is deliberately NOT
+    # part of the stack identity below: it is a separate runtime that does not
+    # execute GenieX or ORT GenAI work, and folding it into the hash would
+    # re-key every existing history record on a machine that had not otherwise
+    # changed. It is tracked here so drift is still visible.
+    #
+    # Revisit that if Foundry's mere presence is ever shown to affect another
+    # runtime's numbers -- it would then belong in the identity.
+    $foundry = 'not installed'
+    if (Get-Command foundry -ErrorAction SilentlyContinue) {
+        $raw = (foundry --version 2>&1 | Out-String) -replace '\[[0-9;]*m', ''
+        if ($raw -match '(\d+\.\d+\.\d+[\w.-]*)') { $foundry = $Matches[1] }
+        else { $foundry = 'installed, version unknown' }
+    }
+    $state.foundry = $foundry
+
     $state.id = Get-AtlasStateId $state
     $state
 }
@@ -114,6 +130,7 @@ function Get-AtlasStateId {
     $geniex  = if ($State -is [System.Collections.IDictionary]) { $State['geniex'] }  else { $State.geniex }
     $pkgs    = if ($State -is [System.Collections.IDictionary]) { $State['packages'] } else { $State.packages }
 
+    # Deliberately excludes $State.foundry; see Get-AtlasState for why.
     $parts = @(
         "adreno=$(Get-Field $drivers 'adreno')"
         "npu=$(Get-Field $drivers 'npu')"

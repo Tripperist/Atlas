@@ -140,6 +140,7 @@ function Compare-Against {
     $rows.Add((New-DriftRow 'Windows build' $Baseline.os               $Current.os               'detect only'))
     $rows.Add((New-DriftRow 'GenieX'        $Baseline.geniex.version   $Current.geniex.version   'installer'))
     $rows.Add((New-DriftRow 'llama.cpp'     $Baseline.geniex.llamacpp  $Current.geniex.llamacpp  'with GenieX'))
+    $rows.Add((New-DriftRow 'Foundry Local' $Baseline.foundry          $Current.foundry          'winget'))
 
     # Union of both key sets, so a package that was added or removed still
     # shows up rather than silently vanishing from the comparison.
