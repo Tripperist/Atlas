@@ -31,6 +31,7 @@ Every manual sequence below is wrapped in a script. Each section still explains 
 | [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/model_format.py`](src/setup/model_format.py) | Yes, read-only |
 | [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/check_qnn.py`](src/setup/check_qnn.py) | Yes, read-only |
 | [§5.4 Method D: ONNX Runtime GenAI + QNN](#54-method-d-onnx-runtime-genai--qnn) | [`src/setup/run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
+| [§5.6 Method E: Microsoft Foundry Local](#56-method-e-microsoft-foundry-local) | [`Scripts/Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) | Yes; runs inference |
 | [§6 Available models](#6-available-models) | [`src/setup/model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) | Yes; runs inference |
 | [§7 Proving which compute unit actually runs](#7-proving-which-compute-unit-actually-runs) | [`Scripts/Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
@@ -500,7 +501,8 @@ installed when that number was measured*, answered by hand.
 
 So every benchmark run — from `Update-Workspace.ps1`,
 [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1),
-[`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) and
+[`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1),
+[`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) and
 [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) alike — is appended to
 `.atlas-local/benchmarks/history.jsonl`, stamped with a short hash of the
 drivers, OS build, GenieX version, llama.cpp revision and ONNX Runtime versions
@@ -1003,18 +1005,43 @@ The winget installer is `foundry-0.10.3-win-arm64-winml.msix` — a native ARM64
 
 **It detects this hardware correctly and does use the NPU.** `foundry status` reports the Hexagon NPU by its full SKU, and `foundry server start` downloads and initialises `QNNExecutionProvider` on first run.
 
-**Measured here**, `phi-3.5-mini` (variant `phi-3.5-mini-instruct-qnn-npu`) over the OpenAI endpoint, 354 tokens, 3 runs:
+**Measured here** with [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1),
+`phi-3.5-mini` (variant `phi-3.5-mini-instruct-qnn-npu`) over the OpenAI endpoint, 357 tokens, 3 runs:
 
-| Metric | Value |
-| --- | --- |
-| Throughput | **26.5 tok/s** (26.0 / 26.8 / 26.8) |
-| NPU peak | **100 %** on all three runs |
-| CPU mean | 53.6 % |
-| Wall | ~13.2 s |
+| Metric | Value | Previously |
+| --- | --- | --- |
+| Throughput | **27.7 tok/s** (28.7 / 29.3 / 25.1) | 26.5 |
+| NPU peak | **100 %** on all three runs | 100 % |
+| CPU mean | 79.0 % | 53.6 % |
+| Wall | ~12.9 s | ~13.2 s |
 
-For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 78 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
+Throughput reproduces within 4.5 %, and **NPU placement is confirmed again at
+100 % on every run**. The CPU figure is *not* a like-for-like comparison: this
+harness samples `\Processor Information(_Total)\% Processor Time`, while the
+method behind the earlier 53.6 % was never recorded. Read it as "Foundry's CPU
+cost is substantial", which both numbers support, rather than as a regression.
 
-**It sidesteps the 0.16 regression by construction.** `foundry status` reports **ORT GenAI 0.14.1** and ORT 1.26.0 — but only once the service has run; with it stopped the same field reads `0.0.0`, and 0.10.3 has no `foundry service` subcommand to start it without loading a model — inside the range we verified working in [Method D](#54-method-d-onnx-runtime-genai--qnn). The version trap is handled for you.
+> Throughput here is wall time around the HTTP request divided by the server's
+> reported `completion_tokens`, so it includes request overhead. That is what a
+> Scout-like client would actually see, but it is **not** comparable to
+> `geniex-bench`'s isolated decode rate in [§9.3](#93-prefill-vs-decode-measured-with-geniex-bench).
+
+**Two API traps worth knowing**, both of which return a bare `400`:
+
+- The CLI takes an alias (`phi-3.5-mini`) but the OpenAI API wants the concrete
+  variant id (`phi-3.5-mini-instruct-qnn-npu`); the alias appears only as that
+  variant's `parent` in `/v1/models`.
+- Being *downloaded* is not being *loaded*. `/v1/models` lists what is on disk;
+  a request against an unloaded model fails with "Model ... is not loaded".
+  Run `foundry model load <alias>` first.
+
+The script handles both.
+
+For context, Qualcomm publishes 34.2 tok/s for the same model as a QAIRT bundle ([§9.4](#95-qualcomms-published-numbers-for-this-device)) — so Foundry Local reaches roughly 81 % of the native path while being far easier to consume. Note the CPU cost: 53.6 % against ~19 % for GenieX NPU runs, which matters on a machine also running Scout.
+
+**It sidesteps the 0.16 regression by construction**, because it ships and pins its own runtime rather than resolving one from PyPI. `foundry status` reports ORT **1.26.0**.
+
+> The ORT GenAI version was previously recorded here as **0.14.1**. On 0.10.3 that field reads **`0.0.0`** whether the server is stopped or `Ready`, so the figure no longer reproduces and is not evidence of anything today. The argument above does not depend on it — Foundry pins its own runtime either way — but the version itself is currently unreadable from the CLI.
 
 **Device targeting is per model, and visible.** `foundry model list` has a Device column showing what this machine will actually use, and `foundry model info <model>` lists every variant with its execution provider:
 
