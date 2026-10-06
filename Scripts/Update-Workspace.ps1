@@ -9,35 +9,47 @@
     Three classes of component are tracked, because the things that have
     actually broken this workspace were not all Python packages:
 
-      Python packages   detected and updatable (uv)
-      GenieX CLI        detected; update is a manual installer swap
+      Python packages   detected; updated by -Apply via uv
+      GenieX CLI        detected; updated by -Apply via the signed installer
       Drivers and OS    detected ONLY -- never touched by this script
 
     That last class matters most. Adreno driver 32.0.172.1 broke GenieX GGUF
-    inference outright (section 11) and no package manager would have shown
+    inference outright (section 12) and no package manager would have shown
     it. So drift is measured against a recorded baseline rather than against
-    "latest": the question answered is "what changed since this last worked",
-    which is the one that was hard to answer at the time.
+    "latest", and the question answered is "what changed since this last
+    worked", which is the one that was hard to answer at the time.
 
     Updating is also not the same as working. onnxruntime-genai 0.16.0 was
     the current release and was broken for EPContext/QNN models; only running
     the repro caught it. Hence the verification pass.
+
+    Every benchmark run is appended to .atlas-local/benchmarks/history.jsonl,
+    stamped with a short hash of the stack it ran under, so results measured
+    under different drivers or runtimes are never silently compared. See
+    -History.
 
     The baseline lives in .atlas-local/baseline.json, git-ignored because
     driver versions are per-machine. Seed or refresh it with -Accept, after
     verification passes.
 
 .PARAMETER Apply
-    Apply the updates that are safely scriptable. Never touches drivers.
+    Apply available updates: Python packages via uv, and GenieX via its signed
+    installer. Drivers are never touched.
 
 .PARAMETER Accept
     Record the current state as the new baseline.
+
+.PARAMETER SkipGeniex
+    With -Apply, update Python packages but leave GenieX alone.
 
 .PARAMETER SkipVerify
     Skip the post-update verification pass.
 
 .PARAMETER SkipBenchmark
     Run the correctness guards but not the short benchmark.
+
+.PARAMETER History
+    Print recorded benchmark history grouped by stack, and exit.
 
 .EXAMPLE
     .\Scripts\Update-Workspace.ps1
@@ -46,68 +58,60 @@
     .\Scripts\Update-Workspace.ps1 -Apply
 
 .EXAMPLE
-    .\Scripts\Update-Workspace.ps1 -Accept
+    .\Scripts\Update-Workspace.ps1 -History
 #>
 [CmdletBinding()]
 param(
     [switch]$Apply,
     [switch]$Accept,
+    [switch]$SkipGeniex,
     [switch]$SkipVerify,
-    [switch]$SkipBenchmark
+    [switch]$SkipBenchmark,
+    [switch]$History
 )
 
 $ErrorActionPreference = 'Continue'
-$root         = Split-Path $PSScriptRoot -Parent
+Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+
+$root         = Get-AtlasRoot
 $venvPy       = Join-Path $root '.venv\Scripts\python.exe'
-$baselinePath = Join-Path $root '.atlas-local\baseline.json'
+$baselinePath = Get-AtlasBaselinePath
+$NotDetected  = 'NOT DETECTED'
 
-# ----------------------------------------------------------------- observe
+# ------------------------------------------------------------------ history
 
-$NotDetected = 'NOT DETECTED'
-
-function Get-CurrentState {
-    $state = [ordered]@{ recorded = (Get-Date -Format 's') }
-
-    # Matched by device name, which on this machine resolves to
-    # "Qualcomm(R) Adreno(TM) X2-85 GPU" and
-    # "Snapdragon(R) X2 Elite - X2E78100 - Qualcomm(R) Hexagon(TM) NPU".
-    # If a rename ever breaks the match, record NOT DETECTED rather than a
-    # null: a null would read as "(none)" in both columns and compare equal,
-    # so a driver change would go silently unnoticed -- the exact failure this
-    # script exists to catch.
-    $drivers = Get-CimInstance Win32_PnPSignedDriver -ErrorAction SilentlyContinue
-    $adreno = $drivers | Where-Object { $_.DeviceName -match 'Adreno' }          | Select-Object -First 1
-    $npu    = $drivers | Where-Object { $_.DeviceName -match 'Hexagon|NPU' } | Select-Object -First 1
-    $state.drivers = [ordered]@{
-        adreno = if ($adreno) { $adreno.DriverVersion } else { $script:NotDetected }
-        npu    = if ($npu)    { $npu.DriverVersion }    else { $script:NotDetected }
+if ($History) {
+    $records = @(Get-AtlasBenchmarkHistory)
+    if ($records.Count -eq 0) {
+        Write-Host "No benchmark history yet at $(Get-AtlasHistoryPath)."
+        Write-Host 'It is written by Update-Workspace.ps1 and Invoke-Benchmark.ps1.'
+        exit 0
     }
-    $state.os = (Get-CimInstance Win32_OperatingSystem).BuildNumber
-
-    # `geniex version` loads the llama.cpp plugin, so it can crash outright
-    # while the rest of the CLI works. Record that as a value, not an error:
-    # a version call that started failing is itself the signal.
-    $gxVersion = 'not installed'
-    $gxHash    = $null
-    if (Get-Command geniex -ErrorAction SilentlyContinue) {
-        $raw = (geniex version 2>&1 | Out-String) -replace '\x1b\[[0-9;]*m', ''
-        if ($raw -match 'Version:\s*(\S+)') { $gxVersion = $Matches[1] }
-        else                                { $gxVersion = 'version call failed' }
-        if ($raw -match 'LlamaCPP Runtime Hash:\s*(\S+)') { $gxHash = $Matches[1] }
+    Write-Host "Benchmark history ($($records.Count) record(s))" -ForegroundColor Cyan
+    Write-Host "from $(Get-AtlasHistoryPath)"
+    $currentId = Get-AtlasShortId (Get-AtlasStateId (Get-AtlasState))
+    foreach ($g in ($records | Group-Object stateId | Sort-Object { $_.Group[0].ts })) {
+        $s = $g.Group[0].state
+        $marker = if ($g.Name -eq $currentId) { '  <-- current stack' } else { '' }
+        Write-Host ''
+        Write-Host ("stack {0}{1}" -f $g.Name, $marker) -ForegroundColor Yellow
+        Write-Host ("  adreno {0} | npu {1} | os {2} | geniex {3} | llama.cpp {4}" -f `
+            $s.drivers.adreno, $s.drivers.npu, $s.os, $s.geniex.version, $s.geniex.llamacpp)
+        $g.Group |
+            Sort-Object ts |
+            Select-Object @{n = 'when';     e = { ([datetime]$_.ts).ToString('yyyy-MM-dd HH:mm') } },
+                          @{n = 'model';    e = { $_.model } },
+                          @{n = 'compute';  e = { $_.compute } },
+                          @{n = 'tok/s';    e = { $_.tokPerSec } },
+                          @{n = 'firstTok'; e = { $_.firstTokenS } },
+                          @{n = 'source';   e = { $_.source } } |
+            Format-Table -AutoSize | Out-String | Write-Host
     }
-    $state.geniex = [ordered]@{ version = $gxVersion; llamacpp = $gxHash }
-
-    $packages = [ordered]@{}
-    if (Test-Path $venvPy) {
-        foreach ($mod in @('onnxruntime', 'onnxruntime_genai', 'onnxruntime_qnn')) {
-            $v = & $venvPy -c "import $mod,sys; sys.stdout.write(getattr($mod,'__version__','?'))" 2>$null
-            if ($v) { $packages[$mod] = "$v".Trim() }
-        }
-    }
-    $state.packages = $packages
-
-    $state
+    Write-Host 'Numbers measured under different stacks are not directly comparable.' -ForegroundColor DarkGray
+    exit 0
 }
+
+# -------------------------------------------------------------------- drift
 
 function New-DriftRow {
     param([string]$Name, $Was, $Now, [string]$Updatable)
@@ -147,6 +151,8 @@ function Compare-Against {
     $rows
 }
 
+# ------------------------------------------------------------------- geniex
+
 function Get-LatestGeniexTag {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $null }
     $tag = gh release list --repo qualcomm/GenieX --limit 1 --json tagName --jq '.[0].tagName' 2>$null
@@ -154,14 +160,97 @@ function Get-LatestGeniexTag {
     $null
 }
 
-# -------------------------------------------------------------------- main
+<#
+.SYNOPSIS
+    Download, hash-verify and silently install a GenieX CLI release.
+
+.DESCRIPTION
+    The Windows ARM64 asset is an Inno Setup installer that installs per-user
+    into %LOCALAPPDATA%\GenieX CLI, so no elevation is required.
+
+    The published .sha256 is always checked. "A corrupted installation" was
+    one of the candidates eliminated by hand during the GGUF crash
+    investigation (section 12); verifying here rules it out by construction
+    next time.
+#>
+function Install-Geniex {
+    param([Parameter(Mandatory)][string]$Tag)
+
+    if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
+        Write-Host '    gh not available; cannot download the release.' -ForegroundColor Red
+        return $false
+    }
+    # The installer replaces DLLs that a running CLI holds open.
+    $busy = Get-Process -Name 'geniex*' -ErrorAction SilentlyContinue
+    if ($busy) {
+        Write-Host '    A geniex process is running; close it first:' -ForegroundColor Red
+        $busy | ForEach-Object { Write-Host ("      PID {0}  {1}" -f $_.Id, $_.ProcessName) -ForegroundColor Red }
+        return $false
+    }
+
+    $asset   = "geniex-cli-setup-windows-arm64-$Tag.exe"
+    $staging = Join-Path ([System.IO.Path]::GetTempPath()) "atlas-geniex-$Tag"
+    New-Item -ItemType Directory -Force -Path $staging | Out-Null
+
+    Write-Host "    downloading $asset ..."
+    gh release download $Tag --repo qualcomm/GenieX `
+        --pattern $asset --pattern "$asset.sha256" --dir $staging --clobber 2>&1 |
+        ForEach-Object { Write-Host "      $_" }
+
+    $exePath = Join-Path $staging $asset
+    $shaPath = "$exePath.sha256"
+    if (-not (Test-Path $exePath)) {
+        Write-Host "    download failed: $asset not found in $staging" -ForegroundColor Red
+        return $false
+    }
+
+    if (Test-Path $shaPath) {
+        # The file is "<hash>  <name>"; take the first field.
+        $expected = ((Get-Content $shaPath -Raw).Trim() -split '\s+')[0].ToLower()
+        $actual   = (Get-FileHash $exePath -Algorithm SHA256).Hash.ToLower()
+        if ($expected -ne $actual) {
+            Write-Host '    SHA256 MISMATCH -- refusing to install.' -ForegroundColor Red
+            Write-Host "      expected $expected" -ForegroundColor Red
+            Write-Host "      actual   $actual"   -ForegroundColor Red
+            return $false
+        }
+        Write-Host '    sha256 verified'
+    }
+    else {
+        Write-Host '    no .sha256 published for this asset; skipping verification.' -ForegroundColor Yellow
+    }
+
+    Write-Host '    running installer (silent) ...'
+    $p = Start-Process -FilePath $exePath `
+        -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/NOCANCEL' `
+        -Wait -PassThru
+    if ($p.ExitCode -ne 0) {
+        Write-Host "    installer exited $($p.ExitCode)" -ForegroundColor Red
+        return $false
+    }
+
+    # This process inherited its PATH at launch, so a freshly installed exe
+    # may not resolve by name here even though it will in a new shell.
+    $installed = Join-Path $env:LOCALAPPDATA 'GenieX CLI\geniex.exe'
+    if (Test-Path $installed) {
+        $raw = (& $installed version 2>&1 | Out-String) -replace '\x1b\[[0-9;]*m', ''
+        if ($raw -match 'Version:\s*(\S+)') {
+            Write-Host "    installed $($Matches[1])" -ForegroundColor Green
+        }
+    }
+    Remove-Item $staging -Recurse -Force -ErrorAction SilentlyContinue
+    $true
+}
+
+# --------------------------------------------------------------------- main
 
 $mode = if ($Apply) { 'APPLY' } elseif ($Accept) { 'ACCEPT baseline' } else { 'report only' }
 Write-Host 'Atlas workspace update' -ForegroundColor Cyan
 Write-Host "mode: $mode"
 Write-Host ''
 
-$current = Get-CurrentState
+$current = Get-AtlasState
+Write-Host ("current stack: {0}" -f (Get-AtlasShortId $current.id))
 
 if (-not (Test-Path $baselinePath)) {
     Write-Host 'No baseline recorded yet.' -ForegroundColor Yellow
@@ -169,8 +258,7 @@ if (-not (Test-Path $baselinePath)) {
     ($current | ConvertTo-Json -Depth 6)
     Write-Host ''
     if ($Accept -or $Apply) {
-        New-Item -ItemType Directory -Force -Path (Split-Path $baselinePath) | Out-Null
-        $current | ConvertTo-Json -Depth 6 | Set-Content $baselinePath -Encoding UTF8
+        Write-AtlasBaseline $current
         Write-Host "Baseline written to $baselinePath" -ForegroundColor Green
     }
     else {
@@ -179,8 +267,8 @@ if (-not (Test-Path $baselinePath)) {
     exit 0
 }
 
-$baseline = Get-Content $baselinePath -Raw | ConvertFrom-Json
-Write-Host "baseline recorded: $($baseline.recorded)"
+$baseline = Read-AtlasBaseline
+Write-Host ("baseline     : {0}  recorded {1}" -f (Get-AtlasShortId (Get-AtlasStateId $baseline)), $baseline.recorded)
 Write-Host ''
 
 $rows = Compare-Against -Current $current -Baseline $baseline
@@ -193,12 +281,12 @@ $undetected = @($rows | Where-Object {
 if ($undetected.Count -gt 0) {
     Write-Host 'WARNING: a driver could not be identified:' -ForegroundColor Red
     foreach ($u in $undetected) { Write-Host ("  {0}" -f $u.Component) -ForegroundColor Red }
-    Write-Host 'The device-name match in Get-CurrentState needs updating. Until then'  -ForegroundColor Red
+    Write-Host 'The device-name match in Get-AtlasState needs updating. Until then'    -ForegroundColor Red
     Write-Host 'this script cannot tell you whether that driver changed, which is the' -ForegroundColor Red
     Write-Host 'one thing it is here to do. Check manually:'                           -ForegroundColor Red
     Write-Host '  Get-CimInstance Win32_PnPSignedDriver |'                             -ForegroundColor DarkGray
-    Write-Host '    Where-Object { $_.DeviceName -match ''Qualcomm|Snapdragon'' } |'      -ForegroundColor DarkGray
-    Write-Host '    Select-Object DeviceName, DriverVersion'                              -ForegroundColor DarkGray
+    Write-Host '    Where-Object { $_.DeviceName -match ''Qualcomm|Snapdragon'' } |'   -ForegroundColor DarkGray
+    Write-Host '    Select-Object DeviceName, DriverVersion'                           -ForegroundColor DarkGray
     Write-Host ''
 }
 
@@ -219,15 +307,17 @@ else {
     Write-Host 'No drift from baseline.' -ForegroundColor Green
 }
 
-# -------------------------------------------------------- available updates
+# ---------------------------------------------------------- available updates
 
 Write-Host ''
 Write-Host 'Available updates' -ForegroundColor Cyan
 Write-Host '-----------------'
 
 $latestGx = Get-LatestGeniexTag
+$gxOutdated = $false
 if ($latestGx) {
-    $note = if ($current.geniex.version -eq $latestGx) { '(current)' } else { '<-- newer available' }
+    $gxOutdated = ($current.geniex.version -ne $latestGx)
+    $note = if ($gxOutdated) { '<-- newer available' } else { '(current)' }
     Write-Host ("  GenieX   installed {0}, latest {1}  {2}" -f $current.geniex.version, $latestGx, $note)
 }
 else {
@@ -247,26 +337,42 @@ if (Test-Path $venvPy) {
     else                       { Write-Host '    all current' }
 }
 
-# ------------------------------------------------------------------- apply
+# --------------------------------------------------------------------- apply
 
 if ($Apply) {
     Write-Host ''
     Write-Host 'Applying' -ForegroundColor Cyan
     Write-Host '--------'
+
     Write-Host '  uv sync --upgrade'
     Push-Location $root
     uv sync --upgrade 2>&1 | Select-Object -Last 5 | ForEach-Object { Write-Host ('    ' + $_) }
     Pop-Location
 
+    if ($SkipGeniex) {
+        Write-Host '  GenieX: skipped (-SkipGeniex)'
+    }
+    elseif (-not $latestGx) {
+        Write-Host '  GenieX: skipped (latest release unknown)'
+    }
+    elseif (-not $gxOutdated) {
+        Write-Host "  GenieX: already $latestGx"
+    }
+    else {
+        Write-Host "  GenieX $($current.geniex.version) -> $latestGx"
+        if (Install-Geniex -Tag $latestGx) {
+            # The stack changed, so re-read it: anything measured below must be
+            # stamped with what actually ran, not with the pre-update state.
+            $current = Get-AtlasState
+            Write-Host ("  stack is now {0}" -f (Get-AtlasShortId $current.id))
+        }
+    }
+
     Write-Host ''
-    Write-Host '  GenieX is not updated automatically: it is a signed-installer swap, and' -ForegroundColor DarkGray
-    Write-Host '  a version change has altered measured behaviour before (section 9.2).' -ForegroundColor DarkGray
-    Write-Host '  To update it deliberately:' -ForegroundColor DarkGray
-    Write-Host '    gh release download <tag> --repo qualcomm/GenieX --pattern "*windows-arm64*.exe"' -ForegroundColor DarkGray
     Write-Host '  Drivers are never touched by this script.' -ForegroundColor DarkGray
 }
 
-# ------------------------------------------------------------------ verify
+# -------------------------------------------------------------------- verify
 
 if (-not $SkipVerify) {
     Write-Host ''
@@ -298,13 +404,19 @@ if (-not $SkipVerify) {
     if (-not $SkipBenchmark) {
         $model = 'unsloth/Qwen3-1.7B-GGUF:Q4_0'
         Write-Host "  short benchmark on $model ..."
-        $out = (& geniex infer $model -p 'Explain what an NPU is.' `
+        $gxExe = Join-Path $env:LOCALAPPDATA 'GenieX CLI\geniex.exe'
+        if (-not (Test-Path $gxExe)) { $gxExe = 'geniex' }
+        $out = (& $gxExe infer $model -p 'Explain what an NPU is.' `
                     --max-tokens 128 --compute npu --think=false 2>&1 | Out-String) `
                -replace '\x1b\[[0-9;]*m', ''
         # Combined pattern: a lone `(\d+)\s*tok\b` happily matches the "5 tok"
         # inside "60.5 tok/s".
         if ($out -match '([\d.]+)\s*tok/s\D+?(\d+)\s*tok\b\D+?([\d.]+)\s*s\s*first token') {
-            Write-Host ("  benchmark                 {0} tok/s, first token {1}s" -f $Matches[1], $Matches[3])
+            $tps = [double]$Matches[1]; $tok = [int]$Matches[2]; $ftt = [double]$Matches[3]
+            Write-Host ("  benchmark                 {0} tok/s, first token {1}s" -f $tps, $ftt)
+            Add-AtlasBenchmarkRecord -State $current -Source 'Update-Workspace.ps1' `
+                -Model $model -Compute 'npu' -TokPerSec $tps -FirstTokenS $ftt -Tokens $tok | Out-Null
+            Write-Host ("  recorded under stack {0}; see -History" -f (Get-AtlasShortId $current.id)) -ForegroundColor DarkGray
             Write-Host '  Smoke test only. geniex rounds first-token to 0.1s, so a warm' -ForegroundColor DarkGray
             Write-Host '  short prompt reads 0.0s. For numbers comparable to section 9.2,' -ForegroundColor DarkGray
             Write-Host '  run .\Scripts\Invoke-Benchmark.ps1.' -ForegroundColor DarkGray
@@ -317,15 +429,15 @@ if (-not $SkipVerify) {
     }
 }
 
-# ------------------------------------------------------------------ accept
+# -------------------------------------------------------------------- accept
 
 if ($Accept) {
-    New-Item -ItemType Directory -Force -Path (Split-Path $baselinePath) | Out-Null
-    $current | ConvertTo-Json -Depth 6 | Set-Content $baselinePath -Encoding UTF8
+    Write-AtlasBaseline $current
     Write-Host ''
     Write-Host "Baseline updated: $baselinePath" -ForegroundColor Green
+    Write-Host ("stack {0}" -f (Get-AtlasShortId $current.id))
 }
-elseif ($drifted.Count -gt 0) {
+elseif ($drifted.Count -gt 0 -or $Apply) {
     Write-Host ''
     Write-Host 'Run with -Accept once verification passes to record the new baseline.' -ForegroundColor DarkGray
 }

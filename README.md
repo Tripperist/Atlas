@@ -382,9 +382,10 @@ Budget for source weights, converted copies, temporary conversion files, and cac
 The toolchain here moves fast and its pieces update independently. Run:
 
 ```powershell
-.\Scripts\Update-Workspace.ps1          # report drift and available updates
-.\Scripts\Update-Workspace.ps1 -Apply   # upgrade Python deps, then verify
-.\Scripts\Update-Workspace.ps1 -Accept  # record current state as the baseline
+.\Scripts\Update-Workspace.ps1            # report drift and available updates
+.\Scripts\Update-Workspace.ps1 -Apply     # update packages and GenieX, then verify
+.\Scripts\Update-Workspace.ps1 -Accept    # record current state as the baseline
+.\Scripts\Update-Workspace.ps1 -History   # past benchmarks, grouped by stack
 ```
 
 It reports by default and changes nothing, like `Install-Prerequisites.ps1`.
@@ -395,14 +396,14 @@ Python packages:
 
 | Class | Example | Handling |
 | --- | --- | --- |
-| Python packages | `onnxruntime-genai` | Detected; `-Apply` runs `uv sync --upgrade` |
-| GenieX CLI | v0.7.0 to v0.8.0 | Detected; update is a deliberate installer swap |
+| Python packages | `onnxruntime-genai` | `-Apply` runs `uv sync --upgrade` |
+| GenieX CLI | v0.7.0 to v0.8.0 | `-Apply` downloads, verifies SHA256, installs silently |
 | Drivers and OS | Adreno, Hexagon, Windows build | **Detected only, never changed** |
 
 Two lessons are built into that split.
 
 **Not every breaking change is a package.** Adreno driver `32.0.172.1` broke
-GenieX GGUF inference outright (§11) and `32.0.172.2` fixed it. No package
+GenieX GGUF inference outright (§12) and `32.0.172.2` fixed it. No package
 manager would have surfaced either. So the script compares against a recorded
 baseline rather than against "latest": it answers *what changed since this last
 worked*, which was the hard question at the time. A driver or OS change is
@@ -418,14 +419,59 @@ model caught it. So any change is followed by a verification pass:
 as a regression guard for that exact class of failure, and a short inference
 smoke test. Skip them with `-SkipVerify` / `-SkipBenchmark`.
 
-GenieX is detected but never updated automatically: it is a signed-installer
-swap, and a version change has shifted measured behaviour before (§9.2).
-Drivers are never touched at all.
+GenieX is updated from its GitHub release. The Windows ARM64 asset is an Inno
+Setup installer that installs per-user into `%LOCALAPPDATA%\GenieX CLI`, so no
+elevation is needed, and the published `.sha256` is checked before anything is
+executed — "a corrupted installation" was one of the candidates eliminated by
+hand during the crash investigation in §12, and verifying here rules it out by
+construction. The update is skipped if a `geniex` process is running, since the
+installer replaces DLLs that process holds open. Use `-SkipGeniex` to update
+only the Python side. Drivers are never touched at all.
+
+> Worth stating plainly, because the opposite is easy to assume: **the GGUF
+> crash was not a GenieX problem.** §12 records `v0.7.0 -> v0.8.0` as one of the
+> hypotheses *tested and eliminated* — the crash reproduced on both, and the fix
+> was a graphics driver with the GenieX build held constant. The one real
+> v0.8.0 difference is a one-time per-process initialisation cost on the
+> llama.cpp path (§9.2), which does not affect `geniex serve` or QAIRT.
 
 The baseline lives in `.atlas-local/baseline.json`, git-ignored because driver
 versions are per-machine. Record a new one with `-Accept` **after** verification
 passes, not before. An accepted baseline is a claim that this combination
 worked.
+
+#### Benchmark history
+
+A throughput number means little without the stack that produced it. Both of
+this project's hardest debugging sessions ended with the question *what was
+installed when that number was measured*, answered by hand.
+
+So every benchmark run — from `Update-Workspace.ps1` and from
+[`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) alike — is appended to
+`.atlas-local/benchmarks/history.jsonl`, stamped with a short hash of the
+drivers, OS build, GenieX version, llama.cpp revision and ONNX Runtime versions
+it ran under:
+
+```
+stack 09770a092b9b  <-- current stack
+  adreno 32.0.172.2 | npu 30.0.228.10000 | os 28120 | geniex v0.7.0 | llama.cpp 4ff829e
+
+when             model                        compute tok/s firstTok source
+2026-10-05 20:48 unsloth/Qwen3-1.7B-GGUF:Q4_0 npu     65.2  0.00     Update-Workspace.ps1
+```
+
+The hash is computed from an explicit field list, not from the file, so it
+survives a JSON round-trip and adding a descriptive field later does not
+invalidate existing history. Each record embeds its full state snapshot, so the
+history stays readable after `baseline.json` is replaced. The format is JSON
+Lines and append-only: records are never rewritten, so the file concatenates and
+diffs cleanly and a crashed run costs at most its own line.
+
+Results recorded under different stacks are **not** directly comparable, and
+`-History` groups them so that is visible rather than assumed. Shared state
+capture and hashing live in
+[`Scripts/AtlasBaseline.psm1`](Scripts/AtlasBaseline.psm1) so both scripts stamp
+runs identically.
 
 ---
 

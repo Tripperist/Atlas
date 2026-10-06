@@ -318,3 +318,32 @@ $rows | Select-Object * -ExcludeProperty '_EnginePeaks' |
     Export-Csv -Path $CsvPath -NoTypeInformation -Encoding UTF8
 Write-Host ''
 Write-Host "Results written to $CsvPath" -ForegroundColor Green
+
+# ------------------------------------------------------------------ history
+# A throughput number means little without the stack that produced it: an
+# Adreno patch-level bump once turned a hard crash into 131 tok/s, and a
+# GenieX minor version shifted first-token latency without moving throughput.
+# Stamp each per-compute mean with a hash of that stack so runs are never
+# silently compared across different drivers or runtimes.
+# View with: .\Scripts\Update-Workspace.ps1 -History
+try {
+    Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force -ErrorAction Stop
+    $state = Get-AtlasState
+    foreach ($g in ($rows | Group-Object Compute)) {
+        $avg = { param($f) ($g.Group | Measure-Object $f -Average).Average }
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-Benchmark.ps1' `
+            -Model $Model -Compute $g.Name `
+            -TokPerSec   ([math]::Round((& $avg 'TokPerSec'), 1)) `
+            -FirstTokenS ([math]::Round((& $avg 'FirstTokS'), 2)) `
+            -Tokens      ([int](& $avg 'Tokens')) `
+            -CsvPath     $CsvPath `
+            -Extra       @{ runs = $g.Count; maxTokens = $MaxTokens; powerMode = $PowerMode } |
+            Out-Null
+    }
+    Write-Host ("Recorded in benchmark history under stack {0}" -f (Get-AtlasShortId $state.id)) -ForegroundColor Green
+    Write-Host 'View with: .\Scripts\Update-Workspace.ps1 -History' -ForegroundColor DarkGray
+}
+catch {
+    # History is a convenience; never lose a completed benchmark over it.
+    Write-Host "History not recorded: $($_.Exception.Message)" -ForegroundColor Yellow
+}
