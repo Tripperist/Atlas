@@ -47,6 +47,34 @@ would be double-counted by the first.
   Counters are attributed to this process by PID — something the out-of-process
   PowerShell samplers in `Scripts/` cannot do.
 
+## Why the model repeats itself
+
+A small model answering an open-ended question will degenerate into one
+sentence repeated until something stops it. Three things are in play, and only
+the first is the harness's fault:
+
+- **No token cap means no stop.** Generation runs to the 32k context window.
+  `--max-tokens` (default 512) bounds it, and the stats line reports
+  `ended: length` so a runaway is visible rather than silent.
+- **Sampling helps a little.** `DoSample` is on with `--temperature` (0.7) and
+  `--top-k` (40). Verified working: the same prompt at 0.1 and 1.5 gives
+  different answers, and two runs at 1.5 differ from each other. Lowering
+  `--top-k 10` reduces repetition further.
+- **The model is the real limit.** `qwen2.5-0.5b` still loops on open-ended
+  prompts at any of these settings. It is fine on factual questions. For
+  comparison, `phi-3.5-mini` at 2.0 GB answered the same class of prompt
+  coherently for 357 tokens over the HTTP endpoint.
+
+That is awkward for this backend specifically: Foundry Local publishes only two
+NPU models here, and the larger one does not load through the SDK, so the NPU
+path is effectively capped at 0.5B. The GenieX backend, which takes any GGUF,
+is the way out.
+
+> **`FrequencyPenalty` and `PresencePenalty` do not work.** `SearchOptions`
+> exposes both, but any non-zero value fails the request with *"Error executing
+> streaming request."* They are the obvious lever for repetition and they are
+> unavailable, so `--top-k` is the substitute.
+
 ## Gotchas worth knowing
 
 - The project needs `<RuntimeIdentifier>win-arm64</RuntimeIdentifier>`; the

@@ -20,11 +20,18 @@ namespace AtlasChat;
 internal sealed class FoundryRuntime : IChatRuntime
 {
     private readonly ILoggerFactory _loggerFactory;
+    private readonly int _maxOutputTokens;
+    private readonly float _temperature;
+    private readonly int _topK;
     private IModel? _model;
     private ChatSession? _session;
 
-    public FoundryRuntime()
+    public FoundryRuntime(int maxOutputTokens, float temperature, int topK)
     {
+        _maxOutputTokens = maxOutputTokens;
+        _temperature = temperature;
+        _topK = topK;
+
         // A null ILogger is not tolerated. FoundryLocalException logs through
         // the logger it is handed, so passing null turns any startup failure
         // into an ArgumentNullException raised from inside the exception
@@ -38,6 +45,7 @@ internal sealed class FoundryRuntime : IChatRuntime
     public string ModelId { get; private set; } = "(not loaded)";
     public TimeSpan LoadTime { get; private set; }
     public int? LastTokenCount { get; private set; }
+    public string? LastFinishReason { get; private set; }
 
     public async Task StartAsync(string modelAlias, CancellationToken ct)
     {
@@ -76,8 +84,7 @@ internal sealed class FoundryRuntime : IChatRuntime
         LoadTime = sw.Elapsed;
 
         ModelId = _model.Id;
-        _session = new ChatSession(_model);
-        _session.SetStreaming(true);
+        _session = NewSession();
     }
 
     public async IAsyncEnumerable<string> StreamAsync(
@@ -85,6 +92,7 @@ internal sealed class FoundryRuntime : IChatRuntime
     {
         if (_session is null) throw new InvalidOperationException("StartAsync first.");
         LastTokenCount = null;
+        LastFinishReason = null;
 
         using var request = new Request();
         request.AddItem(MessageItem.User(userMessage), false);
@@ -104,7 +112,16 @@ internal sealed class FoundryRuntime : IChatRuntime
             if (!string.IsNullOrEmpty(text)) yield return text;
         }
 
-        // Deliberately left null for this backend. Response.GetUsage()
+        try
+        {
+            LastFinishReason = (await streaming.FinalResponse).FinishReason.ToString().ToLowerInvariant();
+        }
+        catch
+        {
+            // Best effort; the stats line simply omits it.
+        }
+
+        // LastTokenCount is deliberately left null for this backend. Response.GetUsage()
         // .CompletionTokens does not correspond to the streamed reply here --
         // it reported 48 tokens for "Your name is Mike." and 34 for a longer
         // one, so it is neither per-turn nor cumulative in any usable way.
@@ -116,8 +133,30 @@ internal sealed class FoundryRuntime : IChatRuntime
     {
         // ChatSession owns the history, so a fresh session is the reset.
         _session?.Dispose();
-        _session = new ChatSession(_model!);
-        _session.SetStreaming(true);
+        _session = NewSession();
+    }
+
+    /// <summary>
+    /// A session carrying the generation options. Without these the backend
+    /// decodes greedily and without a cap, which on a small model produces a
+    /// single sentence repeated until the context window fills.
+    /// </summary>
+    private ChatSession NewSession()
+    {
+        var session = new ChatSession(_model!);
+        session.SetStreaming(true);
+        session.SetOptions(new RequestOptions
+        {
+            Search = new SearchOptions
+            {
+                MaxOutputTokens = _maxOutputTokens,
+                DoSample = true,          // greedy decoding is what loops
+                Temperature = _temperature,
+                TopP = 0.9f,
+                TopK = _topK,
+            },
+        });
+        return session;
     }
 
     public async ValueTask DisposeAsync()

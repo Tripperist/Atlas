@@ -33,6 +33,13 @@ internal interface IChatRuntime : IAsyncDisposable
     /// </summary>
     int? LastTokenCount { get; }
 
+    /// <summary>
+    /// Why the last turn ended -- "stop", "length", "toolCalls". Distinguishing
+    /// a natural stop from hitting the cap is the difference between a finished
+    /// answer and a truncated one, so it belongs on the stats line.
+    /// </summary>
+    string? LastFinishReason { get; }
+
     /// <summary>Forget the conversation so far.</summary>
     void Reset();
 }

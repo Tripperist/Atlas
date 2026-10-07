@@ -12,6 +12,9 @@ using AtlasChat;
 string runtimeName = "foundry";
 string? model = null;
 bool showStats = true;
+int maxTokens = 512;
+float temperature = 0.7f;
+int topK = 40;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -19,6 +22,9 @@ for (int i = 0; i < args.Length; i++)
     {
         case "--runtime" when i + 1 < args.Length: runtimeName = args[++i]; break;
         case "--quiet": showStats = false; break;
+        case "--max-tokens" when i + 1 < args.Length: maxTokens = int.Parse(args[++i]); break;
+        case "--temperature" when i + 1 < args.Length: temperature = float.Parse(args[++i]); break;
+        case "--top-k" when i + 1 < args.Length: topK = int.Parse(args[++i]); break;
         case "--help" or "-h": Usage(); return 0;
         default:
             if (args[i].StartsWith('-')) { Console.Error.WriteLine($"unknown option {args[i]}"); return 2; }
@@ -31,7 +37,7 @@ IChatRuntime runtime;
 switch (runtimeName)
 {
     case "foundry":
-        runtime = new FoundryRuntime();
+        runtime = new FoundryRuntime(maxTokens, temperature, topK);
         model ??= "qwen2.5-0.5b";
         break;
 
@@ -145,6 +151,13 @@ while (true)
             $"first {firstTokenS ?? 0:F2}s",
         };
 
+        // "length" means the cap stopped it, not the model. Without this the
+        // only symptom of a runaway generation is a wall of repeated text.
+        if (runtime.LastFinishReason is { Length: > 0 } reason && reason != "stop")
+        {
+            parts.Add($"ended: {reason}");
+        }
+
         // Engine types rather than "NPU": the Adreno exposes compute engines
         // too, so a Compute reading alone does not identify the Hexagon.
         if (engines is { Count: > 0 })
@@ -170,6 +183,8 @@ static void Usage()
 {
     Console.WriteLine("""
       usage: atlas-chat [--runtime foundry] [model] [--quiet]
+                        [--max-tokens N] [--temperature T]
+                        [--top-k K]
 
       commands:
         /reset    forget the conversation so far
