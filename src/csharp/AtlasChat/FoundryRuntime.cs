@@ -47,6 +47,11 @@ internal sealed class FoundryRuntime : IChatRuntime
     public int? LastTokenCount { get; private set; }
     public string? LastFinishReason { get; private set; }
 
+    /// Inference happens in this process, so our own counters are the right ones.
+    public int SamplePid => Environment.ProcessId;
+
+    public double? LastFirstTokenSeconds { get; private set; }
+
     public async Task StartAsync(string modelAlias, CancellationToken ct)
     {
         var logger = _loggerFactory.CreateLogger("atlas-chat");
@@ -93,6 +98,8 @@ internal sealed class FoundryRuntime : IChatRuntime
         if (_session is null) throw new InvalidOperationException("StartAsync first.");
         LastTokenCount = null;
         LastFinishReason = null;
+        LastFirstTokenSeconds = null;
+        var ttft = System.Diagnostics.Stopwatch.StartNew();
 
         using var request = new Request();
         request.AddItem(MessageItem.User(userMessage), false);
@@ -109,7 +116,9 @@ internal sealed class FoundryRuntime : IChatRuntime
                 MessageItem m => m.GetSimpleText(),
                 _ => null,
             };
-            if (!string.IsNullOrEmpty(text)) yield return text;
+            if (string.IsNullOrEmpty(text)) continue;
+            LastFirstTokenSeconds ??= ttft.Elapsed.TotalSeconds;
+            yield return text;
         }
 
         try

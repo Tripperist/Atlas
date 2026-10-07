@@ -21,7 +21,7 @@ The capital of Portugal is Lisbon.
 | `--runtime` | Status |
 | --- | --- |
 | `foundry` | Implemented — Foundry Local in-process SDK 2.1.0 |
-| `geniex` | Planned — `geniex serve`, OpenAI-compatible |
+| `geniex` | Implemented — `geniex serve`, OpenAI-compatible |
 | `ort-genai` | Planned — ONNX Runtime GenAI + QNN |
 
 New backends implement `IChatRuntime`; the REPL does not change.
@@ -46,6 +46,35 @@ would be double-counted by the first.
   too, so a Compute reading alone does not prove the work ran on the Hexagon.
   Counters are attributed to this process by PID — something the out-of-process
   PowerShell samplers in `Scripts/` cannot do.
+
+## The GenieX backend
+
+```powershell
+geniex serve                                     # separate terminal; 127.0.0.1:18181
+dotnet run -c Release --project src\csharp\AtlasChat -- --runtime geniex
+dotnet run ... -- --runtime geniex unsloth/Qwen3-4B-GGUF:Q4_0 --show-think
+```
+
+The server must already be running; `atlas-chat` will not start one, and says
+so with the fix rather than a connection error. Any model the server has cached
+works — it lists them on a bad name.
+
+Three differences from the in-process backend, all of which the harness has to
+handle rather than hide:
+
+- **Utilization counters belong to the server process.** `IChatRuntime.SamplePid`
+  points at it, so the stats line still attributes correctly. The console prints
+  which PID it is sampling.
+- **The endpoint reports neither `usage` nor `timings`** — both come back
+  zeroed — so token counts are the streamed SSE chunks, counted client-side.
+- **Reasoning models think over HTTP and there is no `--think=false`.** Qwen3
+  and the reasoning Phi builds emit `<think>` blocks. These are hidden by
+  default (`--show-think` reveals them) but still counted, because generating
+  them is real work. If a whole budget disappears into reasoning the console
+  says so instead of printing nothing.
+
+> `<think>` content is **not** fed back into history. Doing so measurably
+> degrades the model: it stopped recalling a name given one turn earlier.
 
 ## Why the model repeats itself
 

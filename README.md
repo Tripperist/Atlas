@@ -448,6 +448,7 @@ does that.
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§6.4 Hello world — C#](#64-hello-world--c) | [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) | Yes; runs inference |
+| [§9 Comparing the methods](#9-comparing-the-methods) | [`src/csharp/AtlasChat`](src/csharp/AtlasChat) | Yes; interactive chat across runtimes |
 | [§7.3 Hello world — in-process SDK](#73-hello-world--in-process-sdk) | [`bench_foundry_sdk.py`](src/setup/bench_foundry_sdk.py) · [`src/csharp/FoundryProbe`](src/csharp/FoundryProbe) | Yes; runs inference |
 | [§6.6 Calling ONNX Runtime directly](#66-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
 | [Compiling your own models](docs/COMPILING.md) | [`hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
@@ -1512,6 +1513,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
+| **The GenieX OpenAI endpoint reports no metrics** | `usage` comes back with every field zero, and the llama.cpp-style `timings` block is zeroed too. A client has to time the stream and count SSE chunks itself. Harmless once known, but it silently yields zeros if trusted |
 | **Foundry `SearchOptions` penalties are inert** | `FrequencyPenalty` and `PresencePenalty` are exposed on the type, but any non-zero value fails the request with *"Error executing streaming request."* `Temperature`, `TopP`, `TopK` and `MaxOutputTokens` all work. They are the natural lever against repetition on small models, so their absence matters |
 | **`phi-3.5-mini` fails through the Foundry SDK** | Works over the HTTP endpoint at 27.7 tok/s, but through the 2.1.0 Session API it fails at generator creation: *`cos_cache` dimension 0 shall not be less than total_sequence_length*, in `GroupQueryAttention`, independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Same node as the `max_tokens` bug above, so possibly one underlying defect |
 | **`GetAvailableProviders()` omits QNN in C#** | It never lists QNN, before or after registration, even while the graph demonstrably runs on the NPU at 98.9 %. Python does list it. Ruled out first-call caching. Unclear whether this is intended for plugin EPs or a gap in the C# binding — worth asking upstream |

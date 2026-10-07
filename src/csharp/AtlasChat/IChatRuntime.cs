@@ -40,6 +40,23 @@ internal interface IChatRuntime : IAsyncDisposable
     /// </summary>
     string? LastFinishReason { get; }
 
+    /// <summary>
+    /// Seconds to the first token of the last turn, measured by the backend.
+    /// The caller cannot derive this reliably: a backend may suppress leading
+    /// output (a reasoning model's &lt;think&gt; block), so the first token the
+    /// caller *sees* can be far later than the first the model produced.
+    /// Counting those hidden tokens against the visible window inflates the
+    /// rate wildly.
+    /// </summary>
+    double? LastFirstTokenSeconds { get; }
+
+    /// <summary>
+    /// The process that actually runs inference, for utilization sampling.
+    /// In-process backends return our own PID; a server-backed one returns the
+    /// server's, since the counters are per-process.
+    /// </summary>
+    int SamplePid { get; }
+
     /// <summary>Forget the conversation so far.</summary>
     void Reset();
 }

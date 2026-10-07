@@ -34,12 +34,20 @@ internal sealed class EngineSampler : IDisposable
 
     private readonly Dictionary<string, PerformanceCounter> _counters = new();
     private readonly Dictionary<string, double> _peak = new(StringComparer.OrdinalIgnoreCase);
-    private readonly string _pidPrefix = $"pid_{Environment.ProcessId}_";
+    private readonly string _pidPrefix;
     private readonly int _intervalMs;
     private CancellationTokenSource? _cts;
     private Task? _loop;
 
-    public EngineSampler(int intervalMs = 200) => _intervalMs = intervalMs;
+    /// <param name="pid">
+    /// The process doing the inference. For an in-process backend that is us;
+    /// for one behind a server it is the server, so attribution still works.
+    /// </param>
+    public EngineSampler(int pid, int intervalMs = 200)
+    {
+        _pidPrefix = $"pid_{pid}_";
+        _intervalMs = intervalMs;
+    }
 
     /// <summary>True when the counter category is unavailable, so callers can degrade quietly.</summary>
     public bool Unavailable { get; private set; }

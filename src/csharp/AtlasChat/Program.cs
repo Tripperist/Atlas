@@ -15,6 +15,8 @@ bool showStats = true;
 int maxTokens = 512;
 float temperature = 0.7f;
 int topK = 40;
+string host = "127.0.0.1:18181";
+bool showThinking = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -25,6 +27,8 @@ for (int i = 0; i < args.Length; i++)
         case "--max-tokens" when i + 1 < args.Length: maxTokens = int.Parse(args[++i]); break;
         case "--temperature" when i + 1 < args.Length: temperature = float.Parse(args[++i]); break;
         case "--top-k" when i + 1 < args.Length: topK = int.Parse(args[++i]); break;
+        case "--host" when i + 1 < args.Length: host = args[++i]; break;
+        case "--show-think": showThinking = true; break;
         case "--help" or "-h": Usage(); return 0;
         default:
             if (args[i].StartsWith('-')) { Console.Error.WriteLine($"unknown option {args[i]}"); return 2; }
@@ -41,15 +45,19 @@ switch (runtimeName)
         model ??= "qwen2.5-0.5b";
         break;
 
-    // GenieX and ONNX Runtime GenAI slot in behind IChatRuntime; the REPL below
-    // does not change when they do.
     case "geniex":
+        runtime = new GenieXRuntime(host, maxTokens, temperature, showThinking);
+        // Whatever the server has cached; the smallest is a sensible default.
+        model ??= "unsloth/Qwen3-0.6B-GGUF:Q4_0";
+        break;
+
+    // ONNX Runtime GenAI slots in behind IChatRuntime; the REPL does not change.
     case "ort-genai":
-        Console.Error.WriteLine($"'{runtimeName}' is not implemented yet. Available: foundry");
+        Console.Error.WriteLine($"'{runtimeName}' is not implemented yet. Available: foundry, geniex");
         return 2;
 
     default:
-        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry");
+        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry, geniex");
         return 2;
 }
 
@@ -75,7 +83,13 @@ Console.WriteLine($"variant: {runtime.ModelId}");
 Console.WriteLine("type /help for commands, /quit to exit");
 Console.WriteLine();
 
-using var sampler = OperatingSystem.IsWindows() ? new EngineSampler() : null;
+// Sample whichever process actually runs inference: ourselves for an
+// in-process backend, the server for GenieX.
+using var sampler = OperatingSystem.IsWindows() ? new EngineSampler(runtime.SamplePid) : null;
+if (runtime.SamplePid != Environment.ProcessId)
+{
+    Console.WriteLine($"sampling pid {runtime.SamplePid} (the server)");
+}
 
 while (true)
 {
@@ -132,6 +146,16 @@ while (true)
     var engines = sampler?.Stop();
     Console.WriteLine();
 
+    // A reasoning model can spend the whole budget inside <think>, which is
+    // hidden by default -- without this the turn just looks broken.
+    if (chunks == 0 && (runtime.LastTokenCount ?? 0) > 0)
+    {
+        Console.ForegroundColor = ConsoleColor.DarkGray;
+        Console.WriteLine($"  (all {runtime.LastTokenCount} tokens went to hidden reasoning; "
+                          + "raise --max-tokens or pass --show-think)");
+        Console.ResetColor();
+    }
+
     if (showStats)
     {
         // Rate covers the decode phase only, so it is comparable with the
@@ -141,14 +165,17 @@ while (true)
         // short replies report absurd rates.
         int tokens = runtime.LastTokenCount ?? chunks;
         bool estimated = runtime.LastTokenCount is null;
-        double decodeS = sw.Elapsed.TotalSeconds - (firstTokenS ?? 0);
-        double rate = decodeS > 0 && chunks > 1 ? (chunks - 1) / decodeS : 0;
+        // Prefer the backend's own first-token time; see IChatRuntime.
+        double firstS = runtime.LastFirstTokenSeconds ?? firstTokenS ?? 0;
+        double decodeS = sw.Elapsed.TotalSeconds - firstS;
+        int counted = runtime.LastTokenCount ?? chunks;
+        double rate = decodeS > 0 && counted > 1 ? (counted - 1) / decodeS : 0;
 
         var parts = new List<string>
         {
             rate > 0 ? $"{rate:F1} tok/s" : "rate n/a",
             $"{tokens}{(estimated ? "~" : "")} tok",
-            $"first {firstTokenS ?? 0:F2}s",
+            $"first {firstS:F2}s",
         };
 
         // "length" means the cap stopped it, not the model. Without this the
@@ -182,9 +209,11 @@ return 0;
 static void Usage()
 {
     Console.WriteLine("""
-      usage: atlas-chat [--runtime foundry] [model] [--quiet]
-                        [--max-tokens N] [--temperature T]
-                        [--top-k K]
+      usage: atlas-chat [--runtime foundry|geniex] [model] [--quiet]
+                        [--max-tokens N] [--temperature T] [--top-k K]
+                        [--host 127.0.0.1:18181] [--show-think]
+
+      geniex needs a running server:  geniex serve
 
       commands:
         /reset    forget the conversation so far
