@@ -448,7 +448,7 @@ does that.
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§6.4 Hello world — C#](#64-hello-world--c) | [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) | Yes; runs inference |
-| [§9 Comparing the methods](#9-comparing-the-methods) | [`src/csharp/AtlasChat`](src/csharp/AtlasChat) | Yes; interactive chat across runtimes |
+| [§9 Comparing the methods](#9-comparing-the-methods) | [`src/csharp/AtlasChat`](src/csharp/AtlasChat) · [all C# projects](src/csharp) | Yes; interactive chat across runtimes |
 | [§7.3 Hello world — in-process SDK](#73-hello-world--in-process-sdk) | [`bench_foundry_sdk.py`](src/setup/bench_foundry_sdk.py) · [`src/csharp/FoundryProbe`](src/csharp/FoundryProbe) | Yes; runs inference |
 | [§6.6 Calling ONNX Runtime directly](#66-calling-onnx-runtime-directly) | [`src/csharp/QnnProbe`](src/csharp/QnnProbe) | Yes; proves C# NPU placement |
 | [Compiling your own models](docs/COMPILING.md) | [`hub_profile.py`](src/setup/hub_profile.py) | Uploads model; needs API token |
