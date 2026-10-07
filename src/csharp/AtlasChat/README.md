@@ -22,7 +22,7 @@ The capital of Portugal is Lisbon.
 | --- | --- |
 | `foundry` | Implemented — Foundry Local in-process SDK 2.1.0 |
 | `geniex` | Implemented — `geniex serve`, OpenAI-compatible |
-| `ort-genai` | Planned — ONNX Runtime GenAI + QNN |
+| `ort-genai` | Implemented — ONNX Runtime GenAI + QNN, in-process |
 
 New backends implement `IChatRuntime`; the REPL does not change.
 
@@ -75,6 +75,33 @@ handle rather than hide:
 
 > `<think>` content is **not** fed back into history. Doing so measurably
 > degrades the model: it stopped recalling a name given one turn earlier.
+
+## The ORT GenAI backend
+
+```powershell
+dotnet run -c Release --project src\csharp\AtlasChat -- --runtime ort-genai --max-tokens 1500
+dotnet run ... -- --runtime ort-genai models\Phi-4-mini-reasoning-onnx
+pu\qnn-int4
+```
+
+Takes a model **directory**, not an alias — this backend has no catalogue and
+needs a folder containing `genai_config.json`. A GenieX bundle has
+`genie_config.json`, a different format, and the console says so rather than
+failing obscurely.
+
+Measured at **16.6 tok/s with the compute engine at 100 %**, which matches the
+standalone probe. Model load is 7–11 s.
+
+**Budget generously.** `Phi-4-mini-reasoning` is a reasoning model and spends
+hundreds of tokens thinking before answering — 261 tokens to answer
+"what is 17 times 23?" correctly, and it burned 1500 reasoning about
+"my name is Mike". It is the only ORT GenAI NPU model available, so this
+backend is awkward for conversational use through no fault of the harness.
+
+> **`max_length` is never set.** This model class sizes its KV cache from
+> `genai_config.json` through `past_present_share_buffer`, and forcing a
+> different value breaks that allocation. `--max-tokens` is enforced by counting
+> here instead.
 
 ## Why the model repeats itself
 

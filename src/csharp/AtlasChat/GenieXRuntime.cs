@@ -30,7 +30,7 @@ internal sealed class GenieXRuntime : IChatRuntime
     private readonly string _baseUrl;
     private readonly int _maxOutputTokens;
     private readonly float _temperature;
-    private readonly bool _showThinking;
+    private readonly ThinkingFilter _thinking;
     private int _streamedTokens;
 
     public GenieXRuntime(string host, int maxOutputTokens, float temperature, bool showThinking)
@@ -38,7 +38,7 @@ internal sealed class GenieXRuntime : IChatRuntime
         _baseUrl = $"http://{host}/v1";
         _maxOutputTokens = maxOutputTokens;
         _temperature = temperature;
-        _showThinking = showThinking;
+        _thinking = new ThinkingFilter(showThinking);
     }
 
     public string Name => "geniex";
@@ -90,6 +90,7 @@ internal sealed class GenieXRuntime : IChatRuntime
         LastFinishReason = null;
         _streamedTokens = 0;
         LastFirstTokenSeconds = null;
+        _thinking.Reset();
         var ttft = Stopwatch.StartNew();
         _history.Add(("user", userMessage));
 
@@ -117,8 +118,6 @@ internal sealed class GenieXRuntime : IChatRuntime
         // own <think> block on the next turn degrades it -- it stopped
         // recalling facts stated one turn earlier.
         var visible = new StringBuilder();
-        bool inThinking = false;
-        bool yieldedAny = false;
 
         while (!reader.EndOfStream)
         {
@@ -158,26 +157,18 @@ internal sealed class GenieXRuntime : IChatRuntime
             LastFirstTokenSeconds ??= ttft.Elapsed.TotalSeconds;
             _streamedTokens++;
 
-            // Qwen3 and the reasoning Phi builds emit <think> blocks, and the
-            // server has no equivalent of the CLI's --think=false. The markers
-            // arrive as whole chunks, so a flag is enough.
-            if (!_showThinking)
-            {
-                if (piece.Contains("<think>", StringComparison.Ordinal)) { inThinking = true; continue; }
-                if (piece.Contains("</think>", StringComparison.Ordinal)) { inThinking = false; continue; }
-                if (inThinking) continue;
-            }
+            string shown = _thinking.Visible(piece);
+            if (shown.Length == 0) continue;
 
-            // A reasoning model leaves blank lines where its think block was.
-            if (!yieldedAny)
-            {
-                piece = piece.TrimStart();
-                if (piece.Length == 0) continue;
-                yieldedAny = true;
-            }
+            visible.Append(shown);
+            yield return shown;
+        }
 
-            visible.Append(piece);
-            yield return piece;
+        string tail = _thinking.Flush();
+        if (tail.Length > 0)
+        {
+            visible.Append(tail);
+            yield return tail;
         }
 
         _history.Add(("assistant", visible.ToString()));

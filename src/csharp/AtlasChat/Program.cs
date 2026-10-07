@@ -51,13 +51,14 @@ switch (runtimeName)
         model ??= "unsloth/Qwen3-0.6B-GGUF:Q4_0";
         break;
 
-    // ONNX Runtime GenAI slots in behind IChatRuntime; the REPL does not change.
     case "ort-genai":
-        Console.Error.WriteLine($"'{runtimeName}' is not implemented yet. Available: foundry, geniex");
-        return 2;
+        runtime = new OrtGenAiRuntime(maxTokens, temperature, topK, showThinking);
+        // A directory, not an alias: this backend has no catalogue.
+        model ??= Path.Combine("models", "Phi-4-mini-reasoning-onnx", "npu", "qnn-int4");
+        break;
 
     default:
-        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry, geniex");
+        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry, geniex, ort-genai");
         return 2;
 }
 
@@ -209,11 +210,12 @@ return 0;
 static void Usage()
 {
     Console.WriteLine("""
-      usage: atlas-chat [--runtime foundry|geniex] [model] [--quiet]
+      usage: atlas-chat [--runtime foundry|geniex|ort-genai] [model] [--quiet]
                         [--max-tokens N] [--temperature T] [--top-k K]
                         [--host 127.0.0.1:18181] [--show-think]
 
       geniex needs a running server:  geniex serve
+      ort-genai takes a model DIRECTORY, not an alias
 
       commands:
         /reset    forget the conversation so far
