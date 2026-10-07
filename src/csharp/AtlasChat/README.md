@@ -210,10 +210,25 @@ lists what is available when the name is wrong.
 | `geniex` | HTTP, `geniex serve` | `org/repo:QUANT` | ~126 tok/s |
 | `ort-genai` | In-process + QNN EP | model directory | ~17 tok/s |
 
-> **These are not comparable.** Each ran a different model, because the three
-> runtimes do not share one. The only model that exists in two of these formats
-> is `Phi-4-mini-reasoning` — GGUF for GenieX, ONNX for ORT GenAI — which is the
-> route to a genuine same-model comparison.
+> **Those three figures are not comparable** — each ran a different model.
+> For the one comparison that is fair, see below.
+
+### The same model through two runtimes
+
+`Phi-4-mini-reasoning` is published as a GGUF and as an ONNX bundle, so GenieX
+and ORT GenAI can run it side by side. Same prompt, same 1500-token cap:
+
+| Runtime | Asset | Decode | First token |
+| --- | --- | --- | --- |
+| `geniex` | `Q4_0` GGUF | **31.7 · 30.6 tok/s** | 0.11 s warm |
+| `ort-genai` | `qnn-int4` ONNX | 15.2 · 16.1 tok/s | 0.14 s |
+
+**GenieX is about 2× faster**, both at 100 % on the compute engine, and both
+answered correctly. The quantizations differ, so some of the gap is weights
+rather than runtime — that confounder cannot be removed with what is published.
+
+The first GenieX turn after a cold start reported 7.01 s to first token: that
+is the server loading the model, not prefill. The next turn was 0.11 s.
 
 ### foundry
 
@@ -279,8 +294,6 @@ harness's:
 
 - No tool calling, which Scout will need. `ChatSession` has
   `AddToolDefinition`; the GenieX endpoint takes an OpenAI `tools` array.
-- No same-model comparison across backends — the thing that would make the
-  throughput column meaningful.
 - Nothing is written to the [benchmark history](../../../docs/BENCHMARKS.md#benchmark-history).
   This is an interactive tool, and its turn-by-turn numbers are too noisy to be
   worth recording.

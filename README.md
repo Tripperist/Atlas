@@ -1361,6 +1361,22 @@ driver versions.
 
 ## 9. Comparing the methods
 
+**Same model, two runtimes.** `Phi-4-mini-reasoning` is the only model
+published in a format each runtime can load, which makes it the one direct
+comparison available:
+
+| Runtime | Asset | Decode | First token |
+| --- | --- | --- | --- |
+| **GenieX** (llama.cpp, NPU) | `Q4_0` GGUF | **~31 tok/s** | 0.11 s |
+| ONNX Runtime GenAI (QNN EP, NPU) | `qnn-int4` ONNX | ~15.6 tok/s | 0.14 s |
+
+**GenieX is about 2× faster**, both pinned at 100 % on the compute engine. The
+quantizations differ, so part of the gap is the weights rather than the
+runtime — but no one publishes this model in one quantization for both, so that
+confounder cannot be removed today. Measured with
+[`atlas-chat`](src/csharp/AtlasChat); see
+[BENCHMARKS](docs/BENCHMARKS.md#same-model-two-runtimes).
+
 **Prefill, Qwen3-4B, 512-token prompt** — the axis that usually decides:
 
 | Runtime | Engine / device | Prefill tok/s | Decode tok/s |

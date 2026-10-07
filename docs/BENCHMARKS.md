@@ -191,6 +191,37 @@ Measured with [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py), which mir
 
 ---
 
+## Same model, two runtimes
+
+`Phi-4-mini-reasoning` is the one model published in a format each runtime can
+load, so it is the only direct runtime comparison available. Driven through
+[`atlas-chat`](../src/csharp/AtlasChat), same prompt, same 1500-token cap,
+reasoning tokens counted:
+
+| Runtime | Asset | Model load | Decode | First token |
+| --- | --- | --- | --- | --- |
+| **GenieX** (llama.cpp, NPU) | `Q4_0` GGUF | lazy, ~7 s on first use | **31.7 · 30.6 tok/s** | 0.11 s warm |
+| **ORT GenAI** (QNN EP, NPU) | `qnn-int4` ONNX | 7.6 s | **15.2 · 16.1 tok/s** | 0.14 s |
+
+**GenieX is roughly 2x faster for the same model**, with both at 100 % on the
+compute engine. That agrees with the prefill/decode matrix above, measured by a
+different harness on the same pair.
+
+> **This is a path comparison, not a pure runtime one.** The quantizations
+> differ — `Q4_0` against `qnn-int4` — so some of the gap is the weights rather
+> than the runtime. Nobody publishes this model in one quantization for both,
+> so the confounder cannot be removed with what exists today.
+
+A second turn costs both of them, as context grows: GenieX 31.7 to 29.4
+(-7 %), ORT GenAI 15.2 to 12.7 (-16 %).
+
+> The first GenieX turn after a cold start showed a 7.01 s time to first token.
+> That is `geniex serve` loading the model on first use, not prefill — the next
+> turn was 0.11 s. A server pays it once; a one-shot CLI invocation pays it
+> every time.
+
+---
+
 ## Foundry Local
 
 **Measured here** with [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
