@@ -119,10 +119,13 @@ internal sealed class GenieXRuntime : IChatRuntime
         // recalling facts stated one turn earlier.
         var visible = new StringBuilder();
 
-        while (!reader.EndOfStream)
+        // Loop on ReadLineAsync returning null rather than checking
+        // EndOfStream (CA2024): that property does a SYNCHRONOUS read to decide
+        // whether the stream has ended, which on a server-sent-event stream
+        // means blocking a thread until the server sends its next token.
+        while (await reader.ReadLineAsync(ct) is { } line)
         {
             ct.ThrowIfCancellationRequested();
-            string? line = await reader.ReadLineAsync(ct);
             if (string.IsNullOrWhiteSpace(line)) continue;
             if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
 

@@ -320,6 +320,10 @@ harness's:
   `runtimes/win-arm64/native`. The ORT GenAI backend checks both.
 - The target framework is `net10.0-windows` rather than suppressing CA1416.
   Foundry Local and the `GPU Engine` counters are both Windows-only.
+- **Do not use `StreamReader.EndOfStream` in an async method** (CA2024). It
+  performs a *synchronous* read to decide whether the stream has ended, which
+  on a server-sent-event stream means blocking a thread until the server sends
+  its next token. Loop on `ReadLineAsync` returning null instead.
 - `TextItem.Text` is the payload. `ToString()` returns the type name, so a
   reply streams as `Microsoft.AI.Foundry.Local.TextItem` repeated — it looks
   like garbled output rather than an error.
