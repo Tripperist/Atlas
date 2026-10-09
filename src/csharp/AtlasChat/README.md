@@ -55,6 +55,7 @@ dotnet run -c Release --project src\csharp\AtlasChat -- --runtime ort-genai --ma
 | `--host` | `127.0.0.1:18181` | GenieX server address |
 | `--show-think` | off | Reveal a reasoning model's `<think>` block |
 | `--quiet` | off | Hide the stats line |
+| `--verbose` | off | Show the ORT/GenAI loader warnings (`ort-genai`) |
 
 Commands: `/reset` `/stats` `/model` `/help` `/quit`
 
@@ -254,6 +255,22 @@ The default path resolves against the **repository root** as well as the
 working directory, so it works from anywhere rather than only from the repo
 root. A path you supply is tried against the working directory first, since
 that is what typing a relative path implies.
+
+**Startup is quiet by default.** Loading this bundle emits about twenty ORT
+and GenAI warnings — provider options being overwritten, context binaries
+declining file mapping, nodes not assigned to the preferred provider. All are
+informational; `--verbose` shows them. Three are worth understanding:
+
+| Warning | Meaning |
+| --- | --- |
+| `soc_model already exists with value [60]. It will be overwritten` | The bundle is stamped for X Elite (60) and the runtime replaces it with this machine's. This is why X Elite assets work here at all |
+| `Context binary ... is 3.2.1. File mapping is only supported for versions >= 3.3.3` | Compiled with an older QAIRT, so the binaries are copied into memory rather than mapped — slower load, more memory, not incorrect |
+| `Some nodes were not assigned to the preferred execution providers` | The hybrid graph: 36 `EPContext` nodes on the NPU, 32 `GroupQueryAttention` on CPU. This is why this backend's prefill trails llama.cpp, and why it is sensitive to background CPU load |
+
+> **This backend slows down when the machine is busy.** With roughly 1.35 cores
+> occupied by a browser and Task Manager it fell from ~16 tok/s to ~7, while
+> GenieX on the same model held at 31–34. Those CPU-resident attention nodes
+> are the reason. Benchmark it on an idle machine.
 
 `max_length` is never set: this model class sizes its KV cache from
 `genai_config.json` through `past_present_share_buffer`, and overriding it

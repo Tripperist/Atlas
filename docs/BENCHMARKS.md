@@ -215,6 +215,25 @@ different harness on the same pair.
 A second turn costs both of them, as context grows: GenieX 31.7 to 29.4
 (-7 %), ORT GenAI 15.2 to 12.7 (-16 %).
 
+> **ORT GenAI is sensitive to background CPU load; GenieX is not.** Re-measured
+> three days later on an otherwise unchanged stack — same drivers, same OS
+> build, same runtime versions, verified against the baseline — with a browser,
+> Task Manager and an updater consuming about **1.35 cores**:
+>
+> | Runtime | Quiet machine | ~1.35 cores busy |
+> | --- | --- | --- |
+> | GenieX (llama.cpp, NPU) | 31.7 tok/s | **34.0 / 31.3** — unaffected |
+> | ORT GenAI (QNN EP, NPU) | 15.2 tok/s | **7.3 / 8.0** — less than half |
+>
+> The cause is structural, and already documented above: this bundle runs 36
+> `EPContext` nodes on the NPU but **32 `GroupQueryAttention` nodes on CPU**, so
+> contention for the CPU hits it directly. GenieX's llama.cpp path keeps the
+> whole graph off the CPU and holds its rate.
+>
+> So the ~2x figure in this table is the *quiet-machine* number. Under load the
+> gap widens to 4x. Measure on an idle machine, and treat any ORT GenAI figure
+> taken otherwise as a floor.
+
 > The first GenieX turn after a cold start showed a 7.01 s time to first token.
 > That is `geniex serve` loading the model on first use, not prefill — the next
 > turn was 0.11 s. A server pays it once; a one-shot CLI invocation pays it

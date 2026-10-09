@@ -38,13 +38,15 @@ internal sealed class OrtGenAiRuntime : IChatRuntime
     private readonly float _temperature;
     private readonly int _topK;
     private readonly ThinkingFilter _thinking;
+    private readonly bool _verbose;
     private Model? _model;
     private Tokenizer? _tokenizer;
     private OgaHandle? _oga;
     private int _streamedTokens;
 
-    public OrtGenAiRuntime(int maxOutputTokens, float temperature, int topK, bool showThinking)
+    public OrtGenAiRuntime(int maxOutputTokens, float temperature, int topK, bool showThinking, bool verbose)
     {
+        _verbose = verbose;
         _maxOutputTokens = maxOutputTokens;
         _temperature = temperature;
         _topK = topK;
@@ -106,6 +108,16 @@ internal sealed class OrtGenAiRuntime : IChatRuntime
         catch (Exception ex) when (ex.Message.Contains("already", StringComparison.OrdinalIgnoreCase))
         {
             // Registered earlier in this process; nothing to do.
+        }
+
+        // ORT and GenAI both log warnings through their own environments while
+        // loading this bundle -- roughly twenty lines of provider-option
+        // overwrites and node-assignment notes. Informative once, noise on
+        // every start.
+        if (!_verbose)
+        {
+            try { OrtEnv.Instance().EnvLogLevel = OrtLoggingLevel.ORT_LOGGING_LEVEL_ERROR; }
+            catch (Exception) { /* best effort */ }
         }
 
         _oga = new OgaHandle();

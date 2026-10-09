@@ -17,6 +17,7 @@ float temperature = 0.7f;
 int topK = 40;
 string host = "127.0.0.1:18181";
 bool showThinking = false;
+bool verbose = false;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -29,6 +30,7 @@ for (int i = 0; i < args.Length; i++)
         case "--top-k" when i + 1 < args.Length: topK = int.Parse(args[++i]); break;
         case "--host" when i + 1 < args.Length: host = args[++i]; break;
         case "--show-think": showThinking = true; break;
+        case "--verbose": verbose = true; break;
         case "--help" or "-h": Usage(); return 0;
         default:
             if (args[i].StartsWith('-')) { Console.Error.WriteLine($"unknown option {args[i]}"); return 2; }
@@ -52,7 +54,7 @@ switch (runtimeName)
         break;
 
     case "ort-genai":
-        runtime = new OrtGenAiRuntime(maxTokens, temperature, topK, showThinking);
+        runtime = new OrtGenAiRuntime(maxTokens, temperature, topK, showThinking, verbose);
         // A directory, not an alias: this backend has no catalogue. Resolved
         // against the repository root as well as the working directory, so it
         // works from anywhere rather than only from the repo root.
