@@ -53,8 +53,11 @@ switch (runtimeName)
 
     case "ort-genai":
         runtime = new OrtGenAiRuntime(maxTokens, temperature, topK, showThinking);
-        // A directory, not an alias: this backend has no catalogue.
-        model ??= Path.Combine("models", "Phi-4-mini-reasoning-onnx", "npu", "qnn-int4");
+        // A directory, not an alias: this backend has no catalogue. Resolved
+        // against the repository root as well as the working directory, so it
+        // works from anywhere rather than only from the repo root.
+        model = RepoPaths.Resolve(
+            model ?? Path.Combine("models", "Phi-4-mini-reasoning-onnx", "npu", "qnn-int4"));
         break;
 
     default:

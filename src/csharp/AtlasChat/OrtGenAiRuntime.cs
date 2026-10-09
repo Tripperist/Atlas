@@ -65,9 +65,13 @@ internal sealed class OrtGenAiRuntime : IChatRuntime
     {
         if (!Directory.Exists(modelDir))
         {
+            // Show the absolute path and the working directory: the usual cause
+            // is a relative path resolved against an unexpected cwd.
             throw new InvalidOperationException(
-                $"'{modelDir}' is not a directory. This backend needs a folder with " +
-                "genai_config.json, e.g. models/Phi-4-mini-reasoning-onnx/npu/qnn-int4");
+                $"no such directory: {Path.GetFullPath(modelDir)}" + Environment.NewLine +
+                $"  working directory: {Environment.CurrentDirectory}" + Environment.NewLine +
+                "  this backend needs a folder containing genai_config.json, e.g. " +
+                "models/Phi-4-mini-reasoning-onnx/npu/qnn-int4");
         }
         if (!File.Exists(Path.Combine(modelDir, "genai_config.json")))
         {
