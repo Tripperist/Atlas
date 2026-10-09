@@ -104,7 +104,10 @@ internal sealed class FoundryRuntime : IChatRuntime
         using var request = new Request();
         request.AddItem(MessageItem.User(userMessage), false);
 
-        var streaming = _session.ProcessStreamingRequestAsync(request, ct);
+        // StreamingResponse and the Response it yields both wrap native
+        // handles. Leaving them to finalizers works -- handle count plateaus
+        // rather than climbing -- but releases them non-deterministically.
+        await using var streaming = _session.ProcessStreamingRequestAsync(request, ct);
         await foreach (var item in streaming.WithCancellation(ct))
         {
             // TextItem.Text is the payload. ToString() returns the type name,
@@ -113,7 +116,9 @@ internal sealed class FoundryRuntime : IChatRuntime
             string? text = item switch
             {
                 TextItem t => t.Text,
-                MessageItem m => m.GetSimpleText(),
+                // Guard before GetSimpleText: a multi-part message is not
+                // simple text, and asking for it anyway is undefined.
+                MessageItem m when m.IsSimpleText() => m.GetSimpleText(),
                 _ => null,
             };
             if (string.IsNullOrEmpty(text)) continue;
@@ -123,7 +128,8 @@ internal sealed class FoundryRuntime : IChatRuntime
 
         try
         {
-            LastFinishReason = (await streaming.FinalResponse).FinishReason.ToString().ToLowerInvariant();
+            using var final = await streaming.FinalResponse;
+            LastFinishReason = final.FinishReason.ToString().ToLowerInvariant();
         }
         catch
         {

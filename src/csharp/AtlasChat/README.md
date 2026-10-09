@@ -261,6 +261,40 @@ conversational use through no fault of the harness.
 
 ---
 
+## Where this differs from the vendor sample
+
+Foundry Local's own sample uses the non-streaming shape:
+
+```csharp
+using var response = await session.ProcessRequestAsync(request);
+var text = string.Join(Environment.NewLine,
+    response.OfType<MessageItem>()
+            .Where(m => m.IsSimpleText())
+            .Select(m => m.GetSimpleText()));
+```
+
+Two things from it were worth taking, and one was not.
+
+**Adopted: dispose the response.** `StreamingResponse` and the `Response` it
+yields both wrap native handles, and neither was being disposed. Measured over
+12 turns, handle count rose from 1449 to 1462 and then **plateaued**, so the
+finalizers were already reclaiming them and explicit disposal did not move the
+number. It is correctness rather than a leak fix: native resources now go back
+deterministically instead of whenever the GC decides.
+
+**Adopted: guard with `IsSimpleText()`** before calling `GetSimpleText()`. A
+multi-part message is not simple text, and asking for it anyway is undefined.
+
+**Not adopted: `ProcessRequestAsync`.** The non-streaming call returns one
+finished response, which is simpler but wrong for a chat console. It cannot
+show tokens as they arrive, and it makes time to first token unmeasurable —
+the metric that separates these runtimes most visibly.
+
+`ConfigureAwait(false)` also appears in the sample. It is correct library
+hygiene, but a console application has no synchronization context, so here it
+would be a no-op on every await. Worth adding if this code is ever lifted into
+a library.
+
 ## Why a small model repeats itself
 
 A 0.5B model answering an open-ended question will repeat one sentence until
