@@ -250,6 +250,11 @@ is sampled from the **server's** PID, printed at startup.
 Takes a model **directory** containing `genai_config.json` — a GenieX bundle
 has `genie_config.json`, a different format, and the console says so.
 
+The default path resolves against the **repository root** as well as the
+working directory, so it works from anywhere rather than only from the repo
+root. A path you supply is tried against the working directory first, since
+that is what typing a relative path implies.
+
 `max_length` is never set: this model class sizes its KV cache from
 `genai_config.json` through `past_present_share_buffer`, and overriding it
 breaks that allocation. `--max-tokens` is enforced by counting instead.
