@@ -267,6 +267,26 @@ informational; `--verbose` shows them. Three are worth understanding:
 | `Context binary ... is 3.2.1. File mapping is only supported for versions >= 3.3.3` | Compiled with an older QAIRT, so the binaries are copied into memory rather than mapped — slower load, more memory, not incorrect |
 | `Some nodes were not assigned to the preferred execution providers` | The hybrid graph: 36 `EPContext` nodes on the NPU, 32 `GroupQueryAttention` on CPU. This is why this backend's prefill trails llama.cpp, and why it is sensitive to background CPU load |
 
+> **Only one process may hold QNN graphs at a time.** With `geniex serve`
+> running, this backend fails on the first turn with
+> `QNN_GRAPH_ERROR_INVALID_HANDLE: Invalid graph handle, Code: 6001`. Stopping
+> the server fixes it. The server does not even need a model loaded — its
+> presence is enough. So the backends cannot be compared side by side in two
+> terminals; run one at a time.
+
+**Open-ended questions are a poor fit for this model.** `Phi-4-mini-reasoning`
+reaches the right answer early and then repeats itself until the budget runs
+out, never closing its reasoning block and so never answering. Asked why the
+sky is blue it identified Rayleigh scattering within a few hundred tokens, then
+restated it for the remaining thousand. Factual and arithmetic questions close
+properly — 17 × 23 answers in roughly 450 tokens.
+
+This is the model, not sampling: verified that `--temperature` takes effect, by
+running the same prompt at 0.1 and 1.5 and twice at 1.5, getting different text
+each time. When a turn ends this way the stats line says
+`ended: length, mid-reasoning`, which is the signal that no answer was produced
+at all rather than a truncated one.
+
 > **This backend slows down when the machine is busy.** With roughly 1.35 cores
 > occupied by a browser and Task Manager it fell from ~16 tok/s to ~7, while
 > GenieX on the same model held at 31–34. Those CPU-resident attention nodes

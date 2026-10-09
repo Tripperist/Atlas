@@ -174,6 +174,14 @@ internal sealed class GenieXRuntime : IChatRuntime
             yield return tail;
         }
 
+        // A turn that ran out of budget mid-reasoning produced no answer at
+        // all. Worth saying, because with reasoning shown the transcript
+        // simply stops and looks like a finished reply.
+        if (_thinking.InThinking && LastFinishReason == "length")
+        {
+            LastFinishReason = "length, mid-reasoning";
+        }
+
         _history.Add(("assistant", visible.ToString()));
     }
 

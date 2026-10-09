@@ -3,7 +3,7 @@ using System.Text;
 namespace AtlasChat;
 
 /// <summary>
-/// Hides a reasoning model's <c>&lt;think&gt;</c> block from the transcript.
+/// Tracks a reasoning model's <c>&lt;think&gt;</c> block, hiding it by default.
 /// </summary>
 /// <remarks>
 /// Qwen3 and the reasoning Phi builds emit their chain of thought inline. The
@@ -13,10 +13,14 @@ namespace AtlasChat;
 /// <b>The markers are not reliably whole pieces.</b> GenieX's SSE stream
 /// delivers <c>&lt;think&gt;</c> as a single chunk, but ONNX Runtime GenAI
 /// decodes token by token and splits it, so a substring test on each piece
-/// misses it entirely and the reasoning lands in the transcript. This buffers
-/// instead, holding back only as much tail as a marker could still span.
+/// misses it entirely. This buffers instead, holding back only as much tail as
+/// a marker could still span.
 ///
-/// Two rules that are not obvious:
+/// The scan runs even when reasoning is shown, because <see cref="InThinking"/>
+/// has to stay accurate either way — a turn that runs out of budget mid-thought
+/// produced no answer, and with reasoning displayed that is otherwise invisible.
+///
+/// Two further rules:
 ///
 /// * Hidden tokens still count. Generating them is real work, so excluding
 ///   them from the rate would overstate throughput.
@@ -35,6 +39,12 @@ internal sealed class ThinkingFilter
 
     public ThinkingFilter(bool showThinking) => _showThinking = showThinking;
 
+    /// <summary>
+    /// True when the stream stopped inside a reasoning block — the model never
+    /// closed it, so it never produced an answer.
+    /// </summary>
+    public bool InThinking => _inThinking;
+
     public void Reset()
     {
         _pending.Clear();
@@ -45,8 +55,6 @@ internal sealed class ThinkingFilter
     /// <summary>Text to show for this piece; empty when everything was swallowed.</summary>
     public string Visible(string piece)
     {
-        if (_showThinking) return Trim(piece);
-
         _pending.Append(piece);
         var output = new StringBuilder();
 
@@ -60,11 +68,13 @@ internal sealed class ThinkingFilter
                 if (close < 0)
                 {
                     // Still reasoning. Keep just enough to catch a split marker.
-                    Keep(buffer, Math.Max(0, buffer.Length - (Close.Length - 1)));
+                    int safe = Math.Max(0, buffer.Length - (Close.Length - 1));
+                    if (_showThinking) output.Append(buffer[..safe]);
+                    Keep(buffer, safe);
                     break;
                 }
-                _pending.Clear();
-                _pending.Append(buffer[(close + Close.Length)..]);
+                if (_showThinking) output.Append(buffer[..(close + Close.Length)]);
+                Keep(buffer, close + Close.Length);
                 _inThinking = false;
                 continue;
             }
@@ -73,17 +83,17 @@ internal sealed class ThinkingFilter
             if (open >= 0)
             {
                 output.Append(buffer[..open]);
-                _pending.Clear();
-                _pending.Append(buffer[(open + Open.Length)..]);
+                if (_showThinking) output.Append(Open);
+                Keep(buffer, open + Open.Length);
                 _inThinking = true;
                 continue;
             }
 
             // No marker in view. Emit everything that cannot be the start of
             // one, and hold the rest until more arrives.
-            int safe = Math.Max(0, buffer.Length - (Open.Length - 1));
-            output.Append(buffer[..safe]);
-            Keep(buffer, safe);
+            int tail = Math.Max(0, buffer.Length - (Open.Length - 1));
+            output.Append(buffer[..tail]);
+            Keep(buffer, tail);
             break;
         }
 
@@ -93,13 +103,9 @@ internal sealed class ThinkingFilter
     /// <summary>Release anything still held back at the end of a turn.</summary>
     public string Flush()
     {
-        if (_showThinking || _inThinking)
-        {
-            _pending.Clear();
-            return string.Empty;
-        }
         string rest = _pending.ToString();
         _pending.Clear();
+        if (!_showThinking && _inThinking) return string.Empty;
         return Trim(rest);
     }
 

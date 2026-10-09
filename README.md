@@ -1505,6 +1505,7 @@ passes — an accepted baseline is a claim that this combination worked.
 | `--compute` makes no difference | You are on a QAIRT bundle, where the flag is a no-op. Check `PluginId` in `geniex.json` |
 | ONNX session "works" but is slow | QNN probably never attached. `providers=[...]` is silently ignored — use the policy API ([6.2](#62-attaching-the-qnn-provider)) |
 | `EPContext … not compatible with any execution provider added to the session` | Nothing was added to the session. Same cause as above |
+| `QNN_GRAPH_ERROR_INVALID_HANDLE` (code 6001) | Another process already holds QNN graphs. `geniex serve` running is enough, even with no model loaded. Stop it and retry |
 | `GroupQueryAttention … present_keys` shape error | `onnxruntime-genai` 0.16.x. Upgrade to `>=0.17.0` |
 | `og.Model()` cannot load a GenieX model | That is a `genie_config.json` bundle, not `genai_config.json` ([6.4](#65-model-formats)) |
 | NPU counter reads zero | The adapter LUID changed on reboot, or you enumerated counter instances before starting the workload. Re-derive the LUID |
