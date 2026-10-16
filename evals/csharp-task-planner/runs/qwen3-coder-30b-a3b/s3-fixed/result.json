@@ -1,0 +1,117 @@
+{
+ "source": "runs\\qwen3-coder-30b-a3b\\s3-fixed",
+ "lines": 356,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 2,
+  "warningSample": [
+   "Program.cs(14,31): warning CS8600: Converting null literal or possible null value to non-nullable type. ",
+   "Program.cs(285,34): warning CS8600: Converting null literal or possible null value to non-nullable type. "
+  ],
+  "buildSeconds": 1.4
+ },
+ "passed": 22,
+ "total": 45,
+ "byCategory": {
+  "functional": "2/21",
+  "error": "20/20",
+  "scale": "0/4"
+ },
+ "failures": [
+  {
+   "id": "f01-basic",
+   "why": "line 6: got 'Critical path (5): test', expected 'Critical path (12): fetch -> configure -> compile -> test'"
+  },
+  {
+   "id": "f02-basic-json",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f03-format-before-file",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f04-format-text-explicit",
+   "why": "line 6: got 'Critical path (5): test', expected 'Critical path (12): fetch -> configure -> compile -> test'"
+  },
+  {
+   "id": "f05-roots-tie",
+   "why": "line 3: got 'Critical path (1): c', expected 'Critical path (1): a'"
+  },
+  {
+   "id": "f06-diamond-tie",
+   "why": "line 5: got 'Critical path (1): d', expected 'Critical path (3): a -> b -> d'"
+  },
+  {
+   "id": "f07-whitespace-crlf",
+   "why": "exit 3, expected 0 (error: line 3: invalid syntax)"
+  },
+  {
+   "id": "f08-ordinal-sort",
+   "why": "line 3: got 'Critical path (1): b', expected 'Critical path (1): 9lives'"
+  },
+  {
+   "id": "f09-dup-deps",
+   "why": "line 4: got 'Critical path (2): b', expected 'Critical path (3): a -> b'"
+  },
+  {
+   "id": "f10-forward-reference",
+   "why": "line 4: got 'Critical path (1): b', expected 'Critical path (2): a -> b'"
+  },
+  {
+   "id": "f13-heavy-branch",
+   "why": "line 5: got 'Critical path (5): c', expected 'Critical path (6): a -> c'"
+  },
+  {
+   "id": "f14-chain-20",
+   "why": "line 22: got 'Critical path (5): step000004', expected 'Critical path (60): step000001 -> step000002 -> step000003 -> step0000'"
+  },
+  {
+   "id": "f15-fanout-50",
+   "why": "line 4: got 'Critical path (11): leaf03', expected 'Critical path (14): root -> leaf03'"
+  },
+  {
+   "id": "f16-random-ties-1",
+   "why": "line 7: got 'Critical path (2): gc', expected 'Critical path (8): qgt -> oc -> c -> gc -> ao'"
+  },
+  {
+   "id": "f17-random-ties-2",
+   "why": "line 9: got 'Critical path (2): Co', expected 'Critical path (10): R -> J -> lys -> LcU -> VHl -> ne -> QX'"
+  },
+  {
+   "id": "f18-random-ties-3",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f19-random-ties-4",
+   "why": "line 9: got 'Critical path (2): phe', expected 'Critical path (9): z -> j. -> cgc -> k -> ve -> ZY -> Im'"
+  },
+  {
+   "id": "f20-random-ties-5",
+   "why": "line 10: got 'Critical path (2): qy', expected 'Critical path (14): lsz_ -> qy -> fl_ -> pv -> ibk -> ggb -> v. -> nj_'"
+  },
+  {
+   "id": "f21-random-ties-6",
+   "why": "JSON differs"
+  },
+  {
+   "id": "s01-large-durations",
+   "why": "line 3002: got 'Critical path (1000000): big000001', expected 'Critical path (3000000000): big000001 -> big000002 -> big000003 -> big'"
+  },
+  {
+   "id": "s02-chain-100000",
+   "why": "timeout after 30s"
+  },
+  {
+   "id": "s03-fanout-100000",
+   "why": "timeout after 30s"
+  },
+  {
+   "id": "s04-random-dag-3000",
+   "why": "line 32: got 'Critical path (3): FWr_', expected 'Critical path (59): jz -> I. -> G -> B -> K_ -> DL -> Xpf -> KRC -> ri'"
+  }
+ ],
+ "slowestScaleCaseSeconds": 30.0
+}

@@ -1,0 +1,12 @@
+{
+ "wallSeconds": 194.1,
+ "codeBlocks": 1,
+ "followedFormat": true,
+ "truncated": false,
+ "hadCode": true,
+ "repairOf": "s1",
+ "errorsShown": [
+  "Program.cs(65,33): error CS0165: Use of unassigned local variable 'lines' "
+ ],
+ "seed": 1
+}

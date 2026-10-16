@@ -1,0 +1,31 @@
+{
+ "source": "runs\\qwen2.5-coder-7b\\s2",
+ "lines": 214,
+ "build": {
+  "built": false,
+  "errors": 3,
+  "errorSample": [
+   "Program.cs(167,69): error CS0019: Operator '<' cannot be applied to operands of type 'string' and 'string' ",
+   "Program.cs(47,13): error CS1656: Cannot assign to 'line' because it is a 'foreach iteration variable' ",
+   "Program.cs(72,81): error CS0206: A non ref-returning property or indexer may not be used as an out or ref value "
+  ],
+  "warnings": 5,
+  "warningSample": [
+   "Program.cs(224,23): warning CS8618: Non-nullable property 'Name' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(226,25): warning CS8618: Non-nullable property 'Dependencies' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(231,35): warning CS8618: Non-nullable property 'Stages' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(233,29): warning CS8618: Non-nullable property 'CriticalPath' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(239,29): warning CS8618: Non-nullable property 'Tasks' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. "
+  ],
+  "buildSeconds": 1.0
+ },
+ "passed": 0,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "0/20",
+  "scale": "0/4"
+ },
+ "failures": [],
+ "slowestScaleCaseSeconds": 0.0
+}

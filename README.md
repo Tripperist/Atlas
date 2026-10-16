@@ -1511,6 +1511,12 @@ Every run is recorded with a hash of the software stack that produced it, so
 results measured under different drivers or runtime versions are never silently
 compared.
 
+**Coding quality, not just speed.** [`evals/csharp-task-planner`](evals/csharp-task-planner)
+scores what local coding models actually write on one task, against tests whose
+expected outputs come from an independent oracle. The first comparison,
+Qwen3-Coder-30B-A3B against Qwen2.5-Coder-7B, is in
+[RESULTS](evals/csharp-task-planner/RESULTS.md).
+
 ---
 
 ## 11. Keeping the workspace current

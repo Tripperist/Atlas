@@ -1,0 +1,241 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+
+class Program
+{
+    static void Main(string[] args)
+    {
+        if (args.Length < 1 || args.Length > 2 || (args.Length == 2 && !args[1].StartsWith("--format ")))
+        {
+            Console.Error.WriteLine("usage: planner <file> [--format text|json]");
+            Environment.Exit(1);
+        }
+
+        string filePath = args[0];
+        string format = args.Length == 2 ? args[1].Substring(10) : "text";
+
+        if (format != "text" && format != "json")
+        {
+            Console.Error.WriteLine("error: unknown format: " + format);
+            Environment.Exit(1);
+        }
+
+        try
+        {
+            var tasks = ReadTasks(filePath);
+            var plan = CalculatePlan(tasks);
+            PrintPlan(plan, format);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine("error: " + ex.Message);
+            Environment.Exit(1);
+        }
+    }
+
+    static Dictionary<string, Task> ReadTasks(string filePath)
+    {
+        var tasks = new Dictionary<string, Task>();
+        var lines = File.ReadAllLines(filePath);
+        var lineNumber = 1;
+
+        foreach (var line in lines)
+        {
+            lineNumber++;
+            line = line.Trim();
+            if (string.IsNullOrEmpty(line) || line.StartsWith("#"))
+                continue;
+
+            var parts = line.Split(new[] { ' ', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+            var name = parts[0];
+            if (!IsValidName(name))
+            {
+                Console.Error.WriteLine($"error: line {lineNumber}: invalid task name: {name}");
+                Environment.Exit(1);
+            }
+
+            if (tasks.ContainsKey(name))
+            {
+                Console.Error.WriteLine($"error: line {lineNumber}: task '{name}' defined twice");
+                Environment.Exit(1);
+            }
+
+            var task = new Task { Name = name };
+            tasks[name] = task;
+
+            if (parts.Length > 1)
+            {
+                if (parts[1].StartsWith("["))
+                {
+                    if (!int.TryParse(parts[1].TrimStart('[').TrimEnd(']'), out task.Duration) || task.Duration <= 0)
+                    {
+                        Console.Error.WriteLine($"error: line {lineNumber}: invalid duration: {parts[1]}");
+                        Environment.Exit(1);
+                    }
+                }
+                else
+                {
+                    var dependencies = parts[1].Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var dep in dependencies)
+                    {
+                        if (!IsValidName(dep))
+                        {
+                            Console.Error.WriteLine($"error: line {lineNumber}: invalid dependency name: {dep}");
+                            Environment.Exit(1);
+                        }
+                    }
+                    task.Dependencies = dependencies.Distinct().ToArray();
+                }
+            }
+        }
+
+        return tasks;
+    }
+
+    static bool IsValidName(string name)
+    {
+        return name.All(c => char.IsLetterOrDigit(c) || c == '_' || c == '-' || c == '.');
+    }
+
+    static Plan CalculatePlan(Dictionary<string, Task> tasks)
+    {
+        var graph = new Dictionary<string, List<string>>();
+        var inDegree = new Dictionary<string, int>();
+        var durations = new Dictionary<string, int>();
+        var stages = new List<List<string>>();
+        var criticalPath = new List<string>();
+        int criticalPathDuration = 0;
+
+        foreach (var task in tasks.Values)
+        {
+            graph[task.Name] = new List<string>();
+            inDegree[task.Name] = 0;
+            durations[task.Name] = task.Duration ?? 1;
+        }
+
+        foreach (var task in tasks.Values)
+        {
+            foreach (var dep in task.Dependencies)
+            {
+                if (!tasks.ContainsKey(dep))
+                {
+                    Console.Error.WriteLine($"error: task '{task.Name}' depends on unknown task '{dep}'");
+                    Environment.Exit(1);
+                }
+                graph[dep].Add(task.Name);
+                inDegree[task.Name]++;
+            }
+        }
+
+        var queue = new Queue<string>(tasks.Keys.Where(k => inDegree[k] == 0));
+        var stage = 0;
+
+        while (queue.Count > 0)
+        {
+            stages.Add(new List<string>());
+            while (queue.Count > 0)
+            {
+                var current = queue.Dequeue();
+                stages[stage].Add(current);
+                foreach (var next in graph[current])
+                {
+                    inDegree[next]--;
+                    if (inDegree[next] == 0)
+                    {
+                        queue.Enqueue(next);
+                    }
+                }
+            }
+            stage++;
+        }
+
+        var visited = new HashSet<string>();
+        var currentPath = new List<string>();
+        var currentPathDuration = 0;
+
+        void Dfs(string task)
+        {
+            currentPath.Add(task);
+            currentPathDuration += durations[task];
+            if (currentPathDuration > criticalPathDuration)
+            {
+                criticalPathDuration = currentPathDuration;
+                criticalPath = new List<string>(currentPath);
+            }
+            else if (currentPathDuration == criticalPathDuration && string.Join("", currentPath) < string.Join("", criticalPath))
+            {
+                criticalPath = new List<string>(currentPath);
+            }
+
+            foreach (var next in graph[task])
+            {
+                if (!visited.Contains(next))
+                {
+                    visited.Add(next);
+                    Dfs(next);
+                    visited.Remove(next);
+                }
+            }
+
+            currentPath.RemoveAt(currentPath.Count - 1);
+            currentPathDuration -= durations[task];
+        }
+
+        foreach (var task in stages[0])
+        {
+            visited.Add(task);
+            Dfs(task);
+            visited.Remove(task);
+        }
+
+        return new Plan
+        {
+            Stages = stages,
+            TotalTasks = tasks.Count,
+            CriticalPath = new CriticalPath
+            {
+                Duration = criticalPathDuration,
+                Tasks = criticalPath
+            }
+        };
+    }
+
+    static void PrintPlan(Plan plan, string format)
+    {
+        if (format == "text")
+        {
+            for (int i = 0; i < plan.Stages.Count; i++)
+            {
+                Console.WriteLine($"Stage {i + 1}: {string.Join(", ", plan.Stages[i])}");
+            }
+            Console.WriteLine($"Total tasks: {plan.TotalTasks}");
+            Console.WriteLine($"Critical path ({plan.CriticalPath.Duration}): {string.Join(" -> ", plan.CriticalPath.Tasks)}");
+        }
+        else
+        {
+            Console.WriteLine($"{{\"stages\":[{string.Join(",", plan.Stages.Select(s => $"[{string.Join(",", s)}]"))}],\"totalTasks\":{plan.TotalTasks},\"criticalPath\":{{\"duration\":{plan.CriticalPath.Duration},\"tasks\":[{string.Join(",", plan.CriticalPath.Tasks.Select(t => $"\"{t}\""))}]}}}}");
+        }
+    }
+
+    class Task
+    {
+        public string Name { get; set; }
+        public int? Duration { get; set; }
+        public string[] Dependencies { get; set; }
+    }
+
+    class Plan
+    {
+        public List<List<string>> Stages { get; set; }
+        public int TotalTasks { get; set; }
+        public CriticalPath CriticalPath { get; set; }
+    }
+
+    class CriticalPath
+    {
+        public int Duration { get; set; }
+        public List<string> Tasks { get; set; }
+    }
+}

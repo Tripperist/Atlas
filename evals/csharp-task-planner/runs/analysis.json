@@ -1,0 +1,51 @@
+{
+ "runs\\qwen3-coder-30b-a3b\\s1-fixed": {
+  "parses": 15,
+  "stages": 3,
+  "total": 15,
+  "critical": 1,
+  "of": 16
+ },
+ "runs\\qwen3-coder-30b-a3b\\s2-fixed": {
+  "parses": 15,
+  "stages": 3,
+  "total": 15,
+  "critical": 3,
+  "of": 16
+ },
+ "runs\\qwen3-coder-30b-a3b\\s3-fixed": {
+  "parses": 15,
+  "stages": 15,
+  "total": 15,
+  "critical": 1,
+  "of": 16
+ },
+ "runs\\qwen2.5-coder-7b\\s1-fixed": {
+  "parses": 6,
+  "stages": 2,
+  "total": 6,
+  "critical": 0,
+  "of": 16
+ },
+ "runs\\qwen2.5-coder-7b\\s2-fixed": {
+  "parses": 0,
+  "stages": 0,
+  "total": 0,
+  "critical": 0,
+  "of": 16
+ },
+ "runs\\qwen2.5-coder-7b\\s3-fixed": {
+  "parses": 5,
+  "stages": 2,
+  "total": 5,
+  "critical": 0,
+  "of": 16
+ },
+ "reference": {
+  "parses": 16,
+  "stages": 16,
+  "total": 16,
+  "critical": 16,
+  "of": 16
+ }
+}

@@ -1,0 +1,182 @@
+{
+ "source": "runs\\qwen2.5-coder-7b\\s3-fixed",
+ "lines": 191,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 0,
+  "warningSample": [],
+  "buildSeconds": 1.1
+ },
+ "passed": 5,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "5/20",
+  "scale": "0/4"
+ },
+ "failures": [
+  {
+   "id": "f01-basic",
+   "why": "exit 4, expected 0 (error: task 'compile:' depends on unknown task '')"
+  },
+  {
+   "id": "f02-basic-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f03-format-before-file",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f04-format-text-explicit",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f05-roots-tie",
+   "why": "line 1: got 'Total tasks: 3', expected 'Stage 1: a, b, c'"
+  },
+  {
+   "id": "f06-diamond-tie",
+   "why": "exit 4, expected 0 (error: task 'd:' depends on unknown task 'b')"
+  },
+  {
+   "id": "f07-whitespace-crlf",
+   "why": "exit 3, expected 0 (error: line 0: invalid duration)"
+  },
+  {
+   "id": "f08-ordinal-sort",
+   "why": "line 1: got 'Total tasks: 10', expected 'Stage 1: 9lives, A, B, Zed, _x, a-b, a.b, a_b, alpha, b'"
+  },
+  {
+   "id": "f09-dup-deps",
+   "why": "exit 4, expected 0 (error: task 'b:' depends on unknown task '')"
+  },
+  {
+   "id": "f10-forward-reference",
+   "why": "line 1: got 'Total tasks: 2', expected 'Stage 1: a'"
+  },
+  {
+   "id": "f11-empty-file",
+   "why": "2 lines, expected 1"
+  },
+  {
+   "id": "f12-empty-file-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f13-heavy-branch",
+   "why": "exit 4, expected 0 (error: task 'd:' depends on unknown task 'b')"
+  },
+  {
+   "id": "f14-chain-20",
+   "why": "exit 4, expected 0 (error: task 'step000003:' depends on unknown task 'step000002')"
+  },
+  {
+   "id": "f15-fanout-50",
+   "why": "line 1: got 'Total tasks: 51', expected 'Stage 1: root'"
+  },
+  {
+   "id": "f16-random-ties-1",
+   "why": "exit 4, expected 0 (error: task 'vkv:' depends on unknown task 'pw')"
+  },
+  {
+   "id": "f17-random-ties-2",
+   "why": "exit 4, expected 0 (error: task 'Co:' depends on unknown task 'lys')"
+  },
+  {
+   "id": "f18-random-ties-3",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f19-random-ties-4",
+   "why": "exit 4, expected 0 (error: task 'phe:' depends on unknown task '')"
+  },
+  {
+   "id": "f20-random-ties-5",
+   "why": "exit 4, expected 0 (error: task 'x:' depends on unknown task 'n')"
+  },
+  {
+   "id": "f21-random-ties-6",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "e06-bad-name",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e07-duration-zero",
+   "why": "stderr 'error: line 0: invalid duration'"
+  },
+  {
+   "id": "e08-duration-text",
+   "why": "stderr 'error: line 0: invalid duration'"
+  },
+  {
+   "id": "e09-duration-fraction",
+   "why": "stderr 'error: line 0: invalid duration'"
+  },
+  {
+   "id": "e10-duration-range",
+   "why": "stderr 'error: line 0: invalid duration'"
+  },
+  {
+   "id": "e11-unclosed-bracket",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e12-empty-deps",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e13-empty-dep-item",
+   "why": "exit 4, expected 3 (error: task 'b:' depends on unknown task '')"
+  },
+  {
+   "id": "e14-duplicate-task",
+   "why": "stderr 'error: line 0: redefined'"
+  },
+  {
+   "id": "e15-unknown-dep",
+   "why": "stderr \"error: task 'a:' depends on unknown task 'ghost'\""
+  },
+  {
+   "id": "e16-unknown-dep-order",
+   "why": "stderr \"error: task 'b:' depends on unknown task ''\""
+  },
+  {
+   "id": "e17-cycle-3",
+   "why": "exit 4, expected 5 (error: task 'a:' depends on unknown task 'c')"
+  },
+  {
+   "id": "e18-self-cycle",
+   "why": "exit 4, expected 5 (error: task 'a:' depends on unknown task 'a')"
+  },
+  {
+   "id": "e19-unknown-before-cycle",
+   "why": "stderr \"error: task 'a:' depends on unknown task 'b'\""
+  },
+  {
+   "id": "e20-syntax-before-unknown",
+   "why": "exit 4, expected 3 (error: task 'a:' depends on unknown task 'ghost')"
+  },
+  {
+   "id": "s01-large-durations",
+   "why": "exit 4, expected 0 (error: task 'big000003:' depends on unknown task 'big000002')"
+  },
+  {
+   "id": "s02-chain-100000",
+   "why": "exit 4, expected 0 (error: task 'n000003:' depends on unknown task 'n000002')"
+  },
+  {
+   "id": "s03-fanout-100000",
+   "why": "line 1: got 'Total tasks: 100000', expected 'Stage 1: root'"
+  },
+  {
+   "id": "s04-random-dag-3000",
+   "why": "exit 4, expected 0 (error: task 'FWr_:' depends on unknown task 'ki_')"
+  }
+ ],
+ "slowestScaleCaseSeconds": 0.6
+}

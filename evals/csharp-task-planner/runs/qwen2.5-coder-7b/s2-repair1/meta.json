@@ -1,0 +1,15 @@
+{
+ "wallSeconds": 279.1,
+ "completionTokens": 1535,
+ "codeBlocks": 1,
+ "followedFormat": true,
+ "truncated": false,
+ "hadCode": true,
+ "repairOf": "s2",
+ "errorsShown": [
+  "Program.cs(167,69): error CS0019: Operator '<' cannot be applied to operands of type 'string' and 'string' ",
+  "Program.cs(47,13): error CS1656: Cannot assign to 'line' because it is a 'foreach iteration variable' ",
+  "Program.cs(72,81): error CS0206: A non ref-returning property or indexer may not be used as an out or ref value "
+ ],
+ "seed": 2
+}

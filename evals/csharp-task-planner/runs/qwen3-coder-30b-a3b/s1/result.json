@@ -1,0 +1,27 @@
+{
+ "source": "runs\\qwen3-coder-30b-a3b\\s1",
+ "lines": 348,
+ "build": {
+  "built": false,
+  "errors": 1,
+  "errorSample": [
+   "Program.cs(65,33): error CS0165: Use of unassigned local variable 'lines' "
+  ],
+  "warnings": 3,
+  "warningSample": [
+   "Program.cs(14,31): warning CS8600: Converting null literal or possible null value to non-nullable type. ",
+   "Program.cs(385,23): warning CS8618: Non-nullable property 'Name' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(386,29): warning CS8618: Non-nullable property 'Dependencies' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. "
+  ],
+  "buildSeconds": 1.1
+ },
+ "passed": 0,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "0/20",
+  "scale": "0/4"
+ },
+ "failures": [],
+ "slowestScaleCaseSeconds": 0.0
+}

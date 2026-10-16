@@ -1,0 +1,38 @@
+{
+ "source": "runs\\qwen2.5-coder-7b\\s3-repair1",
+ "lines": 192,
+ "build": {
+  "built": false,
+  "errors": 16,
+  "errorSample": [
+   "Program.cs(101,98): error CS0718: 'Program.Task': static types cannot be used as type arguments ",
+   "Program.cs(179,23): error CS0708: 'Program.Task.Name': cannot declare instance members in a static class ",
+   "Program.cs(180,20): error CS0708: 'Program.Task.Duration': cannot declare instance members in a static class ",
+   "Program.cs(181,32): error CS0708: 'Program.Task.Dependencies': cannot declare instance members in a static class ",
+   "Program.cs(183,16): error CS0710: Static classes cannot have instance constructors ",
+   "Program.cs(191,41): error CS0713: Static class 'Program.SyntaxErrorException' cannot derive from type 'Exception'. Static classes must derive from object. ",
+   "Program.cs(193,20): error CS0708: 'Program.SyntaxErrorException.LineNumber': cannot declare instance members in a static class ",
+   "Program.cs(195,16): error CS0710: Static classes cannot have instance constructors ",
+   "Program.cs(201,47): error CS0713: Static class 'Program.UnknownDependencyException' cannot derive from type 'Exception'. Static classes must derive from object. ",
+   "Program.cs(203,23): error CS0708: 'Program.UnknownDependencyException.TaskName': cannot declare instance members in a static class ",
+   "Program.cs(204,23): error CS0708: 'Program.UnknownDependencyException.DependencyName': cannot declare instance members in a static class ",
+   "Program.cs(206,16): error CS0710: Static classes cannot have instance constructors ",
+   "Program.cs(213,45): error CS0713: Static class 'Program.DependencyCycleException' cannot derive from type 'Exception'. Static classes must derive from object. ",
+   "Program.cs(215,16): error CS0710: Static classes cannot have instance constructors ",
+   "Program.cs(5,7): error CS0246: The type or namespace name 'Newtonsoft' could not be found (are you missing a using directive or an assembly reference?) ",
+   "Program.cs(54,37): error CS0718: 'Program.Task': static types cannot be used as type arguments "
+  ],
+  "warnings": 0,
+  "warningSample": [],
+  "buildSeconds": 1.0
+ },
+ "passed": 0,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "0/20",
+  "scale": "0/4"
+ },
+ "failures": [],
+ "slowestScaleCaseSeconds": 0.0
+}

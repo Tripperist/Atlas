@@ -1,0 +1,14 @@
+{
+ "wallSeconds": 274.6,
+ "completionTokens": 1506,
+ "codeBlocks": 1,
+ "followedFormat": true,
+ "truncated": false,
+ "hadCode": true,
+ "repairOf": "s1",
+ "errorsShown": [
+  "Program.cs(153,70): error CS0019: Operator '<' cannot be applied to operands of type 'string' and 'string' ",
+  "Program.cs(66,68): error CS0206: A non ref-returning property or indexer may not be used as an out or ref value "
+ ],
+ "seed": 1
+}

@@ -1,0 +1,192 @@
+{
+ "source": "runs\\qwen2.5-coder-7b\\s2-fixed",
+ "lines": 214,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 5,
+  "warningSample": [
+   "Program.cs(224,23): warning CS8618: Non-nullable property 'Name' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(226,25): warning CS8618: Non-nullable property 'Dependencies' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(231,35): warning CS8618: Non-nullable property 'Stages' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(233,29): warning CS8618: Non-nullable property 'CriticalPath' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(239,29): warning CS8618: Non-nullable property 'Tasks' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. "
+  ],
+  "buildSeconds": 1.1
+ },
+ "passed": 4,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "4/20",
+  "scale": "0/4"
+ },
+ "failures": [
+  {
+   "id": "f01-basic",
+   "why": "exit 1, expected 0 (error: line 4: invalid task name: configure:)"
+  },
+  {
+   "id": "f02-basic-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f03-format-before-file",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f04-format-text-explicit",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f05-roots-tie",
+   "why": "exit 1, expected 0 (error: Object reference not set to an instance of an object.)"
+  },
+  {
+   "id": "f06-diamond-tie",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: d:)"
+  },
+  {
+   "id": "f07-whitespace-crlf",
+   "why": "exit 1, expected 0 (error: line 4: invalid duration: [)"
+  },
+  {
+   "id": "f08-ordinal-sort",
+   "why": "exit 1, expected 0 (error: Object reference not set to an instance of an object.)"
+  },
+  {
+   "id": "f09-dup-deps",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: b:)"
+  },
+  {
+   "id": "f10-forward-reference",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: b:)"
+  },
+  {
+   "id": "f11-empty-file",
+   "why": "exit 1, expected 0 (error: Index was out of range. Must be non-negative and less than the size of the collecti)"
+  },
+  {
+   "id": "f12-empty-file-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f13-heavy-branch",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: b:)"
+  },
+  {
+   "id": "f14-chain-20",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: step000002:)"
+  },
+  {
+   "id": "f15-fanout-50",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: leaf00:)"
+  },
+  {
+   "id": "f16-random-ties-1",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: vkv:)"
+  },
+  {
+   "id": "f17-random-ties-2",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: Co:)"
+  },
+  {
+   "id": "f18-random-ties-3",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f19-random-ties-4",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: FHO:)"
+  },
+  {
+   "id": "f20-random-ties-5",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: x:)"
+  },
+  {
+   "id": "f21-random-ties-6",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "e05-missing-file",
+   "why": "exit 1, expected 2 (error: Could not find file 'D:\\repos\\Atlas\\evals\\csharp-task-planner\\tests\\generated\\does-)"
+  },
+  {
+   "id": "e06-bad-name",
+   "why": "exit 1, expected 3 (error: line 3: invalid task name: b!)"
+  },
+  {
+   "id": "e07-duration-zero",
+   "why": "exit 1, expected 3 (error: line 3: invalid duration: [0])"
+  },
+  {
+   "id": "e08-duration-text",
+   "why": "exit 1, expected 3 (error: line 2: invalid duration: [two])"
+  },
+  {
+   "id": "e09-duration-fraction",
+   "why": "exit 1, expected 3 (error: line 2: invalid duration: [2.5])"
+  },
+  {
+   "id": "e10-duration-range",
+   "why": "exit 1, expected 3 (error: Object reference not set to an instance of an object.)"
+  },
+  {
+   "id": "e11-unclosed-bracket",
+   "why": "exit 1, expected 3 (error: Object reference not set to an instance of an object.)"
+  },
+  {
+   "id": "e12-empty-deps",
+   "why": "exit 1, expected 3 (error: line 3: invalid task name: b:)"
+  },
+  {
+   "id": "e13-empty-dep-item",
+   "why": "exit 1, expected 3 (error: line 4: invalid task name: b:)"
+  },
+  {
+   "id": "e14-duplicate-task",
+   "why": "exit 1, expected 3 (error: line 6: task 'a' defined twice)"
+  },
+  {
+   "id": "e15-unknown-dep",
+   "why": "exit 1, expected 4 (error: line 2: invalid task name: a:)"
+  },
+  {
+   "id": "e16-unknown-dep-order",
+   "why": "exit 1, expected 4 (error: line 2: invalid task name: b:)"
+  },
+  {
+   "id": "e17-cycle-3",
+   "why": "exit 1, expected 5 (error: line 2: invalid task name: a:)"
+  },
+  {
+   "id": "e18-self-cycle",
+   "why": "exit 1, expected 5 (error: line 2: invalid task name: a:)"
+  },
+  {
+   "id": "e19-unknown-before-cycle",
+   "why": "exit 1, expected 4 (error: line 2: invalid task name: a:)"
+  },
+  {
+   "id": "e20-syntax-before-unknown",
+   "why": "exit 1, expected 3 (error: line 2: invalid task name: a:)"
+  },
+  {
+   "id": "s01-large-durations",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: big000002:)"
+  },
+  {
+   "id": "s02-chain-100000",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: n000002:)"
+  },
+  {
+   "id": "s03-fanout-100000",
+   "why": "exit 1, expected 0 (error: line 3: invalid task name: x000001:)"
+  },
+  {
+   "id": "s04-random-dag-3000",
+   "why": "exit 1, expected 0 (error: line 2: invalid task name: FWr_:)"
+  }
+ ],
+ "slowestScaleCaseSeconds": 0.1
+}

@@ -1,0 +1,198 @@
+{
+ "source": "runs\\qwen2.5-coder-7b\\s1-fixed",
+ "lines": 209,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 3,
+  "warningSample": [
+   "Program.cs(137,13): warning CS0219: The variable 'currentPathDuration' is assigned but its value is never used ",
+   "Program.cs(224,23): warning CS8618: Non-nullable property 'Name' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(233,29): warning CS8618: Non-nullable property 'CriticalPath' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. "
+  ],
+  "buildSeconds": 1.1
+ },
+ "passed": 2,
+ "total": 45,
+ "byCategory": {
+  "functional": "0/21",
+  "error": "2/20",
+  "scale": "0/4"
+ },
+ "failures": [
+  {
+   "id": "f01-basic",
+   "why": "exit 1, expected 0 (error: task 'test:' depends on unknown task 'compile')"
+  },
+  {
+   "id": "f02-basic-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f03-format-before-file",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f04-format-text-explicit",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f05-roots-tie",
+   "why": "line 1: got 'Total tasks: 3', expected 'Stage 1: a, b, c'"
+  },
+  {
+   "id": "f06-diamond-tie",
+   "why": "exit 1, expected 0 (error: task 'd:' depends on unknown task 'b')"
+  },
+  {
+   "id": "f07-whitespace-crlf",
+   "why": "exit 1, expected 0 (error: line 3: invalid duration '[')"
+  },
+  {
+   "id": "f08-ordinal-sort",
+   "why": "line 1: got 'Total tasks: 10', expected 'Stage 1: 9lives, A, B, Zed, _x, a-b, a.b, a_b, alpha, b'"
+  },
+  {
+   "id": "f09-dup-deps",
+   "why": "line 1: got 'Total tasks: 2', expected 'Stage 1: a'"
+  },
+  {
+   "id": "f10-forward-reference",
+   "why": "line 1: got 'Total tasks: 2', expected 'Stage 1: a'"
+  },
+  {
+   "id": "f11-empty-file",
+   "why": "2 lines, expected 1"
+  },
+  {
+   "id": "f12-empty-file-json",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f13-heavy-branch",
+   "why": "exit 1, expected 0 (error: task 'd:' depends on unknown task 'b')"
+  },
+  {
+   "id": "f14-chain-20",
+   "why": "exit 1, expected 0 (error: task 'step000003:' depends on unknown task 'step000002')"
+  },
+  {
+   "id": "f15-fanout-50",
+   "why": "line 1: got 'Total tasks: 51', expected 'Stage 1: root'"
+  },
+  {
+   "id": "f16-random-ties-1",
+   "why": "exit 1, expected 0 (error: task 'vkv:' depends on unknown task 'pw')"
+  },
+  {
+   "id": "f17-random-ties-2",
+   "why": "exit 1, expected 0 (error: task 'Co:' depends on unknown task 'lys')"
+  },
+  {
+   "id": "f18-random-ties-3",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "f19-random-ties-4",
+   "why": "exit 1, expected 0 (error: task 've:' depends on unknown task 'k')"
+  },
+  {
+   "id": "f20-random-ties-5",
+   "why": "exit 1, expected 0 (error: task 'x:' depends on unknown task 'n')"
+  },
+  {
+   "id": "f21-random-ties-6",
+   "why": "exit 1, expected 0 (usage: planner <file> [--format text|json])"
+  },
+  {
+   "id": "e03-two-files",
+   "why": "stderr 'error: unknown format: tlas\\\\evals\\\\csharp-task-planner\\\\tests\\\\generated\\\\e03-two-fi'"
+  },
+  {
+   "id": "e04-format-missing-value",
+   "why": "exit 3762504530, expected 1 (Unhandled exception. System.ArgumentOutOfRangeException: startIndex cannot be larger than )"
+  },
+  {
+   "id": "e05-missing-file",
+   "why": "exit 1, expected 2 (error: Could not find file 'D:\\repos\\Atlas\\evals\\csharp-task-planner\\tests\\generated\\does-)"
+  },
+  {
+   "id": "e06-bad-name",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e07-duration-zero",
+   "why": "exit 1, expected 3 (error: line 2: invalid duration '[0]')"
+  },
+  {
+   "id": "e08-duration-text",
+   "why": "exit 1, expected 3 (error: line 1: invalid duration '[two]')"
+  },
+  {
+   "id": "e09-duration-fraction",
+   "why": "exit 1, expected 3 (error: line 1: invalid duration '[2.5]')"
+  },
+  {
+   "id": "e10-duration-range",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e11-unclosed-bracket",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e12-empty-deps",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e13-empty-dep-item",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e14-duplicate-task",
+   "why": "exit 1, expected 3 (error: line 5: redefinition of task 'a')"
+  },
+  {
+   "id": "e15-unknown-dep",
+   "why": "exit 1, expected 4 (error: task 'a:' depends on unknown task 'ghost')"
+  },
+  {
+   "id": "e16-unknown-dep-order",
+   "why": "exit 0, expected 4 ()"
+  },
+  {
+   "id": "e17-cycle-3",
+   "why": "exit 1, expected 5 (error: task 'a:' depends on unknown task 'c')"
+  },
+  {
+   "id": "e18-self-cycle",
+   "why": "exit 1, expected 5 (error: task 'a:' depends on unknown task 'a')"
+  },
+  {
+   "id": "e19-unknown-before-cycle",
+   "why": "exit 1, expected 4 (error: task 'a:' depends on unknown task 'b')"
+  },
+  {
+   "id": "e20-syntax-before-unknown",
+   "why": "exit 1, expected 3 (error: task 'a:' depends on unknown task 'ghost')"
+  },
+  {
+   "id": "s01-large-durations",
+   "why": "exit 1, expected 0 (error: task 'big000003:' depends on unknown task 'big000002')"
+  },
+  {
+   "id": "s02-chain-100000",
+   "why": "exit 1, expected 0 (error: task 'n000003:' depends on unknown task 'n000002')"
+  },
+  {
+   "id": "s03-fanout-100000",
+   "why": "line 1: got 'Total tasks: 100000', expected 'Stage 1: root'"
+  },
+  {
+   "id": "s04-random-dag-3000",
+   "why": "exit 1, expected 0 (error: task 'FWr_:' depends on unknown task 'ki_')"
+  }
+ ],
+ "slowestScaleCaseSeconds": 0.7
+}

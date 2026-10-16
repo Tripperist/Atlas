@@ -1,0 +1,118 @@
+{
+ "source": "runs\\qwen3-coder-30b-a3b\\s2-fixed",
+ "lines": 356,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 3,
+  "warningSample": [
+   "Program.cs(14,31): warning CS8600: Converting null literal or possible null value to non-nullable type. ",
+   "Program.cs(392,23): warning CS8618: Non-nullable property 'Name' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. ",
+   "Program.cs(393,29): warning CS8618: Non-nullable property 'Dependencies' must contain a non-null value when exiting constructor. Consider adding the 'required' modifier or declaring the property as nullable. "
+  ],
+  "buildSeconds": 1.0
+ },
+ "passed": 22,
+ "total": 45,
+ "byCategory": {
+  "functional": "4/21",
+  "error": "18/20",
+  "scale": "0/4"
+ },
+ "failures": [
+  {
+   "id": "f01-basic",
+   "why": "line 2: got 'Total tasks: 6', expected 'Stage 2: configure'"
+  },
+  {
+   "id": "f02-basic-json",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f03-format-before-file",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f04-format-text-explicit",
+   "why": "line 2: got 'Total tasks: 6', expected 'Stage 2: configure'"
+  },
+  {
+   "id": "f06-diamond-tie",
+   "why": "line 2: got 'Total tasks: 4', expected 'Stage 2: b, c'"
+  },
+  {
+   "id": "f07-whitespace-crlf",
+   "why": "exit 3, expected 0 (error: line 3: invalid syntax)"
+  },
+  {
+   "id": "f09-dup-deps",
+   "why": "line 2: got 'Total tasks: 2', expected 'Stage 2: b'"
+  },
+  {
+   "id": "f10-forward-reference",
+   "why": "line 2: got 'Total tasks: 2', expected 'Stage 2: b'"
+  },
+  {
+   "id": "f13-heavy-branch",
+   "why": "line 2: got 'Total tasks: 4', expected 'Stage 2: b, c'"
+  },
+  {
+   "id": "f14-chain-20",
+   "why": "line 2: got 'Total tasks: 20', expected 'Stage 2: step000002'"
+  },
+  {
+   "id": "f15-fanout-50",
+   "why": "line 2: got 'Total tasks: 51', expected 'Stage 2: leaf00, leaf01, leaf02, leaf03, leaf04, leaf05, leaf06, leaf0'"
+  },
+  {
+   "id": "f16-random-ties-1",
+   "why": "line 2: got 'Total tasks: 15', expected 'Stage 2: cm, oc, pw'"
+  },
+  {
+   "id": "f17-random-ties-2",
+   "why": "line 2: got 'Total tasks: 18', expected 'Stage 2: J, MBz_, OE'"
+  },
+  {
+   "id": "f18-random-ties-3",
+   "why": "JSON differs"
+  },
+  {
+   "id": "f19-random-ties-4",
+   "why": "line 2: got 'Total tasks: 24', expected 'Stage 2: D, FHO, j, j., phe, q, xP_'"
+  },
+  {
+   "id": "f20-random-ties-5",
+   "why": "line 2: got 'Total tasks: 27', expected 'Stage 2: p, qy'"
+  },
+  {
+   "id": "f21-random-ties-6",
+   "why": "JSON differs"
+  },
+  {
+   "id": "e12-empty-deps",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "e13-empty-dep-item",
+   "why": "exit 0, expected 3 ()"
+  },
+  {
+   "id": "s01-large-durations",
+   "why": "line 2: got 'Total tasks: 3000', expected 'Stage 2: big000002'"
+  },
+  {
+   "id": "s02-chain-100000",
+   "why": "line 2: got 'Total tasks: 100000', expected 'Stage 2: n000002'"
+  },
+  {
+   "id": "s03-fanout-100000",
+   "why": "line 2: got 'Total tasks: 100000', expected 'Stage 2: x000001, x000002, x000003, x000004, x000005, x000006, x000007'"
+  },
+  {
+   "id": "s04-random-dag-3000",
+   "why": "line 2: got 'Total tasks: 3000', expected 'Stage 2: AoQ, Bgd, CPN, Cvk, DdR-, De, Er, Fo, GF, Gd, Hj, I-, I., IM_'"
+  }
+ ],
+ "slowestScaleCaseSeconds": 0.6
+}

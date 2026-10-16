@@ -1,0 +1,18 @@
+{
+ "wallSeconds": 168.5,
+ "seedAccepted": true,
+ "model": "qwen2.5-coder-7b",
+ "completionTokens": 1506,
+ "promptTokens": 1088,
+ "tokPerSec": 8.9,
+ "finishReason": "stop",
+ "codeBlocks": 1,
+ "followedFormat": true,
+ "truncated": false,
+ "hadCode": true,
+ "backend": "Foundry Local HTTP, QNN NPU variant",
+ "seed": 1,
+ "temperature": 0.2,
+ "topP": 0.95,
+ "maxTokens": 4096
+}

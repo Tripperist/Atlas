@@ -1,0 +1,17 @@
+{
+ "wallSeconds": 131.8,
+ "exitCode": 0,
+ "tokPerSec": 21.7,
+ "completionTokens": 2323,
+ "firstTokenSeconds": 4.1,
+ "codeBlocks": 1,
+ "followedFormat": true,
+ "truncated": false,
+ "hadCode": true,
+ "model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0",
+ "backend": "geniex infer, llama.cpp engine, GPU",
+ "seed": 1,
+ "temperature": 0.2,
+ "topP": 0.95,
+ "maxTokens": 4096
+}
