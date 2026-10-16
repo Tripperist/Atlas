@@ -1481,6 +1481,11 @@ about 30 tok/s on the NPU and the GPU, the same as dense Qwen3-4B, and prefills
 a 512-token prompt at about 455 tok/s on the NPU against 299 on the GPU; see
 [BENCHMARKS](docs/BENCHMARKS.md#a-30b-mixture-of-experts-model).
 
+On long prompts the 30B's NPU prefill holds up better than the GPU's (337 against
+138 tok/s at 6,784 tokens) and better than the Foundry 7B's (216), but its decode
+falls to 9 tok/s, below the GPU's 15; see
+[BENCHMARKS](docs/BENCHMARKS.md#long-prompts).
+
 Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: 16 tok/s in-process
 and 7 over HTTP, with prefill falling from about 520 to about 216 tok/s as the
 prompt grows from 0.9k to 6.8k tokens; see
@@ -1585,7 +1590,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | **The Foundry daemon died once during `model.load`** | "Daemon closed the connection while awaiting response to op 'model.load'", on `qwen2.5-coder-7b`. It came back on the next `foundry server start`. Not reproduced |
 | **The NPU loses at small model sizes** | On Foundry's `qwen2.5-0.5b`, WebGPU gives 42.7 tok/s and CPU 40.5 against the NPU's 27.6. Expected for a decode-dominated run, but only measured at 0.5B. **Next step:** the same three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
 | **NPU cold start on large models** | The 30B took 13.9 s to first token and 41.7 s to start on the NPU, against 0.3 s and 12.4 s on the GPU. Consistent with a one-time per-process cost that grows with model size, but a long-lived `geniex serve` was not measured. **Next step:** time the first and second request against a running server |
-| **NPU decode after a long prompt** | `geniex-bench` gives 17.5–23.8 tok/s on the 30B's NPU against 30.0 from `geniex infer`; dense Qwen3-4B shows the same split (18.2 against 30.4). The GPU agrees between harnesses. Cause unknown |
+| **NPU decode after a prompt is slower than the GPU's** | After a prompt the 30B's NPU decodes at 16.7 tok/s at 512 tokens, falling to 9.1 at 6,784; the GPU goes from 28.9 to 14.9. So the GPU decodes 1.5 to 1.7 times faster at every length measured, where `geniex infer` on a short prompt shows them tied (30.0 and 29.4). Dense Qwen3-4B shows the same split (18.2 against 30.4). Cause unknown ([BENCHMARKS](docs/BENCHMARKS.md#long-prompts)) |
 | **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 
@@ -1603,7 +1608,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured. That includes `Qwen3-Coder-30B-A3B`, measured only with a 512-token prompt, where the 10 000-token prompts a coding agent sends are untested. Foundry's `qwen2.5-coder-7b` is a warning: its prefill fell from about 520 to about 216 tok/s as the prompt grew from 0.9k to 6.8k tokens ([BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b)), so a 512-token figure should not be extrapolated |
+| **Long-context behaviour** | Measured only up to 6,784 prompt tokens, on `Qwen3-Coder-30B-A3B` (GenieX, [long prompts](docs/BENCHMARKS.md#long-prompts)) and `qwen2.5-coder-7b` (Foundry, [BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b)). Prefill and decode both fall as the prompt grows, so a 512-token figure must not be extrapolated. The 10 000-plus-token prompts a coding agent sends, the KV cache growth they imply, and the models' 32k windows are untested. Every other benchmark here is a short generation |
 | Battery operation | Everything was measured on AC in `burst` power mode. Deployment behaviour on battery is unknown |
 | Speculative decoding | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
 

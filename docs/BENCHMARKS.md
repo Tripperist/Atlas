@@ -335,8 +335,8 @@ What the two tables show:
 - **The two harnesses disagree on NPU decode**, 17.5–23.8 against 30.0, while
   they agree on the GPU. Dense Qwen3-4B shows the same split (18.2 in the
   prefill table above, 30.4 from `geniex infer`), so this is not specific to the
-  30B. For long-context use the post-prefill figure is probably the relevant
-  one; that is an inference, not something tested here.
+  30B. For long-context use the post-prefill figure is the relevant
+  one, and it keeps falling with prompt length; see [long prompts](#long-prompts).
 - **The NPU has a heavy cold start.** The first token took 13.9 s and startup
   41.7 s, against 0.3 s and 12.4 s on the GPU. That is far larger than the
   4B's 1.43 s first token, and consistent with the one-time per-process
@@ -345,8 +345,55 @@ What the two tables show:
   once was not measured.
 
 Limits: three rounds for the prefill table and two for the decode table, one
-512-token prompt, `burst` mode on AC. Prefill slows as context grows, so none of
-this extends to the 10 000-token prompts an agent sends.
+512-token prompt, `burst` mode on AC. Prefill slows as context grows; the
+[long-prompt measurements](#long-prompts) below go to 6,784 tokens, and nothing
+here covers 10 000.
+
+### Long prompts
+
+The same file, GenieX v0.8.0, `geniex-bench` with the context fixed at 16,384
+(`-c`) and 64 generated tokens, three repetitions per cell. The prompt lengths
+match the [Foundry 7B curve](#a-7-gb-model-on-the-npu-qwen25-coder-7b), and the
+NPU and GPU order alternated between sizes. Each figure is what `geniex-bench`
+reports for the cell; the spread between repetitions is not shown.
+
+| Prompt tokens | NPU prefill tok/s | NPU first token | NPU decode | GPU prefill tok/s | GPU first token | GPU decode |
+| --- | --- | --- | --- | --- | --- | --- |
+| 512 | **445** | 1.2 s | 16.7 | 303 | 1.7 s | **28.9** |
+| 896 | **393** | 2.3 s | 16.5 | 278 | 3.2 s | **25.2** |
+| 1,792 | **377** | 4.7 s | 12.7 | 250 | 7.2 s | **21.3** |
+| 3,456 | **383** | 9.0 s | 10.8 | 198 | 17.5 s | **18.7** |
+| 6,784 | **337** | 20.1 s | 9.1 | 138 | 49.1 s | **14.9** |
+
+- **Fixing the context changed nothing.** The 512-token row, run with the
+  context set, gives 445 and 303 tok/s against about 455 and 299 with the
+  default.
+- **The NPU's prefill holds up.** It fell by 24 % from 512 to 6,784 tokens; the
+  GPU's fell by 54 %, about what Foundry's 7B lost over a similar range (about
+  55 %, from 485 at 320 tokens to 216 at 6,784).
+- **Against the Foundry 7B**, the 30B on GenieX is slower to ingest short prompts
+  and faster to ingest long ones. Foundry leads at 896 tokens (520 against 393)
+  and 1,792 (458 against 377); GenieX leads at 3,456 (383 against 337) and at
+  6,784 (337 against 216, 1.6 times). The two used different harnesses and
+  different prompts, so treat the crossover, between about 1,800 and 3,500
+  tokens, as approximate.
+- **Decode falls with context, on both units.** The NPU goes from 16.7 to 9.1
+  tok/s and the GPU from 28.9 to 14.9, so after a prompt the GPU decodes
+  1.5 to 1.7 times faster than the NPU at every length. The tie between them on a short
+  prompt (30.0 and 29.4 from `geniex infer`) does not survive a long one.
+
+**Arithmetic, not a measurement.** A turn with a 6,784-token prompt takes
+20.1 s plus *G* ÷ 9.1 on the NPU and 49.1 s plus *G* ÷ 14.9 on the GPU for *G*
+generated tokens. At 500 generated tokens that is about **75 s on the NPU and
+83 s on the GPU**. The two break even at roughly 680 generated tokens: below
+that the NPU finishes first, above it the GPU does. An agent turn that is mostly
+reading favours the NPU, and one that is mostly writing favours the GPU.
+
+Limits: `geniex-bench` fills the prompt with **random token ids**, not code. On a
+mixture-of-experts model the routing of random ids may differ from real text, so
+these prefill rates could be off in either direction; the Foundry curve used
+real code on a dense model. The CPU was not run, nothing beyond 6,784 tokens was
+tried, and 64 generated tokens is a short decode.
 
 ### Stock llama.cpp on the same file
 
@@ -407,7 +454,10 @@ generated tokens, using the rates above (post-prefill decode for the NPU):
 | stock CPU | 84 s | 13 s | about 97 s |
 
 This assumes the 512-token prefill rate holds at 10 000 tokens. It will not, so
-every row is optimistic and the real turns are longer.
+every row is optimistic and the real turns are longer. Measured at 6,784 tokens
+the NPU prefills at 337 tok/s, not 455, and decodes at 9.1, not about 20, so a
+turn with that prompt and 500 generated tokens takes about 75 s on the NPU and
+83 s on the GPU; see [long prompts](#long-prompts).
 
 ---
 
