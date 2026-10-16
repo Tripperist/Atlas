@@ -111,8 +111,15 @@ Write-Host 'Warming up (excluded)...' -ForegroundColor DarkGray
 
 $rows = [System.Collections.Generic.List[pscustomobject]]::new()
 
-foreach ($unit in $Compute) {
-    for ($i = 1; $i -le $Repeat; $i++) {
+# Round-robin across the compute units instead of finishing one before
+# starting the next, reversing the order on alternate rounds. This machine
+# throttles enough under sustained load that running all of A then all of B
+# charges the whole drift to B; a community report on this same SoC saw a
+# 9 % A/B gap shrink to 2 % once the runs were interleaved. The warm-up
+# above does not cover this -- the drift continues for the whole run.
+for ($i = 1; $i -le $Repeat; $i++) {
+    $order = if ($i % 2 -eq 0) { $Compute[($Compute.Count - 1)..0] } else { $Compute }
+    foreach ($unit in $order) {
         Write-Host ("{0} run {1}/{2}..." -f $unit, $i, $Repeat) -ForegroundColor Cyan
 
         $out = [System.IO.Path]::GetTempFileName()
