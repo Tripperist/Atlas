@@ -348,6 +348,67 @@ Limits: three rounds for the prefill table and two for the decode table, one
 512-token prompt, `burst` mode on AC. Prefill slows as context grows, so none of
 this extends to the 10 000-token prompts an agent sends.
 
+### Stock llama.cpp on the same file
+
+The same GGUF through an unmodified upstream build: llama.cpp **b10566**
+(2026-08-21), the official `ggml-org` release asset
+`llama-b10566-bin-win-opencl-adreno-arm64.zip`, SHA256
+`d78bd4db577eff9f8e3d77fe43e921c2c43aed9bacb35350723b23eaf373decd`. It was
+unpacked into a scratch directory and run from there; nothing was installed.
+The Adreno OpenCL backend needs no test signing, unlike the Hexagon one. This
+is the engine family inside LM Studio and Ollama, but neither app was measured.
+
+`llama-bench`, pp512 and tg128, three interleaved rounds (GPU first, then CPU
+first, then GPU first), every round shown:
+
+| Config | Prefill tok/s | Decode tok/s |
+| --- | --- | --- |
+| stock, Adreno OpenCL (`-ngl 99`) | 293.0, 293.8, 291.5 | 22.0, 26.1, 23.0 |
+| stock, CPU only (`-ngl 0`) | 118.7, 121.4, 117.9 | **40.1, 37.5, 38.3** |
+
+```powershell
+llama-bench.exe -m <path>\Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 99 -p 512 -n 128 -r 1   # Adreno OpenCL
+llama-bench.exe -m <path>\Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 0  -p 512 -n 128 -r 1   # CPU
+```
+
+Against the GenieX figures above (means, rounded):
+
+| | Prefill | Decode |
+| --- | --- | --- |
+| GenieX NPU | **455** | 30 short prompt, 20 after a 512-token prompt |
+| GenieX GPU | 299 | 28–29 |
+| stock GPU (OpenCL) | 293 | 24 |
+| stock CPU | 119 | **39** |
+| GenieX CPU | 40–110 | 21–27 |
+
+- **GPU prefill is the same engine doing the same work**: 293 against 299, within
+  2 %. GenieX decoded about 20 % faster; the two are different llama.cpp builds.
+- **Stock CPU decode beats everything GenieX gave**, NPU and GPU included. A
+  mixture-of-experts model with about 3 B active parameters is a good fit for 12
+  CPU cores.
+- **Stock CPU was stable**: 3 % spread in prefill and 7 % in decode, in either
+  position. GenieX's erratic CPU prefill therefore looks specific to its CPU
+  path rather than to the machine, though that was not isolated.
+- **The NPU is still far ahead on prefill**, about 3.8 times stock CPU.
+
+Limits: `llama-bench` labels both configurations `OpenCL`, because that is the
+backend it loaded. That `-ngl 0` ran on the CPU is inferred from the very different
+numbers, since no utilization was sampled in these runs. One repetition per
+round, three rounds. Thread count was the default.
+
+**Arithmetic, not a measurement.** For a turn with a 10 000-token prompt and 500
+generated tokens, using the rates above (post-prefill decode for the NPU):
+
+| | Prefill | Decode | Turn |
+| --- | --- | --- | --- |
+| GenieX NPU | 22 s | 25 s | about 47 s |
+| GenieX GPU | 33 s | 18 s | about 52 s |
+| stock GPU | 34 s | 21 s | about 55 s |
+| stock CPU | 84 s | 13 s | about 97 s |
+
+This assumes the 512-token prefill rate holds at 10 000 tokens. It will not, so
+every row is optimistic and the real turns are longer.
+
 ---
 
 ## Foundry Local

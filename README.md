@@ -1565,8 +1565,8 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Upstream llama.cpp on the NPU** | The Hexagon backend needs signed HTP ops libraries and has you enable test signing machine-wide, so it was not attempted. The OpenCL/Adreno backend needs no such thing and is the cheaper experiment |
-| Ollama / LM Studio | Reported as CPU-only on Windows on Arm, but not verified here. Both build on llama.cpp, so the Hexagon backend above is the thing to watch |
+| **Upstream llama.cpp on the NPU** | The Hexagon backend needs signed HTP ops libraries and has you enable test signing machine-wide, so it was not attempted. The OpenCL/Adreno backend needs no such thing and *was* measured, as stock llama.cpp b10566 on the 30B coder model: GPU prefill 293 tok/s against GenieX's 299, decode about 20 % slower than GenieX's GPU path (see [BENCHMARKS](docs/BENCHMARKS.md#stock-llamacpp-on-the-same-file)). The Hexagon backend remains untested |
+| Ollama / LM Studio | Neither app was measured. Both build on llama.cpp, and stock llama.cpp on the CPU alone gave 119 prefill and 39 decode tok/s on the 30B coder model, with stable runs, which is the likeliest ballpark for a CPU-only app. Reported as CPU-only on Windows on Arm, not verified here |
 | `Microsoft.ML.OnnxRuntimeGenAI.QNN` | Pinned at 0.13.2 against the 0.17.1 used here. Outside the broken 0.16.x range so it may work, but it mixes the all-in-one packaging model with the plugin one. Untested |
 | GenieX Python SDK | Resolves for ARM64 Python 3.14; not installed or tested here |
 
