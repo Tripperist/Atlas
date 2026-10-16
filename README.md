@@ -1434,16 +1434,20 @@ token loop, and accept that you are choosing from a short list of models.
 
 Full results, methodology and the published AI Hub figures are in
 **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**. The headline, Q4_0 GGUF via
-llama.cpp, 400 tokens, warm machine:
+llama.cpp, 400 tokens, warm machine, compute units interleaved:
 
 | Model | Compute | Tok/s | NPU peak | CPU % |
 | --- | --- | --- | --- | --- |
-| Qwen3-4B | `npu` | **30.5** | 100 | 17.8 |
-| Qwen3-4B | `cpu` | 28.7 | 0 | 81.8 |
-| Qwen3-4B | `gpu` | 24.0 | 0 | 17.9 |
+| Qwen3-4B | `npu` | **30.4** | 100 | 18.8 |
+| Qwen3-4B | `cpu` | 24.6 | 0 | 77.5 |
+| Qwen3-4B | `gpu` | 21.9 | 0 | 17.6 |
 | Qwen3-1.7B | `npu` | **61.3** | 100 | 25.2 |
 | Qwen3-1.7B | `cpu` | 51.0 | 0 | 72.8 |
 | Qwen3-1.7B | `gpu` | 47.9 | 0 | 26.4 |
+
+The 4B rows are interleaved. The 1.7B rows were run in blocks, so their CPU and
+GPU figures may be overstated; the NPU row is the one to trust. The CPU and GPU
+rows vary 18–31 % between rounds, so read the ordering rather than the digits.
 
 Run them yourself:
 

@@ -371,6 +371,7 @@ GenieX major version and two driver updates.
 | ORT GenAI Phi-4: 17.1 tok/s on 0.15.2 | Not directly comparable; measured on a different version and token budget |
 | Foundry Local phi-3.5-mini: 26.5 tok/s, CPU 53.6 % | 27.7 tok/s; the CPU figure is not like-for-like, see BENCHMARKS |
 | Phi-4 GGUF via GenieX: 24.1 tok/s | Superseded by the prefill/decode matrix |
+| Qwen3-4B decode on v0.8.0, 2026-10-05, units run in blocks: `npu` 30.5, `cpu` 28.7, `gpu` 24.0 | Interleaved re-measurement, 2026-10-09: 30.4 / 24.6 / 21.9. The NPU figure held; the CPU and GPU figures sat at or above the top of the interleaved range. See BENCHMARKS, *Run order* |
 | Adapter LUIDs `0x00013d0d`, `0x000152a6`, `0x0001501b`, `0x000151f3`, `0x133c8`, `0x000148c0` | **All stale by design.** LUIDs are assigned per boot; re-derive them, never cite them |
 
 ---

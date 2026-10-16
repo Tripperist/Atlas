@@ -95,19 +95,55 @@ CPU throughput fell **19 %** while the NPU held within ~2 tok/s. **Any benchmark
 short enough to run on a cold machine will flatter the CPU.** Measure once,
 briefly, and you will reach the wrong conclusion.
 
+### Run order
+
+A warm-up fixes the start of a run, not the drift across it. Running every
+repeat of one compute unit before moving to the next charges all of that drift
+to whichever unit went last, and a community report on this same SoC saw a
+9 % gap between two configurations shrink to 2 % once the runs were
+interleaved. [`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1)
+therefore **round-robins across the units and reverses the order on alternate
+rounds**.
+
+Qwen3-4B, re-measured that way on 2026-10-09 (three rounds):
+
+| Compute | Tok/s by round | Spread |
+| --- | --- | --- |
+| `npu` | 30.6, 30.5, 30.0 | 2 % |
+| `gpu` | 24.0, 20.3, 21.3 | 18 % |
+| `cpu` | 20.4, 26.5, 26.9 | 31 % |
+
+The NPU figure did not move when the order changed (30.5 blocked, 30.4
+interleaved). The CPU and GPU figures did: 28.7 and 24.0 blocked against 24.6
+and 21.9 interleaved. The blocked figures sit at or above the top of the
+interleaved range, which is consistent with order bias — but with a 31 % CPU
+spread across only three rounds, the data cannot establish order as the cause.
+Read the CPU and GPU rows as approximate and the ordering as the finding.
+
+Results taken before this change, on the 1.7B and 0.6B models, were run in
+blocks and are marked as such.
+
 ---
 
 ## Decode throughput by compute unit
 
 Q4_0 GGUF via the llama.cpp engine, 400 tokens, 3 runs each, `burst`, on AC.
+GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2, stack
+`44a1e6e37bc4`.
 
-**Current — 2026-10-05**, GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2, stack `44a1e6e37bc4`:
+**Qwen3-4B — 2026-10-09, units interleaved** (see [run order](#run-order)):
 
 | Model | Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Qwen3-4B | `npu` | **30.5** | 1.53 | 9.54 | 17.8 | 100 | 4.9 |
-| Qwen3-4B | `cpu` | 28.7 | **0.20** | 2.82 | 81.8 | 0 | 4.8 |
-| Qwen3-4B | `gpu` | 24.0 | 0.20 | 5.92 | 17.9 | 0 | 87.9 |
+| Qwen3-4B | `npu` | **30.4** | 1.43 | 8.47 | 18.8 | 100 | 4.6 |
+| Qwen3-4B | `cpu` | 24.6 | 0.67 | 4.75 | 77.5 | 0 | 4.5 |
+| Qwen3-4B | `gpu` | 21.9 | **0.20** | 7.57 | 17.6 | 0 | 93.1 |
+
+**Qwen3-1.7B — 2026-10-05, units run in blocks.** These predate interleaving,
+so the CPU and GPU rows may be overstated; the NPU row is the one to trust.
+
+| Model | Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
+| --- | --- | --- | --- | --- | --- | --- | --- |
 | Qwen3-1.7B | `npu` | **61.3** | 1.13 | 4.78 | 25.2 | 100 | 4.9 |
 | Qwen3-1.7B | `cpu` | 51.0 | 0.20 | 3.26 | 72.8 | 0 | 52.1 * |
 | Qwen3-1.7B | `gpu` | 47.9 | **0.10** | 3.66 | 26.4 | 0 | 89.9 |
