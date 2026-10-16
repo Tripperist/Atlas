@@ -1255,17 +1255,34 @@ column showing what this machine will actually use, and
 > across its three runs. Do not read this as "the NPU is slow"; read it as
 > "a tiny model with a short prompt is the wrong workload for it".
 
-**On this machine, only two catalogue models target the NPU:**
+**On this machine, 11 catalogue models target the NPU** (`foundry model list`,
+checked 2026-10-15 on CLI 0.10.3; `--variants` shows each as a `-qnn-npu`
+variant on the QNN execution provider):
 
-| Model | Size | Device | Tools |
+| Model | Size | Tools | Run here |
 | --- | --- | --- | --- |
-| `qwen2.5-0.5b` | 442 MB | NPU | **yes** |
-| `phi-3.5-mini` | 2.0 GB | NPU | no |
+| `qwen2.5-coder-7b` | 7.1 GB | yes | **yes** |
+| `deepseek-r1-14b` | 7.1 GB | no | no |
+| `qwen2.5-7b` | 6.8 GB | yes | no |
+| `deepseek-r1-7b` | 3.7 GB | no | no |
+| `phi-3-mini-4k` | 3.5 GB | no | no |
+| `phi-3-mini-128k` | 3.5 GB | no | no |
+| `phi-3.5-mini` | 2.0 GB | no | yes |
+| `qwen2.5-1.5b` | 1.1 GB | yes | no |
+| `qwen2.5-coder-1.5b` | 1.1 GB | yes | no |
+| `qwen2.5-0.5b` | 442 MB | yes | yes |
+| `qwen2.5-coder-0.5b` | 442 MB | yes | no |
 
-Everything else — the whole `phi-4` family, all of `qwen3`, every
-`qwen2.5-coder` size, and `qwen2.5-7b`/`-14b` — routes to **GPU** here. If NPU
-placement is the point, that is a short list. The catalogue has changed
-significantly between versions, so **re-check it rather than citing notes**.
+"Listed" is not "works": a catalogue row says what Foundry will *try* on this
+machine, not that the variant loads on this NPU or how fast it runs. Three have
+been run here; the rest are untested. Everything else in the catalogue — the
+`phi-4` family, all of `qwen3`, `qwen2.5-14b` and the larger `qwen2.5-coder`
+sizes — defaults to **GPU** or CPU.
+
+**The catalogue changes without the CLI changing.** It listed 11 NPU models,
+then 2, then 11 again, all on CLI 0.10.3 (the history is in the
+[archive](docs/ARCHIVE.md#foundry-locals-npu-catalogue-shrank-from-11-models-to-2)).
+**Re-check it rather than citing notes.**
 
 ### 7.5 Tool calling
 

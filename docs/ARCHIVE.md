@@ -259,8 +259,9 @@ runtime versions and engine revisions it ran under, precisely so that
 
 ## Foundry Local's NPU catalogue shrank from 11 models to 2
 
-**Status: current behaviour as of Foundry Local 0.10.3.** Recorded here because
-it invalidated a planned experiment.
+**Status: reversed.** On 2026-10-15 the same CLI, 0.10.3, listed 11 NPU models
+again; see *Update* below. Kept because it invalidated a planned experiment, and
+because the reversal is the lesson.
 
 The README previously recorded 11 NPU-targeted models in Foundry Local's
 catalogue, 6 of them supporting tool calling — the whole Qwen2.5 family
@@ -287,11 +288,39 @@ written. It was redirected to `qwen2.5-0.5b`, and one of its three risks — tha
 a 6.8 GB NPU model might not hold context without paging — became untestable,
 since the largest NPU model now published is 2.0 GB.
 
+### Update, 2026-10-15
+
+`foundry model list` on the **same CLI, 0.10.3**, reports 11 NPU-targeted models
+again, and `--variants` shows each as a `-qnn-npu` variant on the QNN execution
+provider:
+
+| Model | Size | Tools |
+| --- | --- | --- |
+| `qwen2.5-coder-7b` | 7.1 GB | yes |
+| `deepseek-r1-14b` | 7.1 GB | no |
+| `qwen2.5-7b` | 6.8 GB | yes |
+| `deepseek-r1-7b` | 3.7 GB | no |
+| `phi-3-mini-4k` | 3.5 GB | no |
+| `phi-3-mini-128k` | 3.5 GB | no |
+| `phi-3.5-mini` | 2.0 GB | no |
+| `qwen2.5-1.5b` | 1.1 GB | yes |
+| `qwen2.5-coder-1.5b` | 1.1 GB | yes |
+| `qwen2.5-0.5b` | 442 MB | yes |
+| `qwen2.5-coder-0.5b` | 442 MB | yes |
+
+So the two-model state was not a CLI change. The catalogue is served separately
+and moved while the CLI stayed put; why it dropped and came back is still not
+something the CLI explains. The largest NPU model is now 7.1 GB, which makes the
+"does a ~7 GB NPU model hold context" question testable after all; it is
+being measured for `qwen2.5-coder-7b` under
+[Foundry Local in BENCHMARKS](BENCHMARKS.md#foundry-local).
+
 ### Lesson that survives
 
-A vendor catalogue is not a stable interface. Model availability and device
-targeting can change between CLI versions, so capability claims should be
-re-checked rather than cited from notes.
+A vendor catalogue is not a stable interface, and **it can change without any
+version changing**. Model availability and device targeting moved from 11 to 2
+and back to 11 under one CLI version, so capability claims should be re-checked
+against the live catalogue rather than cited from notes — including these.
 
 ---
 
@@ -390,7 +419,7 @@ Every claim an earlier revision of the README stated and later had to withdraw.
 | "`geniex` has a `--runtime` flag" | It does not. The engine is selected by model format. `geniex_llamacpp` / `geniex_qairt` are `qai-hub-models fetch` asset names |
 | "GenieX v0.8.0 regressed NPU first-token by 13–18x" | A one-time per-process init cost on one-shot `geniex infer` only. See the case study above |
 | "Foundry Local reports ORT GenAI 0.14.1" | On 0.10.3 that field reads `0.0.0` whether the server is stopped or ready. The figure no longer reproduces |
-| "`qwen2.5-7b` is the largest NPU model with tool calling" | It has no NPU variant on 0.10.3. The largest is now `qwen2.5-0.5b` at 442 MB |
+| "`qwen2.5-7b` is the largest NPU model with tool calling" | True of 2026-09, false of the catalogue for a time afterwards (no NPU variant, largest `qwen2.5-0.5b` at 442 MB), and true again by 2026-10-15 on the same CLI: `qwen2.5-7b` (6.8 GB) is listed for the NPU, and `qwen2.5-coder-7b` (7.1 GB) is the largest. Only the coder model has been run |
 | "The AI Hub CLI will not install on ARM64" | Only half true. `qai-hub-models-cli` installs and runs natively; only the PyTorch-dependent export path is constrained |
 | "`ATLAS_DATA_DIR` / `ATLAS_MODEL_DIR` / `ATLAS_RUN_DIR` are the cache convention" | A proposal only. Nothing reads them. `GENIEX_DATADIR` and `HF_HOME` are the variables that work |
 | "Two model ids were fabricated" | They were not. Both came from Qualcomm's own documentation |
