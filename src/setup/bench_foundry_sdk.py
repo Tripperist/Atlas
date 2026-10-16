@@ -39,8 +39,18 @@ def main() -> int:
         "--prompt",
         default="Plan a detailed day in Lisbon, with specific neighbourhoods, food and timings.",
     )
+    parser.add_argument(
+        "--prompt-file",
+        help="Read the prompt from a UTF-8 file instead. Needed for long prompts, which "
+        "do not fit on a Windows command line. With a long prompt the first-token time "
+        "is mostly prefill. SDK 2.1.0 does not report prompt_tokens, so no prefill rate "
+        "is printed; the HTTP endpoint does report it.",
+    )
     parser.add_argument("--no-record", action="store_true")
     args = parser.parse_args()
+    if args.prompt_file:
+        args.prompt = Path(args.prompt_file).read_text(encoding="utf-8")
+        print(f"prompt   : {len(args.prompt):,} chars from {args.prompt_file}")
 
     try:
         import foundry_local_sdk as fl
@@ -80,14 +90,17 @@ def main() -> int:
     load_s = time.perf_counter() - load_start
     print(f"load     : {load_s:.1f}s")
 
-    session = ChatSession(model)
-    session.set_streaming(True)
+    session = None
 
     rates: list[float] = []
     first_tokens: list[float] = []
     counts: list[int] = []
 
     for run in range(1, args.repeat + 1):
+        # A fresh session per run. One session carries the conversation forward,
+        # so every later run prefills the earlier prompts and replies as well.
+        session = ChatSession(model)
+        session.set_streaming(True)
         request = Request()
         request.add_item(MessageItem.user(args.prompt))
 
