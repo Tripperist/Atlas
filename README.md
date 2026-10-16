@@ -1455,6 +1455,11 @@ The 4B rows are interleaved. The 1.7B rows were run in blocks, so their CPU and
 GPU figures may be overstated; the NPU row is the one to trust. The CPU and GPU
 rows vary 18–31 % between rounds, so read the ordering rather than the digits.
 
+A 16 GiB mixture-of-experts model also runs. `Qwen3-Coder-30B-A3B` decodes at
+about 30 tok/s on the NPU and the GPU, the same as dense Qwen3-4B, and prefills
+a 512-token prompt at about 455 tok/s on the NPU against 299 on the GPU; see
+[BENCHMARKS](docs/BENCHMARKS.md#a-30b-mixture-of-experts-model).
+
 Run them yourself:
 
 ```powershell
@@ -1551,6 +1556,9 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | --- | --- |
 | **Tool calling leaves the accelerated path** | NPU utilization falls to 24.4 % during forced tool calls against 56.7 % for a length-matched control, with throughput dropping from 116 requests to 18. Consistent with constrained decoding running off the NPU, but peak sampling over ~1 s requests is coarse and the tools schema lengthens the prompt. **Next step:** a longer-running tool-call workload, or ORT profiling of the session |
 | **The NPU loses at small model sizes** | On Foundry's `qwen2.5-0.5b`, WebGPU gives 42.7 tok/s and CPU 40.5 against the NPU's 27.6. Expected for a decode-dominated run, but only measured at 0.5B. **Next step:** the same three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
+| **NPU cold start on large models** | The 30B took 13.9 s to first token and 41.7 s to start on the NPU, against 0.3 s and 12.4 s on the GPU. Consistent with a one-time per-process cost that grows with model size, but a long-lived `geniex serve` was not measured. **Next step:** time the first and second request against a running server |
+| **NPU decode after a long prompt** | `geniex-bench` gives 17.5–23.8 tok/s on the 30B's NPU against 30.0 from `geniex infer`; dense Qwen3-4B shows the same split (18.2 against 30.4). The GPU agrees between harnesses. Cause unknown |
+| **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 
 ### Untested paths
@@ -1566,8 +1574,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured |
-| **Large NPU models** | The largest NPU model Foundry publishes is 2.0 GB, so whether a ~7 GB NPU model holds context without paging cannot be tested through it. GenieX can load larger GGUFs, which is the route to try |
+| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured. That includes `Qwen3-Coder-30B-A3B`, measured only with a 512-token prompt, where the 10 000-token prompts a coding agent sends are untested |
 | Battery operation | Everything was measured on AC in `burst` power mode. Deployment behaviour on battery is unknown |
 | Speculative decoding | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
 

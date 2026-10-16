@@ -28,6 +28,7 @@ Recorded as stack `44a1e6e37bc4` in the benchmark history.
 - [How these are measured](#how-these-are-measured)
 - [Decode throughput by compute unit](#decode-throughput-by-compute-unit)
 - [Prefill vs decode](#prefill-vs-decode)
+- [A 30B mixture-of-experts model](#a-30b-mixture-of-experts-model)
 - [Foundry Local](#foundry-local)
 - [What the numbers mean](#what-the-numbers-mean)
 - [Qualcomm's published figures](#qualcomms-published-figures)
@@ -285,6 +286,67 @@ A second turn costs both of them, as context grows: GenieX 31.7 to 29.4
 > That is `geniex serve` loading the model on first use, not prefill — the next
 > turn was 0.11 s. A server pays it once; a one-shot CLI invocation pays it
 > every time.
+
+---
+
+## A 30B mixture-of-experts model
+
+`Qwen3-Coder-30B-A3B-Instruct`, Q4_0 GGUF from unsloth: architecture
+`qwen3moe`, 30.5 B parameters (per `llama-bench`; published as about 3.3 B
+active per token), 16.2 GiB on disk. Through GenieX v0.8.0 on the llama.cpp
+engine, 2026-10-15, stack `44a1e6e37bc4`. It was chosen to find out whether a
+model far larger than the ~3.5 GB per-session figure in llama.cpp's Hexagon
+documentation runs on the NPU at all, and as a candidate for a local coding
+agent.
+
+**Prefill and decode** — `geniex-bench`, 512-token prompt, 128 generated, three
+interleaved rounds (order npu > gpu > cpu, then reversed, then as the first),
+every round shown:
+
+| Compute | Prefill tok/s | First token (s) | Decode tok/s |
+| --- | --- | --- | --- |
+| `npu` | **451.1, 458.9, 456.1** | 1.14, 1.12, 1.13 | 18.2, 23.8, 17.5 |
+| `gpu` | 302.9, 296.2, 299.3 | 1.69, 1.73, 1.71 | **28.8, 27.5, 26.8** |
+| `cpu` | 40.0, 110, 61.2 | 12.8, 4.66, 8.37 | 12.2, 27.4, 24.4 |
+
+**Decode and utilization** — `geniex infer`, short prompt, 256 tokens, two
+interleaved rounds:
+
+| Compute | Tok/s | First token (s) | Startup (s) | CPU % | NPU peak | GPU peak |
+| --- | --- | --- | --- | --- | --- | --- |
+| `npu` | **30.0** | 13.9 | 41.7 | 16.8 | 100 | 4.9 |
+| `gpu` | 29.4 | **0.3** | 12.4 | 18.4 | 0 | 91.7 |
+| `cpu` | 24.0 | 1.1 | 10.2 | 59.8 | 0 | 3.7 |
+
+What the two tables show:
+
+- **It runs with the NPU engaged.** Under `--compute npu` the NPU counters
+  peaked at 100 % with the CPU at 17 %; under `--compute gpu` the NPU read 0 and
+  the GPU 92 %. A peak of 100 % does not say what fraction of the work is on the
+  NPU, and nothing here explains how a 16 GiB model fits a session limit
+  documented as ~3.5 GB. GenieX evidently handles it; how was not investigated.
+- **Decode matches a dense 4B model.** About 30 tok/s on the NPU and GPU, the
+  same as dense Qwen3-4B (30.4) at 7.6 times the parameter count.
+- **The NPU leads on prefill.** About 455 tok/s against 299 on the GPU, 1.5
+  times faster, and both were stable to about 2 % across rounds. The 30B's GPU
+  prefill is within 9 % of dense Qwen3-4B's (327.6, above).
+- **CPU prefill is not reliable here.** Three rounds gave 40, 110 and 61 tok/s.
+  The CPU figures above should not be quoted as a number.
+- **The two harnesses disagree on NPU decode**, 17.5–23.8 against 30.0, while
+  they agree on the GPU. Dense Qwen3-4B shows the same split (18.2 in the
+  prefill table above, 30.4 from `geniex infer`), so this is not specific to the
+  30B. For long-context use the post-prefill figure is probably the relevant
+  one; that is an inference, not something tested here.
+- **The NPU has a heavy cold start.** The first token took 13.9 s and startup
+  41.7 s, against 0.3 s and 12.4 s on the GPU. That is far larger than the
+  4B's 1.43 s first token, and consistent with the one-time per-process
+  initialisation described in the [archive](ARCHIVE.md#geniex-v080-first-token-penalty),
+  apparently growing with model size. Whether a long-lived `geniex serve` pays it
+  once was not measured.
+
+Limits: three rounds for the prefill table and two for the decode table, one
+512-token prompt, `burst` mode on AC. Prefill slows as context grows, so none of
+this extends to the 10 000-token prompts an agent sends.
 
 ---
 
