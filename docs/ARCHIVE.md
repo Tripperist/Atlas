@@ -400,6 +400,11 @@ GenieX major version and two driver updates.
 | ORT GenAI Phi-4: 17.1 tok/s on 0.15.2 | Not directly comparable; measured on a different version and token budget |
 | Foundry Local phi-3.5-mini: 26.5 tok/s, CPU 53.6 % | 27.7 tok/s; the CPU figure is not like-for-like, see BENCHMARKS |
 | Phi-4 GGUF via GenieX: 24.1 tok/s | Superseded by the prefill/decode matrix |
+| Foundry `qwen2.5-0.5b` by variant over HTTP, sampler running: GPU 42.7, CPU 40.5, NPU 27.6 | Unsampled, temperature 0, order rotated, 2026-10-16: CPU 85.9, NPU 53.3, GPU 42.2. The GPU figure reproduced; the others roughly doubled |
+| Foundry in-process 109.3 against HTTP 27.6, "about 4x" | Withdrawn. 2026-10-16: in-process 30–97 across three runs, HTTP unsampled 47–57; at 7B 16.0 against 15.5 |
+| Foundry `qwen2.5-coder-7b` over HTTP: 7.1 tok/s, "2.3x" slower than in-process | An intermittent half-speed state on a daemon later replaced. 14.1 sampled and 15.5 unsampled afterwards |
+| Foundry `phi-3.5-mini` over HTTP: 27.7 tok/s | 19.7 on 2026-10-16 with the same sampled harness; moved the opposite way to the others and is unexplained |
+| Qwen3-4B CPU 24.6 and GPU 21.9, interleaved with the sampler on, "consistent with order bias" | Unsampled, 28.3 and 27.6. Order bias as the cause is not supported |
 | Qwen3-4B decode on v0.8.0, 2026-10-05, units run in blocks: `npu` 30.5, `cpu` 28.7, `gpu` 24.0 | Interleaved re-measurement, 2026-10-09: 30.4 / 24.6 / 21.9. The NPU figure held; the CPU and GPU figures sat at or above the top of the interleaved range. See BENCHMARKS, *Run order* |
 | Adapter LUIDs `0x00013d0d`, `0x000152a6`, `0x0001501b`, `0x000151f3`, `0x133c8`, `0x000148c0` | **All stale by design.** LUIDs are assigned per boot; re-derive them, never cite them |
 
@@ -423,6 +428,8 @@ Every claim an earlier revision of the README stated and later had to withdraw.
 | "The AI Hub CLI will not install on ARM64" | Only half true. `qai-hub-models-cli` installs and runs natively; only the PyTorch-dependent export path is constrained |
 | "`ATLAS_DATA_DIR` / `ATLAS_MODEL_DIR` / `ATLAS_RUN_DIR` are the cache convention" | A proposal only. Nothing reads them. `GENIEX_DATADIR` and `HF_HOME` are the variables that work |
 | "Two model ids were fabricated" | They were not. Both came from Qualcomm's own documentation |
+| "The Foundry in-process SDK is about 4x faster than its HTTP endpoint" | Not reproduced. The HTTP runs had a utilization sampler competing for the CPU, and some sat in a half-speed state. Within about 2x at 0.5B and within 3 % at 7B |
+| "At 0.5B the NPU variant is the slowest and the GPU the fastest" | Reversed when measured without the sampler: CPU, then NPU, then GPU |
 
 ---
 

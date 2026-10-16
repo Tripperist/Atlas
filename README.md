@@ -308,7 +308,7 @@ its models target the NPU.
 | Token-level control | No | **Yes** | No — chat API only |
 | Tool calling | Model-dependent | Model-dependent | Catalogue flag; **1 NPU model** |
 | Prefill speed (Qwen3-4B) | **2072 tok/s** (QAIRT) · 1380 (llama.cpp) | 437 tok/s | not measured on this axis |
-| In-process decode (qwen2.5-0.5b) | — | — | **109 tok/s** via SDK, 28 over HTTP |
+| In-process decode (qwen2.5-0.5b) | — | — | 30–109 tok/s via SDK (varies by run), about 53 over HTTP |
 | Licence | Proprietary | MIT | Proprietary |
 
 ### 3.4 What each requires installed
@@ -1196,7 +1196,7 @@ await foreach (var item in session.ProcessStreamingRequestAsync(request, default
 The C# project needs `<RuntimeIdentifier>win-arm64</RuntimeIdentifier>`; the
 package is RID-specific and the build fails without it.
 
-**Measured** on `qwen2.5-0.5b` (NPU variant), 400 tokens, with
+**Measured** on `qwen2.5-0.5b` (NPU variant), 400 tokens, on 2026-10-05, with
 [`bench_foundry_sdk.py`](src/setup/bench_foundry_sdk.py) and
 [`src/csharp/FoundryProbe`](src/csharp/FoundryProbe):
 
@@ -1209,15 +1209,15 @@ package is RID-specific and the build fails without it.
 The two SDKs agree to within 2 %, which is what you would hope for from one
 native core behind two bindings.
 
-> **The ~4× gap is not purely the HTTP hop.** The CLI that serves the endpoint
-> is versioned separately and is older — CLI 0.10.3, reporting Foundry Local
-> Core 1.0.0 and ORT 1.26.0 — while the SDK measured here is 2.1.0 carrying ORT
-> GenAI 0.17.1. So the comparison mixes transport with runtime vintage. The
-> direction is not in doubt; the exact split is unattributed.
+> **The ~4× gap was not reproduced.** Re-measured on 2026-10-16, the in-process
+> SDK gave 30–97 tok/s across three runs (it rose each run) and the HTTP endpoint,
+> unsampled, 47–57, so the two are within about 2×; for the 7B the routes agree to
+> within 3 % (16.0 and 15.5). The 2026-10-05 HTTP figure was taken with a
+> utilization sampler competing for the CPU, which the harness no longer does. See
+> [BENCHMARKS](docs/BENCHMARKS.md#re-measured-2026-10-16).
 
-**This supersedes the earlier HTTP-only figures.** Anything in this repository
-measured through `Invoke-FoundryBench.ps1` describes the endpoint, not Foundry
-Local's ceiling.
+Anything measured through `Invoke-FoundryBench.ps1` before 2026-10-16 had that
+sampler running and may be 10–40 % low.
 
 > **`phi-3.5-mini` does not work through the SDK**, though it works fine over
 > HTTP. Loading succeeds, then generation fails at generator creation with
@@ -1240,20 +1240,24 @@ column showing what this machine will actually use, and
 ```
 
 **All three compute units are reachable**, one model variant each. Measured on
-`qwen2.5-0.5b`, 400 tokens, 3 runs, over the HTTP endpoint:
+`qwen2.5-0.5b`, 400 tokens, over the HTTP endpoint, throughput unsampled with
+temperature 0 and the order rotated across three rounds (2026-10-16); placement
+from separate sampled runs:
 
 | Variant | Execution provider | Size | tok/s | NPU peak | CPU mean |
 | --- | --- | --- | --- | --- | --- |
-| `-generic-gpu` | WebGPU | 700 MB | **42.7** | 0 % | 14.5 % |
-| `-generic-cpu` | CPU | 822 MB | 40.5 | 0 % | 43.9 % |
-| `-qnn-npu` | QNN (HTP) | 442 MB | 27.6 | 63.6 % | 61.0 % |
+| `-generic-cpu` | CPU | 822 MB | **85.9** | 0 % | 37–43 % |
+| `-qnn-npu` | QNN (HTP) | 442 MB | 53.3 | 62–64 % | 56–74 % |
+| `-generic-gpu` | WebGPU | 700 MB | 42.2 | 0 % | 10–11 % |
 
-> **The NPU is the slowest of the three here, and that is expected.** This is a
-> 0.5B model answering a short prompt, so the run is almost entirely decode —
-> the phase where the NPU has no advantage (see [Key concepts](#1-key-concepts)).
-> The NPU variant was also the least consistent, at 17.4 / 18.5 / 46.8 tok/s
-> across its three runs. Do not read this as "the NPU is slow"; read it as
-> "a tiny model with a short prompt is the wrong workload for it".
+> **The ordering reversed on re-measurement.** The first measurement
+> (2026-10-05, with a utilization sampler competing for the CPU) had the GPU
+> fastest at 42.7, the CPU at 40.5 and the NPU slowest at 27.6. Unsampled, the
+> CPU is fastest and the GPU last; only the GPU figure reproduced. What survives
+> is that a 0.5B model answering a short prompt is not where the NPU shows an
+> advantage (see [Key concepts](#1-key-concepts)), and that the GPU variant costs
+> the least CPU. The CPU variant itself ranged 70–100 tok/s between rounds.
+> Detail in [BENCHMARKS](docs/BENCHMARKS.md#re-measured-2026-10-16).
 
 **On this machine, 11 catalogue models target the NPU** (`foundry model list`,
 checked 2026-10-15 on CLI 0.10.3; `--variants` shows each as a `-qnn-npu`
@@ -1475,6 +1479,8 @@ llama.cpp, 400 tokens, warm machine, compute units interleaved:
 The 4B rows are interleaved. The 1.7B rows were run in blocks, so their CPU and
 GPU figures may be overstated; the NPU row is the one to trust. The CPU and GPU
 rows vary 18–31 % between rounds, so read the ordering rather than the digits.
+Unsampled on 2026-10-16 the 4B gave 31.3 (NPU), 28.3 (CPU) and 27.6 (GPU): the NPU
+is the stable figure, and the CPU and GPU moved 15–30 % between sessions.
 
 A 16 GiB mixture-of-experts model also runs. `Qwen3-Coder-30B-A3B` decodes at
 about 30 tok/s on the NPU and the GPU, the same as dense Qwen3-4B, and prefills
@@ -1486,9 +1492,10 @@ On long prompts the 30B's NPU prefill holds up better than the GPU's (337 agains
 falls to 9 tok/s, below the GPU's 15; see
 [BENCHMARKS](docs/BENCHMARKS.md#long-prompts).
 
-Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: 16 tok/s in-process
-and 7 over HTTP, with prefill falling from about 520 to about 216 tok/s as the
-prompt grows from 0.9k to 6.8k tokens; see
+Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: about 16 tok/s on
+either route at a short prompt, with prefill falling from about 520 to about
+216 tok/s, and decode from 16 to 4–7 tok/s, as the prompt grows from 0.9k to 6.8k
+tokens; see
 [BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b).
 
 Run them yourself:
@@ -1578,7 +1585,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
 | **The GenieX OpenAI endpoint reports no metrics** | `usage` comes back with every field zero, and the llama.cpp-style `timings` block is zeroed too. A client has to time the stream and count SSE chunks itself. Harmless once known, but it silently yields zeros if trusted |
 | **Foundry `SearchOptions` penalties are inert** | `FrequencyPenalty` and `PresencePenalty` are exposed on the type, but any non-zero value fails the request with *"Error executing streaming request."* `Temperature`, `TopP`, `TopK` and `MaxOutputTokens` all work. They are the natural lever against repetition on small models, so their absence matters |
-| **`phi-3.5-mini` fails through the Foundry SDK** | Works over the HTTP endpoint at 27.7 tok/s, but through the 2.1.0 Session API it fails at generator creation: *`cos_cache` dimension 0 shall not be less than total_sequence_length*, in `GroupQueryAttention`, independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Same node as the `max_tokens` bug above, so possibly one underlying defect |
+| **`phi-3.5-mini` fails through the Foundry SDK** | Works over the HTTP endpoint (27.7 tok/s on 2026-10-05, 19.7 on 2026-10-16), but through the 2.1.0 Session API it fails at generator creation: *`cos_cache` dimension 0 shall not be less than total_sequence_length*, in `GroupQueryAttention`, independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Same node as the `max_tokens` bug above, so possibly one underlying defect |
 | **`GetAvailableProviders()` omits QNN in C#** | It never lists QNN, before or after registration, even while the graph demonstrably runs on the NPU at 98.9 %. Python does list it. Ruled out first-call caching. Unclear whether this is intended for plugin EPs or a gap in the C# binding — worth asking upstream |
 
 ### Measured, but not settled
@@ -1588,10 +1595,12 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | **Tool calling leaves the accelerated path** | Held for `qwen2.5-0.5b`: NPU utilization fell to 24.4 % during forced tool calls against 56.7 % for a length-matched control. **Did not hold for `qwen2.5-coder-7b`**: 77.2 % against 74.1 %. Peak sampling over ~1 s requests is coarse, so neither is proof. Whether it depends on model size or variant is unknown. **Next step:** a longer-running tool-call workload, or ORT profiling of the session |
 | **`qwen2.5-coder-7b` never calls a tool under `tool_choice=auto`** | 0 of 14 requests, against 9 of 35 for the 0.5B model, while forced calls worked 9 of 9. Could be the model, the chat template Foundry applies for tools, or the prompt; not investigated |
 | **The Foundry daemon died once during `model.load`** | "Daemon closed the connection while awaiting response to op 'model.load'", on `qwen2.5-coder-7b`. It came back on the next `foundry server start`. Not reproduced |
-| **The NPU loses at small model sizes** | On Foundry's `qwen2.5-0.5b`, WebGPU gives 42.7 tok/s and CPU 40.5 against the NPU's 27.6. Expected for a decode-dominated run, but only measured at 0.5B. **Next step:** the same three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
+| **The NPU loses at small model sizes** | Not established. On Foundry's `qwen2.5-0.5b` the first measurement had WebGPU at 42.7 tok/s and CPU at 40.5 ahead of the NPU's 27.6, but unsampled the order is CPU 85.9, NPU 53.3, GPU 42.2 (see [BENCHMARKS](docs/BENCHMARKS.md#re-measured-2026-10-16)). **Next step:** the same unsampled three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
 | **NPU cold start on large models** | The 30B took 13.9 s to first token and 41.7 s to start on the NPU, against 0.3 s and 12.4 s on the GPU. Consistent with a one-time per-process cost that grows with model size, but a long-lived `geniex serve` was not measured. **Next step:** time the first and second request against a running server |
 | **NPU decode after a prompt is slower than the GPU's** | After a prompt the 30B's NPU decodes at 16.7 tok/s at 512 tokens, falling to 9.1 at 6,784; the GPU goes from 28.9 to 14.9. So the GPU decodes 1.5 to 1.7 times faster at every length measured, where `geniex infer` on a short prompt shows them tied (30.0 and 29.4). Dense Qwen3-4B shows the same split (18.2 against 30.4). Cause unknown ([BENCHMARKS](docs/BENCHMARKS.md#long-prompts)) |
 | **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
+| **Foundry throughput is not stable between sessions** | Figures from before 2026-10-16 came from a harness whose own sampler lowered them by about 9 % at 7B and about 40 % at 0.5B, and some runs sat in an unexplained half-speed state (the 7B at 7.1 tok/s where it later gave 14.1). `phi-3.5-mini` moved the other way, 27.7 to 19.7. The harness is fixed; the half-speed state and the `phi-3.5-mini` drop are not explained. **Next step:** repeat a fixed Foundry workload across several sessions to see how often the state appears |
+| **`Invoke-Benchmark.ps1` samples counters while timing** | The same flaw as the Foundry harness. Unsampled, Qwen3-4B gave 31.3 / 28.3 / 27.6 against 30.4 / 24.6 / 21.9 sampled, and the unsampled CPU varied 33 % in one run. Records now carry `sampled`; older ones should be assumed sampled. **Next step:** repeat unsampled before quoting any CPU or GPU figure from `geniex infer` |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 
 ### Untested paths

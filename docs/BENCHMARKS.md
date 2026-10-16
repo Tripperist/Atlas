@@ -121,6 +121,16 @@ interleaved range, which is consistent with order bias — but with a 31 % CPU
 spread across only three rounds, the data cannot establish order as the cause.
 Read the CPU and GPU rows as approximate and the ordering as the finding.
 
+**A later measurement does not support order bias as the cause.** On 2026-10-16
+the same model, interleaved but with the utilization sampler switched off
+(`-NoUtilization`), gave NPU 31.3, CPU 28.3 and GPU 27.6 tok/s: the CPU back at
+its blocked-order figure. The CPU varied by 33 % inside that single run (24.7 to
+32.8). So the CPU and GPU figures move 15–30 % between sessions for reasons that
+were not isolated, while the NPU stays within about 3 %. What the data does
+support is that the NPU leads, by roughly 11–24 % depending on the session, and
+that its figure is the only stable one. Do not read a CPU or GPU digit as
+precise.
+
 Results taken before this change, on the 1.7B and 0.6B models, were run in
 blocks and are marked as such.
 
@@ -150,6 +160,20 @@ and the GPU at 45.4 %, with the CPU no busier than in the `npu` run (16.3 %
 against 18.8 %). Something was using the Adreno. Per-round spread was 2 %
 (23.2, 23.5, 23.0), so the figure is stable even though the explanation is
 not known. One model, one size: this says nothing about larger ones.
+
+**Qwen3-4B — 2026-10-16, units interleaved, utilization sampler off**
+(`Invoke-Benchmark.ps1 -NoUtilization`, three rounds, order cpu > gpu > npu,
+then reversed, then as the first):
+
+| Model | Compute | Tok/s (rounds) | First token (s) | Startup (s) |
+| --- | --- | --- | --- | --- |
+| Qwen3-4B | `npu` | **31.3** (31.1 / 31.2 / 31.5) | 9.3 | 25.2 |
+| Qwen3-4B | `cpu` | 28.3 (32.8 / 24.7 / 27.5) | 0.83 | 4.4 |
+| Qwen3-4B | `gpu` | 27.6 (26.8 / 28.0 / 28.0) | **0.20** | 5.7 |
+
+The NPU's first token and startup are far above the 1.43 s and 8.5 s of the
+2026-10-09 run, on the same stack. That was not explained, and it means NPU
+first-token and startup figures do not carry between sessions.
 
 **Qwen3-1.7B — 2026-10-05, units run in blocks.** These predate interleaving,
 so the CPU and GPU rows may be overstated; the NPU row is the one to trust.
@@ -463,6 +487,15 @@ turn with that prompt and 500 generated tokens takes about 75 s on the NPU and
 
 ## Foundry Local
 
+> **Several Foundry throughput figures below did not reproduce on 2026-10-16.**
+> The harness's own utilization sampler lowered the rates it reported; the
+> 0.5B variant ordering reversed; the "4x" and "2.3x" in-process-versus-HTTP gaps
+> shrank to roughly nothing at 7B; and some runs sat in an unexplained
+> half-speed state. Details and replacements are in
+> [Re-measured 2026-10-16](#re-measured-2026-10-16). Absolute Foundry tok/s
+> figures from before that date are single-session snapshots and can be 10–40 %
+> low.
+
 **Measured here** with [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
 `phi-3.5-mini` (variant `phi-3.5-mini-instruct-qnn-npu`) over the OpenAI endpoint, 357 tokens, 3 runs:
 
@@ -479,14 +512,82 @@ harness samples `\Processor Information(_Total)\% Processor Time`, while the
 method behind the earlier 53.6 % was never recorded. Read it as "Foundry's CPU
 cost is substantial", which both numbers support, rather than as a regression.
 
+Re-measured on 2026-10-16 with the same sampled harness: **19.7 tok/s**
+(18.5 / 21.5 / 19.1), NPU peak 84 %, CPU mean 68 %. That is 29 % below the figure
+above, in the opposite direction to the 0.5B and 7B models, which both measured
+higher than before. Not explained.
+
 > Throughput here is wall time around the HTTP request divided by the server's
 > reported `completion_tokens`, so it includes request overhead. That is what a
 > real client would actually see, but it is **not** comparable to
 > `geniex-bench`'s isolated decode rate in [prefill vs decode](#prefill-vs-decode).
 
+### Re-measured 2026-10-16
+
+A `qwen2.5-coder-7b` result that came out at half the speed it should have
+prompted a re-test of four things that looked settled. Foundry daemon running
+since the restart, stack `44a1e6e37bc4`.
+
+**1. The harness's sampler lowered the numbers it reported.**
+`Invoke-FoundryBench.ps1` timed each request while a performance-counter loop
+ran alongside it, competing for the CPU the model's graph uses. The same request
+with and without the loop, NPU variants:
+
+| Model | Unsampled | Sampled | Cost |
+| --- | --- | --- | --- |
+| `qwen2.5-coder-7b` | 15.5 tok/s | 14.1 | about 9 % |
+| `qwen2.5-0.5b` | 52–58 | 30–44 | about 40 % |
+
+Fixed in the harness: throughput is timed on a request with nothing else
+running, and a second, sampled request supplies placement only.
+
+**2. The 0.5B variant ordering reversed.** Unsampled, temperature 0, order
+rotated across three rounds, over HTTP:
+
+| Variant | tok/s by round | Mean | Published 2026-10-05 |
+| --- | --- | --- | --- |
+| `-generic-cpu` | 70.0, 100.1, 87.6 | **85.9** | 40.5 |
+| `-qnn-npu` | 56.6, 47.0, 56.2 | 53.3 | 27.6 |
+| `-generic-gpu` | 40.2, 44.5, 42.0 | 42.2 | 42.7 |
+
+Only the GPU variant, which barely touches the CPU, matched its published
+figure. The other two roughly doubled, which is what a sampler competing for CPU
+would do. The earlier conclusion that the GPU is fastest and the NPU slowest at
+this size is **withdrawn**: unsampled, the CPU variant is fastest, the NPU second
+and the GPU last. The CPU variant itself ranged from 70 to 100 between rounds.
+
+**3. The in-process-versus-HTTP gap shrank.**
+
+| Model | Python in-process SDK | HTTP, unsampled |
+| --- | --- | --- |
+| `qwen2.5-0.5b` | 30.4 (a 139-token reply), 53.9, 97.0 | 53.3 |
+| `qwen2.5-coder-7b` | 16.0 | 15.5 |
+
+At 7B the two routes agree to within 3 %. At 0.5B the in-process rate itself
+rose threefold across three consecutive runs, so a single run is not a figure.
+The 4x published for 0.5B and the 2.3x for 7B are **withdrawn**; at 0.5B the
+routes are within about 2x with a wide spread.
+
+**4. An intermittent half-speed state.** Some earlier figures are about half of
+what the same model gave later: `qwen2.5-coder-7b` over HTTP gave three runs of
+381 tokens in 53.5–53.7 s (7.1 tok/s, NPU peak 35–39 %), where the same harness
+later gave 14.1 with the NPU at 75 %; and the 0.5B NPU variant's 17.4 and 18.5
+sit inside its published 27.6 mean. The daemon that produced the 7B figure later
+closed the connection during `model.load` and was replaced, and the state has not
+been seen over HTTP since. The cause is unknown. The low NPU peak during it
+suggests the NPU was waiting rather than working.
+
+**What still holds:** NPU placement of the NPU variants (peaks of 62–84 %, and 0 %
+for the GPU and CPU variants); the prefill-by-length curves, which are over a
+stateless HTTP request; and the 2026-10-15 tool-calling results, which were taken
+after the restart. **What does not:** any Foundry tok/s from before this date
+unless restated here.
+
 ### In-process SDK vs the HTTP endpoint
 
-`qwen2.5-0.5b` (NPU variant), 400 tokens, SDK 2.1.0:
+`qwen2.5-0.5b` (NPU variant), 400 tokens, SDK 2.1.0, as measured on
+2026-10-05 — **the gap did not reproduce**, see
+[re-measured](#re-measured-2026-10-16):
 
 | Route | tok/s | First token | Model load |
 | --- | --- | --- | --- |
@@ -495,18 +596,23 @@ cost is substantial", which both numbers support, rather than as a regression.
 | CLI + HTTP endpoint | 27.6 | — | server start |
 
 The two SDK bindings agree to within 2 %, as they should — one native core
-behind two wrappers. Against the HTTP endpoint the gap is about **4x**.
+behind two wrappers. Against the HTTP endpoint the gap was about 4x on that
+day, and a sampler running during the HTTP runs accounts for a large part of it.
 
-**The gap is not purely transport.** The CLI serving the endpoint is versioned
+**Treat the 4x as withdrawn.** The CLI serving the endpoint is also versioned
 separately and is older (CLI 0.10.3, Foundry Local Core 1.0.0, ORT 1.26.0) than
-the SDK measured here (2.1.0, ORT GenAI 0.17.1), so runtime vintage is mixed in
-with the HTTP hop. The direction is not in doubt; the split is unattributed.
+the SDK measured here (2.1.0, ORT GenAI 0.17.1), so runtime vintage was mixed in
+as well. Re-measured, the two routes are within about 2x at 0.5B and within 3 %
+at 7B, so there is no established transport penalty to attribute.
 
-At 7B the gap is smaller, 2.3 times; see
+At 7B, re-measured, the two routes agree to within about 3 % (16.0 in-process,
+15.5 over HTTP unsampled); see
 [the `qwen2.5-coder-7b` measurements](#a-7-gb-model-on-the-npu-qwen25-coder-7b).
 
-**Every other Foundry figure in this file was taken over HTTP** and therefore
-describes the endpoint rather than Foundry Local's ceiling. Read them that way.
+**Every other Foundry figure in this file was taken over HTTP** with the
+utilization sampler running (until 2026-10-16), so it describes the endpoint
+under load rather than Foundry Local's ceiling, and may be 10–40 % low. Read
+them that way.
 
 > Measured with [`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
 > [`src/csharp/FoundryProbe`](../src/csharp/FoundryProbe). The retired
@@ -517,7 +623,9 @@ describes the endpoint rather than Foundry Local's ceiling. Read them that way.
 ### All three compute units, same model
 
 Foundry Local publishes one variant per compute unit. `qwen2.5-0.5b`, 400
-tokens, 3 runs, over the HTTP endpoint:
+tokens, 3 runs, over the HTTP endpoint, **as measured on 2026-10-05 with the
+sampler running. The ordering below was reversed on re-measurement**; see
+[re-measured](#re-measured-2026-10-16) for the unsampled figures:
 
 | Variant | Execution provider | Size | tok/s | NPU peak | CPU mean |
 | --- | --- | --- | --- | --- | --- |
@@ -525,18 +633,17 @@ tokens, 3 runs, over the HTTP endpoint:
 | `-generic-cpu` | CPU | 822 MB | 40.5 | 0 % | 43.9 % |
 | `-qnn-npu` | QNN (HTP) | 442 MB | 27.6 | 63.6 % | 61.0 % |
 
-The NPU variant is the slowest, and the counters confirm each variant used the
-unit its name claims — NPU peak is 0 % for both the GPU and CPU variants.
+The counters confirmed each variant used the unit its name claims — NPU peak is
+0 % for both the GPU and CPU variants — and that still holds.
 
-**This is the expected result for this workload, not a contradiction of the
-GenieX numbers above.** A 0.5B model answering a short prompt is almost
-entirely decode, the phase where the NPU has no advantage. The NPU variant was
-also by far the least consistent, at 17.4 / 18.5 / 46.8 tok/s across its three
-runs, against 39.0–43.3 for CPU.
-
-It is a useful counterexample to "put it on the NPU": at this model size and
-prompt length, the Adreno GPU is both the fastest option and the cheapest in
-CPU time.
+**The ordering did not.** That run had the GPU fastest and the NPU slowest.
+Re-measured without the sampler, the CPU variant is fastest (85.9), the NPU
+second (53.3) and the GPU last (42.2). The GPU figure reproduced; the other two
+roughly doubled. What survives is narrower: a 0.5B model answering a short prompt
+is not where the NPU shows an advantage, and the GPU variant costs the least CPU
+(about 10 % in the sampled placement runs, against 37–43 % for the CPU variant
+and 56–74 % for the NPU one). The NPU variant's 17.4 / 18.5 / 46.8 were mostly the
+half-speed state described under re-measured.
 
 ### A 7 GB model on the NPU: `qwen2.5-coder-7b`
 
@@ -548,12 +655,15 @@ the other Foundry rows, 400 tokens, three runs:
 | Route | tok/s | First token | Model load |
 | --- | --- | --- | --- |
 | Python in-process SDK | **16.0** (15.8 / 16.0 / 16.2) | 0.38 s | 15.6 s |
-| CLI + HTTP endpoint | 7.1 (7.1 / 7.1 / 7.1) | — | 38.7 s |
+| HTTP, streamed, 320-token prompt | 16.0 (16.1 / 15.8) | 0.54 s | 38.7 s |
+| HTTP, non-streamed, unsampled | 15.5 (15.6 / 15.5 / 15.4) | — | — |
+| HTTP, harness with its sampler | 14.1 (13.9 / 14.2 / 14.2) | — | — |
+| HTTP on 2026-10-15, **half-speed state** | 7.1 (7.1 / 7.1 / 7.1) | — | — |
 
-In-process is **2.3 times** faster; at `qwen2.5-0.5b` the gap was 4 times. The
-per-token cost of the HTTP route is about 27 ms at 0.5B (9.2 ms in-process,
-36.2 ms over HTTP) and about 78 ms at 7B (62.5 against 140.8), so it is not a
-fixed transport overhead. What it is was not isolated.
+The routes agree. The 7.1 tok/s first measured over HTTP, and the "2.3 times
+faster in-process" and per-token-overhead figures built on it, are **withdrawn**:
+the same harness gave 14.1 once the daemon had been replaced. See
+[re-measured](#re-measured-2026-10-16).
 
 **Placement, in-process**, sampled per adapter LUID once the model had loaded:
 
@@ -564,9 +674,9 @@ fixed transport overhead. What it is was not isolated.
 | CPU (total) | — | 49.6 % |
 
 The NPU is genuinely engaged, and the CPU is half busy at the same time, so this
-is a mixed NPU-and-CPU graph and not a pure NPU one. Over HTTP the NPU peaked at
-only 35–39 % with the CPU at 48.8 % — consistent with the NPU waiting on the
-slower route, though the two samplers differ.
+is a mixed NPU-and-CPU graph and not a pure NPU one. Over HTTP in the half-speed
+state the NPU peaked at only 35–39 % with the CPU at 48.8 %; re-run, it peaked at
+75 % with the CPU at 67 %, which includes the sampler's own CPU use.
 
 **Prefill against prompt length** — over HTTP, which is stateless and reports
 `prompt_tokens`, so the counts are exact. Real code from this repository, two
@@ -588,12 +698,35 @@ model prefills at about the rate the 30B reaches on GenieX (455), but that
 GenieX figure was measured only at 512 tokens and should not be assumed to hold
 at length.
 
-In-process, the first token for the 8,037-character prompt (about 1,800 tokens)
-took 5.3–5.9 s, against 3.9 s over HTTP for the same text. In-process is faster
-at decode and slower here; that was not explained, and the two prompts may not
-be templated identically.
+**First token and decode at length, both routes.** The prompt asks for an
+explanation, so the model writes a real answer. HTTP is streamed and stateless
+(256 tokens, temperature 0, two requests per size); in-process uses a fresh
+session per run (100 tokens, two runs). Prompt lengths are approximate to a few
+tokens, taken from the usage block on the same text with a different suffix:
 
-**Four traps hit while measuring this**, each of which produced a plausible but
+| Prompt tokens | HTTP first token | HTTP decode | In-process first token | In-process decode |
+| --- | --- | --- | --- | --- |
+| 320 | 0.54 s | 16.0 | 0.74 s | 16.0 |
+| 896 | 1.52 s | 12.4 | 2.00 s | 14.1 |
+| 1,792 | 3.67 s | 9.8 | 5.12 s | 12.4 |
+| 3,456 | 10.0 s | 6.7 | 15.05 s | 10.2 |
+| 6,784 | 30.7 s | 4.2 | 46.0 s | 7.4 |
+
+- **The routes trade places.** HTTP reaches the first token sooner (30.7 s against
+  46.0 s at 6,784 tokens, 1.5 times), and in-process decodes faster at length
+  (7.4 against 4.2). Neither dominates, and neither difference was explained.
+- **Decode falls steeply with context**: by 54 % in-process and 74 % over HTTP
+  between 320 and 6,784 tokens.
+- **Against the 30B on GenieX** ([long prompts](#long-prompts)), at 6,784 tokens
+  the 30B reaches its first token in 20.1 s on the NPU and decodes at 9.1 tok/s on
+  the NPU and 14.9 on the GPU, ahead of the 7B on both counts.
+- **Arithmetic, not a measurement**, for a 6,784-token prompt and 500 generated
+  tokens: about 75 s on the 30B's NPU and 83 s on its GPU, against about 114 s
+  for the 7B in-process and about 150 s over HTTP. At around 500 prompt tokens
+  they are close: about 31 s for the 30B's NPU, 19 s for its GPU and 32 s for the
+  7B. Answer quality was not compared.
+
+**Six traps hit while measuring this**, each of which produced a plausible but
 wrong number first:
 
 - **One `ChatSession` across runs accumulates the conversation.** Run 2 of an
@@ -611,6 +744,11 @@ wrong number first:
 - **The Foundry daemon died once during `model.load`** ("Daemon closed the
   connection"). It restarted on the next `foundry server start` and the model
   loaded. Not reproduced and not explained.
+- **A utilization sampler running alongside the timed request lowers the rate**,
+  by about 9 % at 7B and about 40 % at 0.5B. Time throughput on its own request.
+- **An intermittent half-speed state** produced the 7.1 tok/s above and probably
+  some of the 0.5B variance. A figure that is half what the same model gave later
+  should be repeated on a fresh daemon before it is believed.
 
 One in-process load took **464 s** while the daemon held the same model loaded.
 Unloading the daemon's copy and repeating gave 15.6 s. Whether the cause was
@@ -645,6 +783,9 @@ against one would have attributed a duty-cycle difference to a fallback.
 Under `tool_choice=auto` the model often does not call the tool at all — 9 of
 35 requests here. That is a 0.5B model failing to *decide* to use a tool, a
 capability limit rather than a runtime one.
+
+The 0.5B figures above were taken on the earlier Foundry daemon, before the
+half-speed state was known; whether it touched them is not known.
 
 **The same test on `qwen2.5-coder-7b`**, 2026-10-15, 25-second windows:
 
