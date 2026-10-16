@@ -405,6 +405,8 @@ GenieX major version and two driver updates.
 | Foundry `qwen2.5-coder-7b` over HTTP: 7.1 tok/s, "2.3x" slower than in-process | An intermittent half-speed state on a daemon later replaced. 14.1 sampled and 15.5 unsampled afterwards |
 | Foundry `phi-3.5-mini` over HTTP: 27.7 tok/s | 19.7 on 2026-10-16 with the same sampled harness; moved the opposite way to the others and is unexplained |
 | Qwen3-4B CPU 24.6 and GPU 21.9, interleaved with the sampler on, "consistent with order bias" | Unsampled, 28.3 and 27.6. Order bias as the cause is not supported |
+| 30B on the NPU, `geniex infer`, v0.8.0: first token 13.9 s, startup 41.7 s | v0.9.0: first token 0.3 s, startup 121 s. The mapping cost moved into load and the total grew; see BENCHMARKS |
+| 30B GPU decode, v0.8.0: about 28 tok/s at a 512-token prompt | v0.9.0: 17.4. Not a measurement error: a stock-engine control stayed at its earlier figure |
 | Qwen3-4B decode on v0.8.0, 2026-10-05, units run in blocks: `npu` 30.5, `cpu` 28.7, `gpu` 24.0 | Interleaved re-measurement, 2026-10-09: 30.4 / 24.6 / 21.9. The NPU figure held; the CPU and GPU figures sat at or above the top of the interleaved range. See BENCHMARKS, *Run order* |
 | Adapter LUIDs `0x00013d0d`, `0x000152a6`, `0x0001501b`, `0x000151f3`, `0x133c8`, `0x000148c0` | **All stale by design.** LUIDs are assigned per boot; re-derive them, never cite them |
 

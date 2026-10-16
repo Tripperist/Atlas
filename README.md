@@ -187,8 +187,8 @@ NPU — see [section 12](#12-troubleshooting).
 | OS | Windows 11 Pro 10.0.28120, ARM64 |
 | AI Hub device target | `Snapdragon X2 Elite CRD` — **HTP version 81**, SoC model 88 |
 | Python | 3.14.7, ARM64 |
-| GenieX CLI | **v0.8.0** — QAIRT 2.45, llama.cpp `9425611` |
-| onnxruntime / -genai / -qnn | 1.30.0 / 0.17.1 / 2.6.0 |
+| GenieX CLI | **v0.9.0** — QAIRT 2.50, llama.cpp `e467e5b` |
+| onnxruntime / -genai / -qnn | 1.30.0 / 0.17.1 / 2.7.0 |
 | Foundry Local | 0.10.3 |
 
 > **NPU TOPS figures are marketing throughput**, not a measure of how large or
@@ -1492,6 +1492,12 @@ On long prompts the 30B's NPU prefill holds up better than the GPU's (337 agains
 falls to 9 tok/s, below the GPU's 15; see
 [BENCHMARKS](docs/BENCHMARKS.md#long-prompts).
 
+Those are GenieX v0.8.0 figures. On v0.9.0 the 30B's NPU decode is 14 to 42 % higher
+and its first token no longer pays a 14 s mapping cost (though a cold process now takes
+about three times as long to start), while its GPU decode at short prompts fell from
+about 28 to about 17 tok/s; see
+[BENCHMARKS](docs/BENCHMARKS.md#geniex-v090-against-v080).
+
 Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: about 16 tok/s on
 either route at a short prompt, with prefill falling from about 520 to about
 216 tok/s, and decode from 16 to 4–7 tok/s, as the prompt grows from 0.9k to 6.8k
@@ -1589,6 +1595,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |
 | `mobilenet_v2` w8a8 | Will not load at all (*"two nodes with same node name"*), so AI Hub assets are not uniformly usable |
+| **`geniex serve` returns an empty reply when the same chat request is sent again** | On v0.9.0, with `unsloth/Qwen3-4B-GGUF:Q4_0` on the GPU, an identical request sent three times in a row got a normal reply the first time and an **empty** one the second and third (`content` and `reasoning_content` both empty, `finish_reason: stop`). Changing the prompt, even with `enable_think: false`, gave a normal reply again. It looks like a prefix-cache hit with nothing left to decode. Anything that retries an identical request will see it. Not checked on v0.8.0, and not reported upstream |
 | **The GenieX OpenAI endpoint reports no metrics** | `usage` comes back with every field zero, and the llama.cpp-style `timings` block is zeroed too. A client has to time the stream and count SSE chunks itself. Harmless once known, but it silently yields zeros if trusted |
 | **Foundry `SearchOptions` penalties are inert** | `FrequencyPenalty` and `PresencePenalty` are exposed on the type, but any non-zero value fails the request with *"Error executing streaming request."* `Temperature`, `TopP`, `TopK` and `MaxOutputTokens` all work. They are the natural lever against repetition on small models, so their absence matters |
 | **`phi-3.5-mini` fails through the Foundry SDK** | Works over the HTTP endpoint (27.7 tok/s on 2026-10-05, 19.7 on 2026-10-16), but through the 2.1.0 Session API it fails at generator creation: *`cos_cache` dimension 0 shall not be less than total_sequence_length*, in `GroupQueryAttention`, independent of `max_tokens`. `qwen2.5-0.5b` is unaffected. Same node as the `max_tokens` bug above, so possibly one underlying defect |
@@ -1602,11 +1609,12 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | **`qwen2.5-coder-7b` never calls a tool under `tool_choice=auto`** | 0 of 14 requests, against 9 of 35 for the 0.5B model, while forced calls worked 9 of 9. Could be the model, the chat template Foundry applies for tools, or the prompt; not investigated |
 | **The Foundry daemon died once during `model.load`** | "Daemon closed the connection while awaiting response to op 'model.load'", on `qwen2.5-coder-7b`. It came back on the next `foundry server start`. Not reproduced |
 | **The NPU loses at small model sizes** | Not established. On Foundry's `qwen2.5-0.5b` the first measurement had WebGPU at 42.7 tok/s and CPU at 40.5 ahead of the NPU's 27.6, but unsampled the order is CPU 85.9, NPU 53.3, GPU 42.2 (see [BENCHMARKS](docs/BENCHMARKS.md#re-measured-2026-10-16)). **Next step:** the same unsampled three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
-| **NPU cold start on large models** | The 30B took 13.9 s to first token and 41.7 s to start on the NPU, against 0.3 s and 12.4 s on the GPU. Consistent with a one-time per-process cost that grows with model size, but a long-lived `geniex serve` was not measured. **Next step:** time the first and second request against a running server |
-| **NPU decode after a prompt is slower than the GPU's** | After a prompt the 30B's NPU decodes at 16.7 tok/s at 512 tokens, falling to 9.1 at 6,784; the GPU goes from 28.9 to 14.9. So the GPU decodes 1.5 to 1.7 times faster at every length measured, where `geniex infer` on a short prompt shows them tied (30.0 and 29.4). Dense Qwen3-4B shows the same split (18.2 against 30.4). Cause unknown ([BENCHMARKS](docs/BENCHMARKS.md#long-prompts)) |
+| **NPU cold start on large models** | On v0.9.0 the 30B's first token is 0.3 s (it was 13.9 s), but a cold `geniex infer` process takes 111–131 s to finish starting against 41.7 s, because the warm-up moved into load (qualcomm/GenieX#1529). The cost for a long-lived `geniex serve`, paid once at load, was not measured, and why the total grew by more than the cost it moved was not isolated. **Next step:** time `geniex serve` load and its first request |
+| **NPU and GPU decode cross over with prompt length** | On v0.8.0 the GPU decoded the 30B faster than the NPU at every prompt length. On v0.9.0 the NPU is faster up to about 1,800 tokens (19.3, 23.4 and 17.5 tok/s against 17.4, 18.1 and 15.3 at 512, 896 and 1,792) and slower from 3,456 (12.4 against 15.3). Cause unknown ([BENCHMARKS](docs/BENCHMARKS.md#geniex-v090-against-v080)) |
 | **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
 | **Foundry throughput is not stable between sessions** | Figures from before 2026-10-16 came from a harness whose own sampler lowered them by about 9 % at 7B and about 40 % at 0.5B, and some runs sat in an unexplained half-speed state (the 7B at 7.1 tok/s where it later gave 14.1). `phi-3.5-mini` moved the other way, 27.7 to 19.7. The harness is fixed; the half-speed state and the `phi-3.5-mini` drop are not explained. **Next step:** repeat a fixed Foundry workload across several sessions to see how often the state appears |
 | **`Invoke-Benchmark.ps1` samples counters while timing** | The same flaw as the Foundry harness. Unsampled, Qwen3-4B gave 31.3 / 28.3 / 27.6 against 30.4 / 24.6 / 21.9 sampled, and the unsampled CPU varied 33 % in one run. Records now carry `sampled`; older ones should be assumed sampled. **Next step:** repeat unsampled before quoting any CPU or GPU figure from `geniex infer` |
+| **GenieX v0.9.0 GPU decode on the 30B MoE fell about 40 %** | 28.9 to 17.4 tok/s at a 512-token prompt, below stock llama.cpp b10566 on the same file (21), where v0.8.0 was above it. Qwen3-4B and Phi-4-mini on the GPU did not move, and at 6,784 tokens the 30B is unchanged. A control run showed the machine in its normal state. The llama.cpp bump to `e467e5b` is the obvious suspect; not isolated or reported. **Next step:** another MoE model on the GPU, and `geniex` with the old engine if one can be built |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 
 ### Untested paths
@@ -1623,7 +1631,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Long-context behaviour** | Measured only up to 6,784 prompt tokens, on `Qwen3-Coder-30B-A3B` (GenieX, [long prompts](docs/BENCHMARKS.md#long-prompts)) and `qwen2.5-coder-7b` (Foundry, [BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b)). Prefill and decode both fall as the prompt grows, so a 512-token figure must not be extrapolated. The 10 000-plus-token prompts a coding agent sends, the KV cache growth they imply, and the models' 32k windows are untested. Every other benchmark here is a short generation |
+| **Long-context behaviour** | Measured only up to 6,784 prompt tokens, on `Qwen3-Coder-30B-A3B` (GenieX, on both v0.8.0 and v0.9.0, [long prompts](docs/BENCHMARKS.md#long-prompts)) and `qwen2.5-coder-7b` (Foundry, [BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b)). Prefill and decode both fall as the prompt grows, so a 512-token figure must not be extrapolated. The 10 000-plus-token prompts a coding agent sends, the KV cache growth they imply, and the models' 32k windows are untested. Every other benchmark here is a short generation |
 | Battery operation | Everything was measured on AC in `burst` power mode. Deployment behaviour on battery is unknown |
 | Speculative decoding | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
 

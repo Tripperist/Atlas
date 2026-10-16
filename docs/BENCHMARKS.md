@@ -8,7 +8,7 @@ specification.
 For how to run any of these, see the [README](../README.md). For superseded
 figures and the investigations behind them, see [ARCHIVE.md](ARCHIVE.md).
 
-**The stack these were measured on:**
+**The stack most of these were measured on:**
 
 | Component | Version |
 | --- | --- |
@@ -19,7 +19,9 @@ figures and the investigations behind them, see [ARCHIVE.md](ARCHIVE.md).
 | onnxruntime / -genai / -qnn | 1.30.0 / 0.17.1 / 2.6.0 |
 | Foundry Local | 0.10.3 |
 
-Recorded as stack `44a1e6e37bc4` in the benchmark history.
+Recorded as stack `44a1e6e37bc4` in the benchmark history. Where a section does not
+say otherwise, that is the stack. GenieX v0.9.0 is a different one, `af42e97d18e1`,
+and is compared in [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
 
 ---
 
@@ -29,6 +31,7 @@ Recorded as stack `44a1e6e37bc4` in the benchmark history.
 - [Decode throughput by compute unit](#decode-throughput-by-compute-unit)
 - [Prefill vs decode](#prefill-vs-decode)
 - [A 30B mixture-of-experts model](#a-30b-mixture-of-experts-model)
+- [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080)
 - [Foundry Local](#foundry-local)
 - [What the numbers mean](#what-the-numbers-mean)
 - [Qualcomm's published figures](#qualcomms-published-figures)
@@ -315,6 +318,10 @@ A second turn costs both of them, as context grows: GenieX 31.7 to 29.4
 
 ## A 30B mixture-of-experts model
 
+> Measured on GenieX v0.8.0 (stack `44a1e6e37bc4`). GenieX v0.9.0 changed several of
+> these results, notably the NPU cold start and the GPU decode rate; see
+> [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
+
 `Qwen3-Coder-30B-A3B-Instruct`, Q4_0 GGUF from unsloth: architecture
 `qwen3moe`, 30.5 B parameters (per `llama-bench`; published as about 3.3 B
 active per token), 16.2 GiB on disk. Through GenieX v0.8.0 on the llama.cpp
@@ -482,6 +489,97 @@ every row is optimistic and the real turns are longer. Measured at 6,784 tokens
 the NPU prefills at 337 tok/s, not 455, and decodes at 9.1, not about 20, so a
 turn with that prompt and 500 generated tokens takes about 75 s on the NPU and
 83 s on the GPU; see [long prompts](#long-prompts).
+
+---
+
+## GenieX v0.9.0 against v0.8.0
+
+GenieX v0.9.0 was installed on 2026-10-16 (rc.4 was installed first and never measured). It is a
+different stack, `af42e97d18e1`: GenieX v0.9.0, **llama.cpp `e467e5b`** (v0.8.0 and
+rc.4 both ship `9425611`), **QAIRT 2.50** (was 2.45) and `onnxruntime-qnn` 2.7.0
+(was 2.6.0), with the same drivers and Windows build. The
+[release notes](https://github.com/qualcomm/GenieX/releases/tag/v0.9.0) list about
+thirty changes; the ones that touch what is measured here are the lazy Hexagon
+mapping warm-up (qualcomm/GenieX#1529), the removal of a 64 MiB Windows Hexagon
+buffer cap (#1530), the llama.cpp bump (#1544) and the QAIRT bump (#1535).
+
+Everything below was measured with the utilization sampler off and the compute units
+interleaved, and `geniex-bench` figures are the median of three repetitions.
+v0.8.0 figures are those recorded earlier in this file.
+
+**Small models, `geniex-bench`, 512-token prompt** (prefill / decode tok/s):
+
+| Model | Plugin, device | v0.8.0 | v0.9.0 |
+| --- | --- | --- | --- |
+| Qwen3-4B | QAIRT, NPU (W4A16) | 2072 / 27.8 | 2009 / **30.4** |
+| Qwen3-4B | llama.cpp, NPU | 1380 / 18.2 | 1392 / 18.4 |
+| Qwen3-4B | llama.cpp, GPU | 328 / 22.4 | 325 / 23.9 |
+| Qwen3-4B | llama.cpp, CPU | 240 / 28.5 | 234 / 26.6 |
+| Phi-4-mini-reasoning | llama.cpp, NPU | 1590 / 19.9 | 1526 / 21.1 |
+| Phi-4-mini-reasoning | llama.cpp, CPU | 299 / 32.1 | 285 / 27.9 |
+
+The small models are essentially unchanged: within about 7 % everywhere except
+Phi-4-mini on the CPU, whose decode is 13 % lower. QAIRT decode is 9 % higher, which
+fits the runtime bump.
+
+**`Qwen3-Coder-30B-A3B`, `geniex-bench`**, context 16,384, 64 generated tokens
+(prefill / decode tok/s):
+
+| Prompt tokens | NPU v0.8.0 | NPU v0.9.0 | GPU v0.8.0 | GPU v0.9.0 |
+| --- | --- | --- | --- | --- |
+| 512 | 445 / 16.7 | 456 / **19.3** | 303 / 28.9 | 286 / **17.4** |
+| 896 | 393 / 16.5 | **478** / **23.4** | 278 / 25.2 | 271 / **18.1** |
+| 1,792 | 377 / 12.7 | **454** / **17.5** | 250 / 21.3 | 243 / **15.3** |
+| 3,456 | 383 / 10.8 | 373 / 12.4 | 198 / 18.7 | 195 / 15.3 |
+| 6,784 | 337 / 9.1 | 329 / 10.4 | 138 / 14.9 | 137 / 14.4 |
+
+**One-shot CLI, `geniex infer`**, time to first token and the rest of process startup
+(startup is the process wall time minus decode time, so it includes load, the new
+warm-up, the first token and teardown). The 30B used 256 tokens, two rounds; the 4B
+400 tokens, three rounds. The v0.8.0 30B figures were taken with the sampler on:
+
+| | v0.8.0 first token / startup | v0.9.0 first token / startup |
+| --- | --- | --- |
+| 30B, NPU | 13.9 s / 41.7 s | **0.3 s / 121 s** (111, 131) |
+| 30B, GPU | 0.3 s / 12.4 s | 0.35 s / 21.5 s |
+| 30B, CPU | 1.05 s / 10.2 s | 1.45 s / 20.9 s |
+| Qwen3-4B, NPU | 9.3 s / 25.2 s | **0.1 s / 37.0 s** |
+| Qwen3-4B, GPU | 0.20 s / 5.7 s | 0.2 s / 5.4 s |
+
+**Control.** Stock llama.cpp b10566 on the same 30B file, run in the same session,
+gave GPU prefill 286 and 290, decode 21.2 and 21.0, and CPU prefill 111 and 121,
+decode 27.6 and 39.3. That is within a few per cent of its earlier results (GPU
+293 / 22–26, CPU 119 / 38–40), so the machine was in its normal state.
+
+- **The NPU got better at decode and at some prefill lengths.** Prefill is
+  unchanged at 512 and from 3,456 tokens up, and 20 % higher at 896 and 1,792.
+  Decode is 14 to 42 % higher at every length. The Windows buffer-cap removal did
+  not move prefill at 512 tokens.
+- **The first token no longer pays the NPU mapping cost, but the process does.** The
+  warm-up moved the roughly 14 s of lazy mapping into load, as the release notes
+  describe. The one-shot total is not smaller: a cold 30B process now takes about
+  121 s against 42 s, and the 4B about 37 s against 25 s. Why the total grew by more
+  than the cost it moved was not isolated. A long-lived `geniex serve` pays it once
+  at load; that was not measured.
+- **GPU decode on the 30B fell sharply at short prompts**, about 40 % at 512 tokens
+  (28.9 to 17.4), and is now below the stock engine's 21 where v0.8.0 was above it.
+  At 6,784 tokens it is unchanged (14.4 against 14.9). The small dense models did
+  not move, so in these data it is specific to this mixture-of-experts model. The
+  llama.cpp bump is the obvious suspect; it was not isolated.
+- **NPU and GPU decode now cross over.** The NPU decodes faster than the GPU up to
+  about 1,800 prompt tokens and slower from 3,456; on v0.8.0 the GPU was faster at
+  every length.
+- **Arithmetic, not a measurement.** A 6,784-token prompt with 500 generated tokens
+  takes about 69 s on the NPU and 84 s on the GPU (about 75 s and 83 s on v0.8.0).
+  They break even near 1,060 generated tokens, against about 680 before: below that
+  the NPU finishes first. At a 512-token prompt and 500 generated tokens it is about
+  27 s on the NPU and 31 s on the GPU.
+
+Limits: random-token prompts (see the 30B section), the median of three, one
+session, `burst` mode on AC. The `geniex-bench` wrapper needed a fix to produce
+these: from v0.9.0 the harness prints its result line only at `--log debug`, so the
+old wrapper saw every llama.cpp cell as a failure. It now reads the harness's JSON
+report.
 
 ---
 
