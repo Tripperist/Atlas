@@ -141,8 +141,31 @@ function Invoke-Cell {
           [int]$Prompt, [int]$Gen, [int]$Reps, [int]$Ctx = 0)
 
     $extra = if ($Ctx -gt 0) { @('-c', $Ctx) } else { @() }
-    $raw = (& $Exe --plugin $Plugin --device $Device -m $Model -p $Prompt -n $Gen -r $Reps @extra 2>&1 | Out-String) `
-           -replace '\x1b\[[0-9;]*m', ''
+
+    # Read the harness's JSON report, not its log. From v0.9.0 the result line is
+    # printed only at --log debug (the default is now error), so a wrapper that
+    # scraped the line saw every llama.cpp cell as a failure, with exit code 0 and
+    # no message. The report also carries the spread, and stamps the versions.
+    $jsonPath = [System.IO.Path]::GetTempFileName()
+    $raw = (& $Exe --plugin $Plugin --device $Device -m $Model -p $Prompt -n $Gen -r $Reps @extra `
+                   --output-json $jsonPath 2>&1 | Out-String) -replace '\x1b\[[0-9;]*m', ''
+    $report = try { Get-Content $jsonPath -Raw -ErrorAction Stop | ConvertFrom-Json } catch { $null }
+    Remove-Item $jsonPath -Force -ErrorAction SilentlyContinue
+    if ($report -and $report.agg -and $report.agg.prefill_tps) {
+        # The median, which is what the old log line reported, so history stays comparable.
+        return [pscustomobject]@{
+            Plugin = $Plugin; Device = $Device; Model = $Model; Ok = $true
+            TtftMs     = [double]$report.agg.ttft_ms.median
+            PrefillTps = [double]$report.agg.prefill_tps.median
+            DecodeTps  = [double]$report.agg.decode_tps.median
+            GenTokens  = [int]$report.agg.gen_tokens.median
+            Spread     = @{
+                ttftMean = [double]$report.agg.ttft_ms.mean;       ttftStdev = [double]$report.agg.ttft_ms.stdev
+                prefillMean = [double]$report.agg.prefill_tps.mean; prefillStdev = [double]$report.agg.prefill_tps.stdev
+                decodeMean = [double]$report.agg.decode_tps.mean;   decodeStdev = [double]$report.agg.decode_tps.stdev
+            }
+        }
+    }
 
     # geniex-bench prints a great deal of plugin teardown trace around the one
     # line that matters, so match that line specifically rather than tailing.
@@ -213,7 +236,8 @@ if (-not $NoRecord) {
             -Model $r.Model -Compute "$($r.Plugin)/$($r.Device)" `
             -TokPerSec $r.DecodeTps -FirstTokenS ([math]::Round($r.TtftMs / 1000, 3)) `
             -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $PromptTokens `
-            -Extra @{ repetitions = $Repeat; harness = 'geniex-bench'; ctxSize = $CtxSize } | Out-Null
+            -Extra (@{ repetitions = $Repeat; harness = 'geniex-bench'; ctxSize = $CtxSize; statistic = 'median' } +
+                    $(if ($r.Spread) { $r.Spread } else { @{} })) | Out-Null
     }
     Write-Host ("Recorded {0} measurement(s) under stack {1}" -f $good.Count, (Get-AtlasShortId $state.id)) -ForegroundColor Green
     Write-Host 'View with: .\Scripts\Update-Workspace.ps1 -History' -ForegroundColor DarkGray
