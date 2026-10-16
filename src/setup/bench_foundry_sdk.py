@@ -46,6 +46,13 @@ def main() -> int:
         "is mostly prefill. SDK 2.1.0 does not report prompt_tokens, so no prefill rate "
         "is printed; the HTTP endpoint does report it.",
     )
+    parser.add_argument(
+        "--prompt-tokens",
+        type=int,
+        help="Prompt length in tokens, stored in the history record. The SDK does not "
+        "report it, so supply it (the HTTP endpoint's usage block gives an exact count). "
+        "Without it a long-prompt record cannot be told from a short-prompt one.",
+    )
     parser.add_argument("--no-record", action="store_true")
     args = parser.parse_args()
     if args.prompt_file:
@@ -170,6 +177,7 @@ def main() -> int:
             tok_per_sec=round(mean_rate, 1),
             first_token_s=round(mean_first, 3),
             tokens=int(statistics.mean(counts)),
+            prompt_tokens=args.prompt_tokens,
             extra={
                 "runs": len(rates),
                 "harness": "foundry local in-process sdk (Session API)",
