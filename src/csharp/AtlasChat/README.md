@@ -130,9 +130,20 @@ child process and take a global maximum.
 ### Hiding reasoning
 
 Qwen3 and the reasoning Phi builds emit `<think>` blocks inline. The GenieX
-*CLI* has `--think=false`; neither its HTTP endpoint nor ORT GenAI does, so
-`ThinkingFilter` does it. Hidden tokens still count toward the rate — producing
-them is real work — and hidden text never goes back into the conversation.
+*CLI* has `--think=false` and its HTTP endpoint takes `enable_think: false`; ORT GenAI
+has neither. Those stop the model thinking at all, which is not what this harness
+wants, so `ThinkingFilter` hides the block instead. Hidden tokens still count toward
+the rate — producing them is real work — and hidden text never goes back into the
+conversation.
+
+**GenieX v0.9.0 separates reasoning by default.** The server then moves a thinking
+model's reasoning into `delta.reasoning_content` and leaves `content` clean, which
+this backend, reading `content` only, would turn into an empty reply: nothing to hide
+or show, no token count for it, and no "ended mid-reasoning" signal. The request
+therefore sets `reasoning_format: "none"` so the reasoning stays inline and all three
+backends share one code path. Checked live against a v0.9.0 server on Qwen3-4B: the
+default hides the reasoning, `--show-think` shows it, and a 120-token budget ends
+`length, mid-reasoning`.
 
 ---
 

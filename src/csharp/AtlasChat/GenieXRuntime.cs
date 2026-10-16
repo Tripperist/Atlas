@@ -101,6 +101,13 @@ internal sealed class GenieXRuntime : IChatRuntime
             max_tokens = _maxOutputTokens,
             temperature = _temperature,
             stream = true,
+            // From GenieX v0.9.0 the server separates a thinking model's reasoning by
+            // default, moving it into delta.reasoning_content and leaving content
+            // clean. This backend reads content only and filters <think> itself, as it
+            // does for the other two, so ask for the reasoning inline. Without this it
+            // would see no reasoning at all: nothing to show under --show-think, no
+            // token count for it, and no "ended mid-reasoning" signal.
+            reasoning_format = "none",
         };
 
         using var request = new HttpRequestMessage(HttpMethod.Post, $"{_baseUrl}/chat/completions")
