@@ -125,8 +125,28 @@ for ($run = 1; $run -le $Repeat; $run++) {
         model       = $resolved
         messages    = @(@{ role = 'user'; content = $Prompt })
         max_tokens  = $MaxTokens
-        temperature = 0.7
+        # 0, not a sampling temperature: at 0.7 a reply sometimes stops after
+        # ~50 tokens, and a rate over a short reply is mostly fixed latency.
+        temperature = 0
     } | ConvertTo-Json -Depth 5 -Compress
+
+    # Throughput is timed on a request with NOTHING else running. The
+    # utilization sampler below costs real throughput -- about 9 % on a 7B
+    # model and 30-50 % on a 0.5B one, because it competes for the same CPU
+    # the model's graph uses -- so it is used for placement only, on a second
+    # request whose rate is reported separately and not relied on.
+    $swTimed = [System.Diagnostics.Stopwatch]::StartNew()
+    try {
+        $timedResp = Invoke-RestMethod -Uri $uri -Method Post `
+            -Body ([System.Text.Encoding]::UTF8.GetBytes($body)) `
+            -ContentType 'application/json' -TimeoutSec 600
+        $timedTokens = [int]$timedResp.usage.completion_tokens
+        $timedSecs = $swTimed.Elapsed.TotalSeconds
+    }
+    catch {
+        Write-Host ("  run {0}: FAILED - {1}" -f $run, $_.Exception.Message) -ForegroundColor Red
+        continue
+    }
 
     $job = Start-Job -ScriptBlock {
         param($Uri, $Body)
@@ -162,19 +182,21 @@ for ($run = 1; $run -le $Repeat; $run++) {
         Write-Host ("  run {0}: FAILED - {1}" -f $run, $res.Error) -ForegroundColor Red
         continue
     }
-    $tokens = [int]$res.Tokens
-    $secs   = $sw.Elapsed.TotalSeconds
+    $tokens = $timedTokens
+    $secs   = $timedSecs
     $tps    = if ($secs -gt 0) { $tokens / $secs } else { 0 }
+    $sampledTps = if ($sw.Elapsed.TotalSeconds -gt 0) { [int]$res.Tokens / $sw.Elapsed.TotalSeconds } else { 0 }
     $rows.Add([pscustomobject]@{
         Run      = $run
         Tokens   = $tokens
         Seconds  = [math]::Round($secs, 2)
         TokPerS  = [math]::Round($tps, 1)
+        Sampled  = [math]::Round($sampledTps, 1)
         NPUPeak  = [math]::Round($npuPeak, 1)
         CPUMean  = if ($cpuN) { [math]::Round($cpuSum / $cpuN, 1) } else { 0 }
     })
-    Write-Host ("  run {0}: {1,6:N1} tok/s  {2} tok in {3:N1}s  NPU peak {4:N1}%  CPU mean {5:N1}%" -f `
-        $run, $tps, $tokens, $secs, $npuPeak, $(if ($cpuN) { $cpuSum / $cpuN } else { 0 }))
+    Write-Host ("  run {0}: {1,6:N1} tok/s  {2} tok in {3:N1}s  | placement run: NPU peak {4:N1}%  CPU mean {5:N1}%  ({6:N1} tok/s while sampled)" -f `
+        $run, $tps, $tokens, $secs, $npuPeak, $(if ($cpuN) { $cpuSum / $cpuN } else { 0 }), $sampledTps)
 }
 
 if ($rows.Count -eq 0) { Write-Host 'No run succeeded.' -ForegroundColor Red; exit 1 }
@@ -204,6 +226,7 @@ if (-not $NoRecord) {
         -TokPerSec ([math]::Round($meanTps, 1)) `
         -Tokens ([int](($rows | Measure-Object Tokens -Average).Average)) `
         -Extra @{ runs = $rows.Count; npuPeak = $maxNpu; cpuMean = [math]::Round($meanCpu, 1)
-                  harness = 'foundry openai endpoint' } | Out-Null
+                  harness = 'foundry openai endpoint'; throughputSampled = $false; temperature = 0
+                  sampledTokPerSec = [math]::Round(($rows | Measure-Object Sampled -Average).Average, 1) } | Out-Null
     Write-Host ("Recorded under stack {0}; see -History" -f (Get-AtlasShortId $state.id)) -ForegroundColor Green
 }
