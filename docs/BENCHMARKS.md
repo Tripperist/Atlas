@@ -138,6 +138,17 @@ GenieX v0.8.0 (llama.cpp `9425611`), Adreno driver 32.0.172.2, stack
 | Qwen3-4B | `npu` | **30.4** | 1.43 | 8.47 | 18.8 | 100 | 4.6 |
 | Qwen3-4B | `cpu` | 24.6 | 0.67 | 4.75 | 77.5 | 0 | 4.5 |
 | Qwen3-4B | `gpu` | 21.9 | **0.20** | 7.57 | 17.6 | 0 | 93.1 |
+| Qwen3-4B | `hybrid` | 23.2 | 3.27 | 10.85 | 16.3 | 93.5 | 45.4 |
+
+**`hybrid` is not the faster path here.** Qualcomm's GenieX documentation
+describes it as llama.cpp's per-tensor HTP + CPU scheduler and calls it "the
+faster path on Snapdragon". On Qwen3-4B it was third of four, 24 % behind plain
+`npu`, with the slowest first token (3.27 s) and startup (10.85 s). Its
+utilization does not match the description either: the NPU peaked at 93.5 %
+and the GPU at 45.4 %, with the CPU no busier than in the `npu` run (16.3 %
+against 18.8 %). Something was using the Adreno. Per-round spread was 2 %
+(23.2, 23.5, 23.0), so the figure is stable even though the explanation is
+not known. One model, one size: this says nothing about larger ones.
 
 **Qwen3-1.7B — 2026-10-05, units run in blocks.** These predate interleaving,
 so the CPU and GPU rows may be overstated; the NPU row is the one to trust.

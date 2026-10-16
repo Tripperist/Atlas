@@ -661,6 +661,12 @@ geniex infer <model> --compute npu     # also: cpu, gpu, hybrid, or HTP0,HTP1
 | `--think` | bool | Default **true**; use `--think=false` for Qwen3 |
 | `--spec-type` | `draft-mtp`, `ngram-cache`, … | Speculative decoding, llama.cpp only |
 
+**`hybrid` was slower than `npu` on Qwen3-4B** (23.2 against 30.4 tok/s) despite
+Qualcomm's documentation calling it the faster path, and its utilization showed
+the NPU and the GPU busy rather than the NPU and the CPU. Treat it as untested
+for your model and measure it yourself; see
+[BENCHMARKS](docs/BENCHMARKS.md#decode-throughput-by-compute-unit).
+
 **`--compute` has no effect on a QAIRT bundle.** Those are NPU-targeted by
 construction. A 1.4 % spread across `cpu`/`gpu`/`npu` on a QAIRT model is the
 flag being ignored, not evidence of CPU execution.
