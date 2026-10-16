@@ -344,7 +344,7 @@ try {
             -FirstTokenS ([math]::Round((& $avg 'FirstTokS'), 2)) `
             -Tokens      ([int](& $avg 'Tokens')) `
             -CsvPath     $CsvPath `
-            -Extra       @{ runs = $g.Count; maxTokens = $MaxTokens; powerMode = $PowerMode } |
+            -Extra       @{ runs = $g.Count; maxTokens = $MaxTokens; powerMode = $PowerMode; sampled = (-not $NoUtilization) } |
             Out-Null
     }
     Write-Host ("Recorded in benchmark history under stack {0}" -f (Get-AtlasShortId $state.id)) -ForegroundColor Green
