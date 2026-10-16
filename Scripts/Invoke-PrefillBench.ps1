@@ -41,6 +41,12 @@
 .PARAMETER PromptTokens
     Prompt length. 512 approximates a retrieval-augmented turn.
 
+.PARAMETER CtxSize
+    Model context window, passed to geniex-bench as -c. 0 (the default) leaves
+    it to the model, which for a long-context model can mean allocating a very
+    large KV cache. Set it explicitly for long prompts, and record it: it is
+    part of the conditions a result was measured under.
+
 .PARAMETER NoRecord
     Print results without appending them to the benchmark history.
 
@@ -61,6 +67,7 @@ param(
     [int]$PromptTokens = 512,
     [int]$GenTokens = 128,
     [int]$Repeat = 3,
+    [int]$CtxSize = 0,
     [switch]$NoRecord
 )
 
@@ -131,9 +138,10 @@ function Resolve-GeniexBench {
 #>
 function Invoke-Cell {
     param([string]$Exe, [string]$Plugin, [string]$Device, [string]$Model,
-          [int]$Prompt, [int]$Gen, [int]$Reps)
+          [int]$Prompt, [int]$Gen, [int]$Reps, [int]$Ctx = 0)
 
-    $raw = (& $Exe --plugin $Plugin --device $Device -m $Model -p $Prompt -n $Gen -r $Reps 2>&1 | Out-String) `
+    $extra = if ($Ctx -gt 0) { @('-c', $Ctx) } else { @() }
+    $raw = (& $Exe --plugin $Plugin --device $Device -m $Model -p $Prompt -n $Gen -r $Reps @extra 2>&1 | Out-String) `
            -replace '\x1b\[[0-9;]*m', ''
 
     # geniex-bench prints a great deal of plugin teardown trace around the one
@@ -182,7 +190,7 @@ $results = [System.Collections.Generic.List[object]]::new()
 foreach ($c in $cells) {
     Write-Host ("  {0,-34} {1,-10} {2} ..." -f $c.Model, $c.Plugin, $c.Device)
     $r = Invoke-Cell -Exe $exe -Plugin $c.Plugin -Device $c.Device -Model $c.Model `
-                     -Prompt $PromptTokens -Gen $GenTokens -Reps $Repeat
+                     -Prompt $PromptTokens -Gen $GenTokens -Reps $Repeat -Ctx $CtxSize
     $results.Add($r)
     if (-not $r.Ok) { Write-Host ("    FAILED: {0}" -f $r.Tail) -ForegroundColor Red }
 }
@@ -205,7 +213,7 @@ if (-not $NoRecord) {
             -Model $r.Model -Compute "$($r.Plugin)/$($r.Device)" `
             -TokPerSec $r.DecodeTps -FirstTokenS ([math]::Round($r.TtftMs / 1000, 3)) `
             -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $PromptTokens `
-            -Extra @{ repetitions = $Repeat; harness = 'geniex-bench' } | Out-Null
+            -Extra @{ repetitions = $Repeat; harness = 'geniex-bench'; ctxSize = $CtxSize } | Out-Null
     }
     Write-Host ("Recorded {0} measurement(s) under stack {1}" -f $good.Count, (Get-AtlasShortId $state.id)) -ForegroundColor Green
     Write-Host 'View with: .\Scripts\Update-Workspace.ps1 -History' -ForegroundColor DarkGray
