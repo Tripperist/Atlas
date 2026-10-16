@@ -312,8 +312,8 @@ So the two-model state was not a CLI change. The catalogue is served separately
 and moved while the CLI stayed put; why it dropped and came back is still not
 something the CLI explains. The largest NPU model is now 7.1 GB, which makes the
 "does a ~7 GB NPU model hold context" question testable after all; it is
-being measured for `qwen2.5-coder-7b` under
-[Foundry Local in BENCHMARKS](BENCHMARKS.md#foundry-local).
+measured for `qwen2.5-coder-7b` in
+[BENCHMARKS](BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b).
 
 ### Lesson that survives
 
@@ -439,4 +439,4 @@ Every claim an earlier revision of the README stated and later had to withdraw.
 | C# / .NET path | **Closed.** Both routes proven on the NPU: ONNX Runtime directly (`QnnProbe`, QNN placement confirmed from the profiler) and ONNX Runtime GenAI (`GenAiProbe`, 17.7–22.0 tok/s at 98.9 % NPU) |
 | Does Foundry Local reach CPU and GPU? | **Closed.** Yes — one model variant per compute unit, all three measured |
 | Can llama.cpp be reached without GenieX? | **Closed as a question.** Yes: upstream has CPU, OpenCL/Adreno and Hexagon backends on Windows. The Hexagon one needs signed HTP libraries, which is why it stays an untested path rather than a recommendation |
-| Does a model larger than the ~3.5 GB HTP session figure run on the NPU? | **Closed.** Yes through GenieX: `Qwen3-Coder-30B-A3B` Q4_0 (16.2 GiB) ran under `--compute npu` with the NPU at a 100 % peak and the CPU at 17 %. How GenieX fits it was not investigated. See BENCHMARKS |
+| Does a model larger than the ~3.5 GB HTP session figure run on the NPU? | **Closed.** Yes through Foundry too: `qwen2.5-coder-7b` (7.1 GB) runs with prompts up to 6,784 tokens. Through GenieX: `Qwen3-Coder-30B-A3B` Q4_0 (16.2 GiB) ran under `--compute npu` with the NPU at a 100 % peak and the CPU at 17 %. How GenieX fits it was not investigated. See BENCHMARKS |

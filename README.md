@@ -1296,11 +1296,15 @@ Tool calling **works** on the NPU variant: forced requests return well-formed
 - **Under `tool_choice=auto` a 0.5B model often does not call the tool** — 9 of
   35 requests in one measured window. That is a model-capability limit, not a
   runtime one, but it is the behaviour you would get.
-- **NPU utilization drops during forced tool calling** — 24.4 % against 56.7 %
-  for a length-matched control, with throughput falling from 116 requests in
-  the window to 18. Consistent with constrained decoding leaving the
-  accelerated path, though not proven. Numbers in
+- **NPU utilization dropped during forced tool calling on the 0.5B model** —
+  24.4 % against 56.7 % for a length-matched control, with throughput falling
+  from 116 requests in the window to 18. **It did not on `qwen2.5-coder-7b`**:
+  77.2 % against 74.1 %. So that drop is not a general property of tool calling
+  on the NPU. Numbers in
   [BENCHMARKS](docs/BENCHMARKS.md#tool-calling-and-npu-placement).
+- **`qwen2.5-coder-7b` never called the tool on its own**: 0 of 14 requests under
+  `tool_choice=auto`, though 9 of 9 forced requests returned a call. The 0.5B
+  model managed 9 of 35.
 
 > **Do not set a tight `max_tokens`.** On `qwen2.5-0.5b-instruct-qnn-npu`, a
 > `max_tokens` small relative to the prompt fails with a hard 500 inside
@@ -1477,6 +1481,11 @@ about 30 tok/s on the NPU and the GPU, the same as dense Qwen3-4B, and prefills
 a 512-token prompt at about 455 tok/s on the NPU against 299 on the GPU; see
 [BENCHMARKS](docs/BENCHMARKS.md#a-30b-mixture-of-experts-model).
 
+Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: 16 tok/s in-process
+and 7 over HTTP, with prefill falling from about 520 to about 216 tok/s as the
+prompt grows from 0.9k to 6.8k tokens; see
+[BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b).
+
 Run them yourself:
 
 ```powershell
@@ -1571,7 +1580,9 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Tool calling leaves the accelerated path** | NPU utilization falls to 24.4 % during forced tool calls against 56.7 % for a length-matched control, with throughput dropping from 116 requests to 18. Consistent with constrained decoding running off the NPU, but peak sampling over ~1 s requests is coarse and the tools schema lengthens the prompt. **Next step:** a longer-running tool-call workload, or ORT profiling of the session |
+| **Tool calling leaves the accelerated path** | Held for `qwen2.5-0.5b`: NPU utilization fell to 24.4 % during forced tool calls against 56.7 % for a length-matched control. **Did not hold for `qwen2.5-coder-7b`**: 77.2 % against 74.1 %. Peak sampling over ~1 s requests is coarse, so neither is proof. Whether it depends on model size or variant is unknown. **Next step:** a longer-running tool-call workload, or ORT profiling of the session |
+| **`qwen2.5-coder-7b` never calls a tool under `tool_choice=auto`** | 0 of 14 requests, against 9 of 35 for the 0.5B model, while forced calls worked 9 of 9. Could be the model, the chat template Foundry applies for tools, or the prompt; not investigated |
+| **The Foundry daemon died once during `model.load`** | "Daemon closed the connection while awaiting response to op 'model.load'", on `qwen2.5-coder-7b`. It came back on the next `foundry server start`. Not reproduced |
 | **The NPU loses at small model sizes** | On Foundry's `qwen2.5-0.5b`, WebGPU gives 42.7 tok/s and CPU 40.5 against the NPU's 27.6. Expected for a decode-dominated run, but only measured at 0.5B. **Next step:** the same three-way comparison on `phi-3.5-mini` (2.0 GB), where only the NPU variant has been measured |
 | **NPU cold start on large models** | The 30B took 13.9 s to first token and 41.7 s to start on the NPU, against 0.3 s and 12.4 s on the GPU. Consistent with a one-time per-process cost that grows with model size, but a long-lived `geniex serve` was not measured. **Next step:** time the first and second request against a running server |
 | **NPU decode after a long prompt** | `geniex-bench` gives 17.5–23.8 tok/s on the 30B's NPU against 30.0 from `geniex infer`; dense Qwen3-4B shows the same split (18.2 against 30.4). The GPU agrees between harnesses. Cause unknown |
@@ -1583,6 +1594,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | Item | Status |
 | --- | --- |
 | **Upstream llama.cpp on the NPU** | The Hexagon backend needs signed HTP ops libraries and has you enable test signing machine-wide, so it was not attempted. The OpenCL/Adreno backend needs no such thing and *was* measured, as stock llama.cpp b10566 on the 30B coder model: GPU prefill 293 tok/s against GenieX's 299, decode about 20 % slower than GenieX's GPU path (see [BENCHMARKS](docs/BENCHMARKS.md#stock-llamacpp-on-the-same-file)). The Hexagon backend remains untested |
+| **Eight Foundry NPU models listed but not run** | `qwen2.5-7b`, `deepseek-r1-7b`, `deepseek-r1-14b`, `phi-3-mini-4k`, `phi-3-mini-128k`, `qwen2.5-1.5b`, `qwen2.5-coder-1.5b` and `qwen2.5-coder-0.5b` appear in the catalogue with NPU variants. Whether each loads on this NPU, and how fast, is untested |
 | Ollama / LM Studio | Neither app was measured. Both build on llama.cpp, and stock llama.cpp on the CPU alone gave 119 prefill and 39 decode tok/s on the 30B coder model, with stable runs, which is the likeliest ballpark for a CPU-only app. Reported as CPU-only on Windows on Arm, not verified here |
 | `Microsoft.ML.OnnxRuntimeGenAI.QNN` | Pinned at 0.13.2 against the 0.17.1 used here. Outside the broken 0.16.x range so it may work, but it mixes the all-in-one packaging model with the plugin one. Untested |
 | GenieX Python SDK | Resolves for ARM64 Python 3.14; not installed or tested here |
@@ -1591,7 +1603,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured. That includes `Qwen3-Coder-30B-A3B`, measured only with a 512-token prompt, where the 10 000-token prompts a coding agent sends are untested |
+| **Long-context behaviour** | Every benchmark here is a short generation. KV cache growth is the likely binding constraint in practice and is entirely unmeasured. That includes `Qwen3-Coder-30B-A3B`, measured only with a 512-token prompt, where the 10 000-token prompts a coding agent sends are untested. Foundry's `qwen2.5-coder-7b` is a warning: its prefill fell from about 520 to about 216 tok/s as the prompt grew from 0.9k to 6.8k tokens ([BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b)), so a 512-token figure should not be extrapolated |
 | Battery operation | Everything was measured on AC in `burst` power mode. Deployment behaviour on battery is unknown |
 | Speculative decoding | Qualcomm publishes an 81 % gain for `Llama-v3.2-3B-Instruct-SSD`. Unverified — the Llama assets are licence-restricted and verification needs a PyTorch export host. A local `ngram-cache` substitute gave only ~4 % |
 

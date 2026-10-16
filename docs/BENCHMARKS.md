@@ -452,6 +452,9 @@ separately and is older (CLI 0.10.3, Foundry Local Core 1.0.0, ORT 1.26.0) than
 the SDK measured here (2.1.0, ORT GenAI 0.17.1), so runtime vintage is mixed in
 with the HTTP hop. The direction is not in doubt; the split is unattributed.
 
+At 7B the gap is smaller, 2.3 times; see
+[the `qwen2.5-coder-7b` measurements](#a-7-gb-model-on-the-npu-qwen25-coder-7b).
+
 **Every other Foundry figure in this file was taken over HTTP** and therefore
 describes the endpoint rather than Foundry Local's ceiling. Read them that way.
 
@@ -485,6 +488,85 @@ It is a useful counterexample to "put it on the NPU": at this model size and
 prompt length, the Adreno GPU is both the fastest option and the cheapest in
 CPU time.
 
+### A 7 GB model on the NPU: `qwen2.5-coder-7b`
+
+Variant `qwen2.5-coder-7b-instruct-qnn-npu`, 7.1 GB, 2026-10-15, stack
+`44a1e6e37bc4`, Foundry CLI 0.10.3, SDK 2.1.0. Its `genai_config.json` declares
+a 32,768-token context and a 64-token sliding window. The same Lisbon prompt as
+the other Foundry rows, 400 tokens, three runs:
+
+| Route | tok/s | First token | Model load |
+| --- | --- | --- | --- |
+| Python in-process SDK | **16.0** (15.8 / 16.0 / 16.2) | 0.38 s | 15.6 s |
+| CLI + HTTP endpoint | 7.1 (7.1 / 7.1 / 7.1) | — | 38.7 s |
+
+In-process is **2.3 times** faster; at `qwen2.5-0.5b` the gap was 4 times. The
+per-token cost of the HTTP route is about 27 ms at 0.5B (9.2 ms in-process,
+36.2 ms over HTTP) and about 78 ms at 7B (62.5 against 140.8), so it is not a
+fixed transport overhead. What it is was not isolated.
+
+**Placement, in-process**, sampled per adapter LUID once the model had loaded:
+
+| Engine | Peak | Mean |
+| --- | --- | --- |
+| NPU adapter, `compute` | 79.0 % | 64.3 % |
+| Adreno, `3d` | 4.6 % | 2.8 % |
+| CPU (total) | — | 49.6 % |
+
+The NPU is genuinely engaged, and the CPU is half busy at the same time, so this
+is a mixed NPU-and-CPU graph and not a pure NPU one. Over HTTP the NPU peaked at
+only 35–39 % with the CPU at 48.8 % — consistent with the NPU waiting on the
+slower route, though the two samplers differ.
+
+**Prefill against prompt length** — over HTTP, which is stateless and reports
+`prompt_tokens`, so the counts are exact. Real code from this repository, two
+requests per size, wall time including about two generated tokens:
+
+| Prompt tokens | Seconds | Prefill tok/s |
+| --- | --- | --- |
+| 320 | 0.66 | 487, 482 |
+| 896 | 1.72 | 520, 521 |
+| 1,792 | 3.9 | 462, 455 |
+| 3,456 | 10.2 | 337, 338 |
+| 6,784 | 31 | 220, 212 |
+
+Run to run the figures agree within 3 %. **Prefill falls by 2.4 times** as the
+prompt grows from 896 to 6,784 tokens. Over the last doubling, time grew as
+roughly the 1.7th power of length, which would put a 10,000-token prompt at about
+a minute. That is an extrapolation, not a measurement. At around 500 tokens this
+model prefills at about the rate the 30B reaches on GenieX (455), but that
+GenieX figure was measured only at 512 tokens and should not be assumed to hold
+at length.
+
+In-process, the first token for the 8,037-character prompt (about 1,800 tokens)
+took 5.3–5.9 s, against 3.9 s over HTTP for the same text. In-process is faster
+at decode and slower here; that was not explained, and the two prompts may not
+be templated identically.
+
+**Four traps hit while measuring this**, each of which produced a plausible but
+wrong number first:
+
+- **One `ChatSession` across runs accumulates the conversation.** Run 2 of an
+  identical prompt took 2.5–3.4 times longer to first token than run 1 at every
+  length. With a fresh session per run it gave 5.3 / 5.9 / 5.8 s. Fixed in
+  `bench_foundry_sdk.py`.
+- **Windows PowerShell 5.1 can mangle a non-ASCII string body.** The 16,000- and
+  32,000-character prompts returned HTTP 500 and the daemon logged JSON
+  deserialization errors. The first non-ASCII character sits at index 13,676,
+  and the 8,000-character prompt (all ASCII) worked. Sending the body as UTF-8
+  bytes made all five sizes succeed.
+- **`max_tokens=1` returns 500**, consistent with the known `GroupQueryAttention`
+  bug in [README section 13](../README.md#13-open-questions). Raising it did not
+  fix the encoding problem above, which is a separate cause.
+- **The Foundry daemon died once during `model.load`** ("Daemon closed the
+  connection"). It restarted on the next `foundry server start` and the model
+  loaded. Not reproduced and not explained.
+
+One in-process load took **464 s** while the daemon held the same model loaded.
+Unloading the daemon's copy and repeating gave 15.6 s. Whether the cause was
+contention or a first-ever load is not known; the slow run is kept in the history
+with a note.
+
 ### Tool calling and NPU placement
 
 Three 25-second windows against `qwen2.5-0.5b-instruct-qnn-npu`, NPU sampled
@@ -513,6 +595,25 @@ against one would have attributed a duty-cycle difference to a fallback.
 Under `tool_choice=auto` the model often does not call the tool at all — 9 of
 35 requests here. That is a 0.5B model failing to *decide* to use a tool, a
 capability limit rather than a runtime one.
+
+**The same test on `qwen2.5-coder-7b`**, 2026-10-15, 25-second windows:
+
+| Condition | Requests | Tokens | Tool calls | NPU peak |
+| --- | --- | --- | --- | --- |
+| plain, length-matched control | 31 | 372 | 0 | 74.1 % |
+| `tool_choice=auto` | 14 | 336 | **0** | 77.6 % |
+| `tool_choice=required` | 9 | 198 | **9 of 9** | 77.2 % |
+
+- **The NPU does not drop at 7B.** 77.2 % during forced tool calls against 74.1 %
+  for the control, where the 0.5B fell from 56.7 % to 24.4 %. So the "constrained
+  decoding leaves the accelerated path" reading does not hold across these two
+  models. The harness takes the peak over all compute engines; in the per-adapter
+  run above the Adreno showed no compute activity, so the figure here is the NPU.
+- **Forced calls work**: 9 of 9 returned `tool_calls`.
+- **`tool_choice=auto` produced none in 14 requests.** The 0.5B model called the
+  tool in 9 of 35. A larger coding model doing worse than a 0.5B one is
+  surprising, and the cause was not investigated — it could be the model, the
+  chat template Foundry applies for tools, or the prompt.
 
 ---
 
