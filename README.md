@@ -1534,7 +1534,7 @@ and treats them differently:
 | Class | Handling |
 | --- | --- |
 | Python packages | `-Apply` runs `uv sync --upgrade` and prints every version that moved |
-| GenieX CLI | `-Apply` downloads, verifies SHA256, installs silently |
+| GenieX CLI | `-Apply` downloads, verifies SHA256, installs silently. Follows the latest **stable** release: pre-releases are ignored, and a newer installed pre-release is kept, not downgraded |
 | Foundry Local | Detected only |
 | Drivers and OS | **Detected only, never changed** |
 

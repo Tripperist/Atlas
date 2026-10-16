@@ -34,7 +34,9 @@
 
 .PARAMETER Apply
     Apply available updates: Python packages via uv, and GenieX via its signed
-    installer. Drivers are never touched.
+    installer. Drivers are never touched. GenieX tracks the latest *stable*
+    release; pre-releases are ignored, and an installed version that is ahead of
+    the latest stable one (a release candidate, say) is kept, never downgraded.
 
 .PARAMETER Accept
     Record the current state as the new baseline.
@@ -207,9 +209,53 @@ function Show-PackageDiff {
 
 function Get-LatestGeniexTag {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) { return $null }
-    $tag = gh release list --repo qualcomm/GenieX --limit 1 --json tagName --jq '.[0].tagName' 2>$null
+    # --exclude-pre-releases: the first row of `gh release list` is simply the newest,
+    # which is often a release candidate, and -Apply would have installed it.
+    $tag = gh release list --repo qualcomm/GenieX --limit 1 --exclude-pre-releases --json tagName --jq '.[0].tagName' 2>$null
     if ($LASTEXITCODE -eq 0 -and $tag) { return "$tag".Trim() }
     $null
+}
+
+function ConvertTo-ReleaseVersion {
+    param([string]$Text)
+    if ($Text -notmatch '^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+.*)?$') { return $null }
+    [pscustomobject]@{
+        Core = @([int]$Matches[1], [int]$Matches[2], [int]$Matches[3])
+        Pre  = if ($Matches[4]) { @($Matches[4] -split '\.') } else { @() }
+    }
+}
+
+# -1, 0 or 1 by semantic-versioning precedence, or $null when either side is not a
+# version. A plain string comparison would call an installed v0.8.1-rc.4 "different
+# from" the latest stable v0.8.0 and offer to downgrade it.
+function Compare-ReleaseVersion {
+    param([string]$A, [string]$B)
+    $x = ConvertTo-ReleaseVersion $A
+    $y = ConvertTo-ReleaseVersion $B
+    if (-not $x -or -not $y) { return $null }
+    for ($i = 0; $i -lt 3; $i++) {
+        if ($x.Core[$i] -ne $y.Core[$i]) { return [math]::Sign($x.Core[$i] - $y.Core[$i]) }
+    }
+    # A release outranks any pre-release of the same version.
+    if ($x.Pre.Count -eq 0 -and $y.Pre.Count -eq 0) { return 0 }
+    if ($x.Pre.Count -eq 0) { return 1 }
+    if ($y.Pre.Count -eq 0) { return -1 }
+    for ($i = 0; $i -lt [math]::Max($x.Pre.Count, $y.Pre.Count); $i++) {
+        if ($i -ge $x.Pre.Count) { return -1 }
+        if ($i -ge $y.Pre.Count) { return 1 }
+        $p = $x.Pre[$i]; $q = $y.Pre[$i]
+        $pNum = $p -match '^\d+$'; $qNum = $q -match '^\d+$'
+        if ($pNum -and $qNum) {
+            if ([int]$p -ne [int]$q) { return [math]::Sign([int]$p - [int]$q) }
+        }
+        elseif ($pNum) { return -1 }   # numeric identifiers rank below alphanumeric ones
+        elseif ($qNum) { return 1 }
+        else {
+            $c = [string]::CompareOrdinal($p, $q)
+            if ($c -ne 0) { return [math]::Sign($c) }
+        }
+    }
+    0
 }
 
 <#
@@ -367,9 +413,20 @@ Write-Host '-----------------'
 
 $latestGx = Get-LatestGeniexTag
 $gxOutdated = $false
+$gxAhead = $false
 if ($latestGx) {
-    $gxOutdated = ($current.geniex.version -ne $latestGx)
-    $note = if ($gxOutdated) { '<-- newer available' } else { '(current)' }
+    $gxCmp = Compare-ReleaseVersion $current.geniex.version $latestGx
+    if ($null -eq $gxCmp) {
+        # Not a version we can order (for example, not installed): any difference counts.
+        $gxOutdated = ($current.geniex.version -ne $latestGx)
+    }
+    else {
+        $gxOutdated = ($gxCmp -lt 0)
+        $gxAhead = ($gxCmp -gt 0)
+    }
+    $note = if ($gxOutdated) { '<-- newer available' }
+            elseif ($gxAhead) { '(ahead of the latest stable release; a pre-release)' }
+            else { '(current)' }
     Write-Host ("  GenieX   installed {0}, latest {1}  {2}" -f $current.geniex.version, $latestGx, $note)
 }
 else {
@@ -442,6 +499,9 @@ if ($Apply) {
     }
     elseif (-not $latestGx) {
         Write-Host '  GenieX: skipped (latest release unknown)'
+    }
+    elseif ($gxAhead) {
+        Write-Host "  GenieX: keeping $($current.geniex.version), which is ahead of the latest stable $latestGx (not downgrading)"
     }
     elseif (-not $gxOutdated) {
         Write-Host "  GenieX: already $latestGx"
