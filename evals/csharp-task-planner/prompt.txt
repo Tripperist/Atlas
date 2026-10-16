@@ -1,0 +1,83 @@
+You are an expert C# developer. Implement the following program.
+
+TASK: planner -- a build-plan calculator
+
+Write a .NET 10 console program in C#, as a single file named Program.cs, with no NuGet packages. Nullable reference types and implicit usings are enabled.
+
+The program reads a text file that lists tasks, the tasks each one depends on, and how long each takes, and prints an execution plan.
+
+INPUT FILE
+
+One task per line. Blank lines, and lines whose first non-blank character is '#', are ignored. Spaces and tabs around names, commas, the colon and the brackets are ignored. Lines end in LF or CRLF. Every other line has this form:
+
+    name
+    name [duration]
+    name: dep, dep, ...
+    name: dep, dep, ... [duration]
+
+- name is one or more of: letters, digits, '_', '-', '.'. Names are case-sensitive.
+- The optional duration is a positive integer from 1 to 1000000 in square brackets at the very end of the line. The default duration is 1.
+- If a colon is present it must be followed by at least one dependency.
+- A dependency named twice on the same line counts once.
+- A task may depend on a task that is defined later in the file.
+- Anything else is a syntax error, including: an invalid character in a name, an empty dependency ("a: b,,c" or a trailing comma), a duration that is zero, negative, not an integer or out of range, an unclosed bracket, and square brackets anywhere except as the duration at the end of the line.
+
+Example:
+
+    # a small build
+    fetch [2]
+    configure: fetch [1]
+    compile: fetch, configure [4]
+    test: compile [5]
+    package: compile, docs [3]
+    docs [2]
+
+COMMAND LINE
+
+    planner <file> [--format text|json]
+
+--format may come before or after the file. The default is text. Any other arguments are a usage error.
+
+OUTPUT (stdout, exit code 0)
+
+A task belongs to the earliest stage in which it can run. Stage 1 holds the tasks with no dependencies. Stage k holds every task not in an earlier stage whose dependencies are all in stages before k. Within a stage, sort tasks by name with ordinal (byte-wise) comparison.
+
+The critical path is the chain of tasks, each depending on the previous one, with the greatest total duration (the sum of the durations of its tasks). List it from the first task to run to the last. If several chains have the same total duration, choose the one whose list of names is smallest when compared element by element with ordinal comparison.
+
+Text format, for the example above:
+
+    Stage 1: docs, fetch
+    Stage 2: configure
+    Stage 3: compile
+    Stage 4: package, test
+    Total tasks: 6
+    Critical path (12): fetch -> configure -> compile -> test
+
+If there are no tasks, print only "Total tasks: 0".
+
+JSON format: print one JSON document. Property order and whitespace do not matter. For the example above:
+
+    {"stages":[["docs","fetch"],["configure"],["compile"],["package","test"]],"totalTasks":6,"criticalPath":{"duration":12,"tasks":["fetch","configure","compile","test"]}}
+
+If there are no tasks: {"stages":[],"totalTasks":0,"criticalPath":{"duration":0,"tasks":[]}}
+
+ERRORS
+
+On any error print exactly one line to stderr, print nothing to stdout, and exit with the code below. Check in this order: command line, reading the file, syntax, unknown dependencies, cycles.
+
+    1  command-line usage error.  stderr: usage: planner <file> [--format text|json]
+    2  the file cannot be read.   stderr: error: cannot read file: <path>
+    3  syntax error.              stderr: error: line N: <reason>
+       N is the 1-based physical line number of the first bad line, counting blank and comment lines.
+       Defining the same task twice is also a syntax error, reported on the second definition's line.
+    4  unknown dependency.        stderr: error: task '<a>' depends on unknown task '<b>'
+       Report the first such task in file order, and its first unknown dependency in the order listed.
+    5  dependency cycle, including a task that depends on itself.
+                                  stderr: error: dependency cycle  (details may follow on the same line)
+
+REQUIREMENTS
+
+The input may hold up to 100,000 tasks. The program must finish within a few seconds on such input, must not crash on a chain of 100,000 tasks each depending on the previous one, and must not overflow when the total duration exceeds the range of a 32-bit integer.
+
+Reply with exactly one ```csharp code block containing the complete Program.cs, and no other text.
+=== END OF TASK ===

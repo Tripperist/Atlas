@@ -1,0 +1,21 @@
+{
+ "source": "reference",
+ "lines": 172,
+ "build": {
+  "built": true,
+  "errors": 0,
+  "errorSample": [],
+  "warnings": 0,
+  "warningSample": [],
+  "buildSeconds": 1.2
+ },
+ "passed": 45,
+ "total": 45,
+ "byCategory": {
+  "functional": "21/21",
+  "error": "20/20",
+  "scale": "4/4"
+ },
+ "failures": [],
+ "slowestScaleCaseSeconds": 0.3
+}

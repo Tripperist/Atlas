@@ -1,0 +1,8 @@
+# Rebuilt deterministically by `python oracle.py gen tests/generated`
+tests/generated/
+
+# Build output and scratch space from eval.py and repair.py
+.work/
+bin/
+obj/
+__pycache__/
