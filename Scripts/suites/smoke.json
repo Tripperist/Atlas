@@ -1,4 +1,5 @@
 {
+  "canary": false,
   "description": "About two minutes. Proves the harnesses run end to end on a small model each; not a result you would publish.",
   "steps": [
     {

@@ -34,6 +34,13 @@
     A step that exits with code 4 means a prerequisite is not present (for example the
     pinned llama.cpp build is not unpacked) and is reported as skipped, not failed.
 
+    Before the first step the canary runs (Invoke-AtlasCanary.ps1: a half-minute fixed run of
+    the pinned stock llama.cpp, compared with earlier AC runs). ok and no-reference go on; warn
+    goes on and the summary says the figures need a caveat; abort stops the suite, unless
+    -IgnoreCanary. It runs again after the last step, to show whether the machine drifted
+    during the run. If the pinned build is not unpacked the canary is unavailable, which is
+    reported and does not stop anything.
+
     The estimates in the manifests are rough, from runs on one machine.
 
 .PARAMETER Suite
@@ -57,6 +64,13 @@
 .PARAMETER AllowBattery
     Pass -AllowBattery to every step; everything is then recorded onAcPower = false.
 
+.PARAMETER NoCanary
+    Skip the canary. A manifest can also opt out with "canary": false (smoke does: it
+    proves the harnesses run and measures nothing worth gating).
+
+.PARAMETER IgnoreCanary
+    Run the suite even if the canary says abort. The summary says it was overridden.
+
 .EXAMPLE
     .\Scripts\Invoke-AtlasBenchSuite.ps1 -List
 
@@ -76,10 +90,15 @@ param(
     [string[]]$Skip,
     [switch]$StopOnError,
     [switch]$AllowBattery,
+    # The canary (Invoke-AtlasCanary.ps1) runs before the steps, and again after them. Abort
+    # stops the suite unless -IgnoreCanary; -NoCanary skips it.
+    [switch]$NoCanary,
+    [switch]$IgnoreCanary,
     # Where the manifests and run folders are. The defaults are the committed suites and
     # .atlas-local/benchmarks/runs; the tests point them at a temporary folder.
     [string]$SuiteDir,
-    [string]$RunsDir
+    [string]$RunsDir,
+    [string]$CanaryScript
 )
 
 $ErrorActionPreference = 'Stop'
@@ -92,7 +111,7 @@ function Get-Suites {
     Get-ChildItem $suiteDir -Filter '*.json' | Sort-Object Name | ForEach-Object {
         $m = Get-Content $_.FullName -Raw | ConvertFrom-Json
         [pscustomobject]@{
-            Name = $_.BaseName; Description = $m.description; Steps = @($m.steps)
+            Name = $_.BaseName; Description = $m.description; Steps = @($m.steps); Canary = ($m.canary -ne $false)
             Minutes = ($m.steps | Measure-Object estimateMinutes -Sum).Sum; Path = $_.FullName
         }
     }
@@ -147,6 +166,7 @@ if ($DryRun) {
         Write-Host ("    pwsh -NoProfile -Command ""{0}""" -f (ConvertTo-CommandLine $s.script $s.args $AllowBattery.IsPresent)) -ForegroundColor DarkGray
         if ($s.note) { Write-Host "    $($s.note)" -ForegroundColor DarkGray }
     }
+    if (-not $NoCanary -and $def.Canary) { Write-Host '  (the canary runs before the first step and after the last)' -ForegroundColor DarkGray }
     Write-Host ''
     Write-Host 'Dry run: nothing was run, and the machine''s conditions were not checked.'
     return
@@ -174,9 +194,43 @@ function Get-HistoryLineCount { if (Test-Path $historyPath) { @(Get-Content $his
 
 $results = [System.Collections.Generic.List[object]]::new()
 $allRecords = [System.Collections.Generic.List[string]]::new()
+$canaries = [System.Collections.Generic.List[object]]::new()
+$useCanary = (-not $NoCanary) -and $def.Canary
+$canaryPath = if ($CanaryScript) { $CanaryScript } else { Join-Path $PSScriptRoot 'Invoke-AtlasCanary.ps1' }
+
+function Invoke-SuiteCanary([string]$When) {
+    Write-Host ("[canary {0}]" -f $When) -ForegroundColor Cyan
+    $cmd = ConvertTo-CommandLine $canaryPath ([pscustomobject]@{}) $AllowBattery.IsPresent
+    $log = Join-Path $runDir "logs/canary-$When.log"
+    $before = Get-HistoryLineCount
+    $sw = [System.Diagnostics.Stopwatch]::StartNew()
+    & pwsh -NoProfile -Command $cmd *>&1 | Tee-Object -FilePath $log | ForEach-Object { Write-Host $_ }
+    $code = $LASTEXITCODE
+    foreach ($line in @(if (Test-Path $historyPath) { Get-Content $historyPath | Select-Object -Skip $before } else { @() })) { $allRecords.Add($line) }
+    $text = if (Test-Path $log) { Get-Content $log -Raw } else { '' }   # a step that printed nothing leaves no log
+    $verdict = switch ($code) {
+        0 { if ($text -match 'No reference yet') { 'no-reference' } else { 'ok' } }
+        10 { 'warn' } 11 { 'abort' } 4 { 'unavailable' } default { 'error' }
+    }
+    $c = [pscustomobject]@{ when = $When; verdict = $verdict; exitCode = $code; seconds = [math]::Round($sw.Elapsed.TotalSeconds, 1) }
+    $canaries.Add($c)
+    $color = switch ($verdict) { 'ok' { 'Green' } 'abort' { 'Red' } 'error' { 'Red' } default { 'Yellow' } }
+    Write-Host ("  -> canary {0}" -f $verdict) -ForegroundColor $color
+    Write-Host ''
+    $c
+}
+
+$aborted = $false
 try {
+    if ($useCanary) {
+        $c = Invoke-SuiteCanary 'before'
+        if ($c.verdict -eq 'abort') {
+            if ($IgnoreCanary) { Write-Host 'The canary said abort; running anyway because of -IgnoreCanary. The figures from this run are suspect.' -ForegroundColor Yellow }
+            else { Write-Host 'The canary says the machine is not in its normal state. Not running the suite (-IgnoreCanary overrides).' -ForegroundColor Red; $aborted = $true }
+        }
+    }
     $n = 0
-    foreach ($s in $steps) {
+    foreach ($s in $(if ($aborted) { @() } else { $steps })) {
         $n++
         Write-Host ("[{0}/{1}] {2}" -f $n, $steps.Count, $s.id) -ForegroundColor Cyan
         $scriptPath = if ([System.IO.Path]::IsPathRooted($s.script)) { $s.script } else { Join-Path $PSScriptRoot $s.script }
@@ -200,21 +254,32 @@ try {
         Write-Host ''
         if ($status -eq 'failed' -and $StopOnError) { Write-Host 'Stopping: -StopOnError.' -ForegroundColor Red; break }
     }
+    if ($useCanary -and -not $aborted) { $null = Invoke-SuiteCanary 'after' }
 }
 finally {
     Remove-Item Env:ATLAS_SUITE_RUN -ErrorAction SilentlyContinue
-    $results | ConvertTo-Json -Depth 4 | Set-Content (Join-Path $runDir 'steps.json') -Encoding utf8
+    ConvertTo-Json -InputObject @($results) -Depth 4 | Set-Content (Join-Path $runDir 'steps.json') -Encoding utf8
+    ConvertTo-Json -InputObject @($canaries) -Depth 4 | Set-Content (Join-Path $runDir 'canary.json') -Encoding utf8
     [System.IO.File]::WriteAllLines((Join-Path $runDir 'records.jsonl'), [string[]]$allRecords, [System.Text.UTF8Encoding]::new($false))
 }
 
 # ------------------------------------------------------------------- summary
 
-$records = @($allRecords | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ })
+$records = @($allRecords | ForEach-Object { try { $_ | ConvertFrom-Json } catch { $null } } | Where-Object { $_ -and $_.kind -ne 'canary' })
 $md = [System.Collections.Generic.List[string]]::new()
 $md.Add("# $runId")
 $md.Add('')
 $md.Add(('Stack `{0}`, code `{1}`, {2}.' -f (Get-AtlasShortId $state.id), (Get-AtlasCodeRev), $(if ($conditions.onAcPower -eq $false) { '**on battery: not comparable with AC runs**' } elseif ($conditions.onAcPower) { 'on AC power' } else { 'power state unknown' })))
 $md.Add('')
+if ($useCanary) {
+    $cb = $canaries | Where-Object when -EQ 'before'; $ca = $canaries | Where-Object when -EQ 'after'
+    $line = 'Canary: before ' + $(if ($cb) { $cb.verdict } else { 'not run' }) + $(if ($ca) { ', after ' + $ca.verdict } else { '' }) + '.'
+    if ($aborted) { $line += ' **The suite did not run: the machine was not in its normal state.**' }
+    elseif ($cb -and $cb.verdict -eq 'abort') { $line += ' **Run anyway with -IgnoreCanary: the figures are suspect.**' }
+    elseif ('warn' -in @($cb.verdict, $ca.verdict)) { $line += ' **The machine was below 85 % of its AC reference: read the figures with that caveat.**' }
+    elseif ($ca -and $cb -and $cb.verdict -eq 'ok' -and $ca.verdict -in 'abort', 'error') { $line += ' **The machine drifted during the run.**' }
+    $md.Add($line); $md.Add('')
+}
 $md.Add('| Step | Status | Time | Records |')
 $md.Add('| --- | --- | --- | --- |')
 foreach ($r in $results) { $md.Add(('| {0} | {1} | {2} s | {3} |' -f $r.id, $r.status, $r.seconds, $r.records)) }
@@ -235,6 +300,7 @@ Write-Host ($md -join "`n")
 Write-Host ''
 Write-Host "Run folder: $runDir" -ForegroundColor DarkGray
 
+if ($aborted) { exit 11 }
 $failed = @($results | Where-Object { $_.status -eq 'failed' -and -not $_.optional })
 if ($failed.Count) { Write-Host ("{0} step(s) failed: {1}" -f $failed.Count, ($failed.id -join ', ')) -ForegroundColor Red }
 exit $failed.Count

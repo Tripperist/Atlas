@@ -38,7 +38,8 @@ function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
     '  {0}  {1}{2}' -f $(if ($Ok) { 'ok  ' } else { 'FAIL' }), $Name, $(if (-not $Ok -and $Detail) { "   $Detail" } else { '' })
 }
 function Run([string]$ArgText) {
-    $out = (& pwsh -NoProfile -Command "& '$runner' $ArgText" 2>&1 | Out-String)
+    # `pwsh -Command` reports 0 or 1 from $?, so pass the script's own exit code through
+    $out = (& pwsh -NoProfile -Command "& '$runner' $ArgText; if (`$?) { exit 0 } else { exit `$(if (`$LASTEXITCODE) { `$LASTEXITCODE } else { 1 }) }" 2>&1 | Out-String)
     [pscustomobject]@{ Output = $out; Exit = $LASTEXITCODE }
 }
 function Latest { Get-ChildItem $runs -Directory -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1 }
@@ -69,7 +70,15 @@ Write-Host "stub ok: model=$Model sizes=$($Sizes -join '+') flag=$Flag battery=$
 '@ -replace '@@OK@@', $okPath -replace '@@BAD@@', $badPath -replace '@@GONE@@', $gonePath
     Set-Content (Join-Path $suites 'stub.json') $manifest
 
-    $common = "-SuiteDir '$suites' -RunsDir '$runs'"
+    # a stub canary: exits with $env:STUB_CANARY_EXIT (default 0), and says so
+    Set-Content (Join-Path $tmp 'canary.ps1') @'
+param([switch]$AllowBattery)
+Write-Host "stub canary"
+if ($env:STUB_CANARY_EXIT -eq '0' -and $env:STUB_CANARY_NOREF) { Write-Host 'No reference yet: 0 earlier runs' }
+exit $(if ($env:STUB_CANARY_EXIT) { [int]$env:STUB_CANARY_EXIT } else { 0 })
+'@
+    $canaryPath = (Join-Path $tmp 'canary.ps1') -replace '\\', '/'
+    $common = "-SuiteDir '$suites' -RunsDir '$runs' -CanaryScript '$canaryPath'"
 
     Write-Host 'Listing and dry run' -ForegroundColor Cyan
     $r = Run "-List $common"
@@ -104,7 +113,7 @@ Write-Host "stub ok: model=$Model sizes=$($Sizes -join '+') flag=$Flag battery=$
         Check 'the records are also in the history' (@(Get-Content $env:ATLAS_HISTORY_PATH).Count -eq 2)
         $meta = Get-Content (Join-Path $dir.FullName 'suite.json') -Raw | ConvertFrom-Json
         Check 'suite.json: run id, battery recorded, manifest copied' (($meta.runId -eq $dir.Name) -and ($meta.onAcPower -eq $false) -and ($meta.manifest.steps.Count -eq 4))
-        Check 'a log per step' (@(Get-ChildItem (Join-Path $dir.FullName 'logs') -Filter '*.log').Count -eq 4)
+        Check 'a log per step, and one per canary' ((@(Get-ChildItem (Join-Path $dir.FullName 'logs') -Filter '*.log' | Where-Object Name -NotLike 'canary-*').Count -eq 4) -and (Test-Path (Join-Path $dir.FullName 'logs/canary-before.log')) -and (Test-Path (Join-Path $dir.FullName 'logs/canary-after.log')))
         $md = Get-Content (Join-Path $dir.FullName 'summary.md') -Raw
         Check 'summary.md: battery warning, step table, measurement table' (($md -match 'not comparable with AC') -and ($md -match '\| broken \| failed') -and ($md -match "\| it's a model \| cpu \| 512 \|")) $md
         Check 'no suiteRun leaks into the environment' (-not $env:ATLAS_SUITE_RUN)
@@ -120,6 +129,39 @@ Write-Host "stub ok: model=$Model sizes=$($Sizes -join '+') flag=$Flag battery=$
         Start-Sleep -Seconds 1
         $r = Run "-Suite stub -AllowBattery -StopOnError $common"
         Check '-StopOnError stops at the failed step' ((((Steps).id) -join ',') -eq 'first,broken')
+
+        Write-Host ''
+        Write-Host 'The canary' -ForegroundColor Cyan
+        Start-Sleep -Seconds 1
+        $r = Run "-Suite stub -AllowBattery -Only first $common"
+        $c = Get-Content (Join-Path (Latest).FullName 'canary.json') -Raw | ConvertFrom-Json
+        Check 'runs before and after the steps, and the summary says ok' ((($c.when) -join ',') -eq 'before,after' -and (($c.verdict) -join ',') -eq 'ok,ok' -and ((Get-Content (Join-Path (Latest).FullName 'summary.md') -Raw) -match 'Canary: before ok, after ok')) $r.Output
+        $env:STUB_CANARY_EXIT = '11'
+        try {
+            Start-Sleep -Seconds 1
+            $r = Run "-Suite stub -AllowBattery -Only first $common"
+            $dir = Latest
+            Check 'abort: exit 11, no step ran, no second canary, the summary says why' (($r.Exit -eq 11) -and ($r.Output -notmatch 'stub ok') -and ((Get-Content (Join-Path $dir.FullName 'canary.json') -Raw | ConvertFrom-Json).Count -eq 1) -and ((Get-Content (Join-Path $dir.FullName 'summary.md') -Raw) -match 'The suite did not run')) $r.Output
+            Start-Sleep -Seconds 1
+            $r = Run "-Suite stub -AllowBattery -Only first -IgnoreCanary $common"
+            Check '-IgnoreCanary runs the steps anyway, and says the figures are suspect' (($r.Exit -eq 0) -and ($r.Output -match 'stub ok') -and ((Get-Content (Join-Path (Latest).FullName 'summary.md') -Raw) -match 'suspect'))
+            $env:STUB_CANARY_EXIT = '10'
+            Start-Sleep -Seconds 1
+            $r = Run "-Suite stub -AllowBattery -Only first $common"
+            Check 'warn: the suite runs, and the summary carries the caveat' (($r.Exit -eq 0) -and ($r.Output -match 'stub ok') -and ((Get-Content (Join-Path (Latest).FullName 'summary.md') -Raw) -match 'caveat'))
+            $env:STUB_CANARY_EXIT = '4'
+            Start-Sleep -Seconds 1
+            $r = Run "-Suite stub -AllowBattery -Only first $common"
+            Check 'unavailable (exit 4): the suite runs' (($r.Exit -eq 0) -and ($r.Output -match 'stub ok') -and ((Get-Content (Join-Path (Latest).FullName 'canary.json') -Raw | ConvertFrom-Json)[0].verdict -eq 'unavailable'))
+            $env:STUB_CANARY_EXIT = '0'; $env:STUB_CANARY_NOREF = '1'
+            Start-Sleep -Seconds 1
+            $r = Run "-Suite stub -AllowBattery -Only first $common"
+            Check 'no reference is read from the canary''s output' ((Get-Content (Join-Path (Latest).FullName 'canary.json') -Raw | ConvertFrom-Json)[0].verdict -eq 'no-reference')
+        }
+        finally { Remove-Item Env:STUB_CANARY_EXIT, Env:STUB_CANARY_NOREF -ErrorAction SilentlyContinue }
+        Start-Sleep -Seconds 1
+        $r = Run "-Suite stub -AllowBattery -Only first -NoCanary $common"
+        Check '-NoCanary skips it' (-not (Test-Path (Join-Path (Latest).FullName 'logs/canary-before.log')))
     }
     finally { Remove-Item Env:ATLAS_TEST_ON_BATTERY -ErrorAction SilentlyContinue }
 
