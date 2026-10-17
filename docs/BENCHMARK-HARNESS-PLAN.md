@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: phases 1 to 3 are implemented (2026-10-17), but nothing has been run on AC power; the rest is a proposal.** Written 2026-10-17 after a session
+**Status: phases 1 to 4 are implemented (2026-10-17), but no figure has been measured on AC power for the record; phase 5 is a proposal.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -30,7 +30,7 @@ records the conditions it ran under.
 | --- | --- |
 | Laptop on battery | **Refuse** unless `-AllowBattery` is given; the run is then recorded with `onAcPower: false` |
 | First pass | Conditions check plus committed harnesses (phases 1 and 2) |
-| Canary | Later (phase 4): warn below about 85 % of the AC reference, abort below about 60 % unless overridden |
+| Canary | Phase 4 (built, thresholds provisional): warn below about 85 % of the AC reference, abort below about 60 % unless overridden |
 | History format | **Additive**: new fields, old records stay valid and read as "unknown" |
 | C# benchmark mode | **Its own project**, `src/csharp/OrtBench`; `GenAiProbe` stays a smoke probe |
 | Foundry loaded-model check | Run `foundry server status` first. Only if the daemon is up, `foundry model list --loaded`. **Never start it, and never stop one we did not start.** Checked on this machine: `status` has no side effect, `foundry cache ls` starts the daemon, and a stopped daemon holds no models |
@@ -184,13 +184,30 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
     arguments in them have not been exercised through the runner. `longctx` relies on its HTTP
     step running before the in-process step, for the exact prompt lengths.
   - Not built: a `-Set key=value` override of a step's arguments (edit the manifest or run the
-    script directly), and the comparison of two suite runs (phase 4).
+    script directly), and the comparison of two suite runs (that is `Compare-AtlasBenchmarks.ps1`, below).
 - **Phase 5, export and page:** the export script, the marker-delimited generated tables
   in BENCHMARKS.md, and the backfill migration. The schema fields they need are added in
   phase 1, so records written from then on are complete.
-- **Phase 4, canary and compare:** a short fixed run compared with the AC history, and
-  `Compare-AtlasBenchmarks -From <stack> -To <stack>`. Thresholds need AC data that
-  mostly does not exist yet, so this waits until phases 1 to 3 have produced it.
+- **Phase 4, canary and compare (built):**
+  - `Compare-AtlasBenchmarks.ps1` (rules in `AtlasCompare.psm1`) compares two stacks cell by
+    cell. Checked against the real history, where it reproduces the hand-built v0.8.0 to v0.9.0
+    findings (control held; 30B GPU decode -39.7 %; 30B NPU first token 13.9 to 0.35 s). It
+    adds a `noisy` verdict where a stack's own records disagree by half the mean or more
+    (several first-token cells did, where an earlier lazy-mapping artifact had been recorded).
+  - `Invoke-AtlasCanary.ps1` (rules in `AtlasCanary.psm1`) runs the pinned llama.cpp on
+    Qwen3-0.6B (CPU and GPU, 256-token prompt, 32 generated, two rounds) and compares with the
+    median of the last five healthy AC canary runs. The suite runner runs it before and after
+    the steps; abort stops the suite (exit 11), warn adds a caveat.
+  - **The thresholds are not data-driven.** The plan said to wait for AC data; there is none (no
+    record in the history has `onAcPower: true`), so 0.85 and 0.60 are provisional values chosen
+    from the failures seen (a 3x slowdown on battery, a half-speed state) and the 3 to 7 %
+    spread of the controls. Until three healthy AC canary runs exist the verdict is
+    `no-reference` and nothing is gated, so the canary currently only records.
+  - Tested over synthetic records, and the canary script for real against llama-bench with
+    a seeded history (no-reference; abort against an inflated reference; ok against a tiny one).
+    Not tested: a canary on AC power building its own reference, or a genuine abort.
+  - The canary needs the pinned build unpacked, which needs `Invoke-LlamaCppControl.ps1
+    -Download` (not run). Without it the canary is unavailable.
 
 ## Not in scope
 

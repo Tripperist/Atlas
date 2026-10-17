@@ -1586,6 +1586,9 @@ running, and a stopped daemon holds none.
 .\Scripts\Test-AtlasHistory.ps1                     # the history format, against a temporary file
 .\Scripts\Test-BenchmarkGuards.ps1                  # every harness refuses on battery
 .\Scripts\Test-BenchmarkGuards.ps1 -IncludeRuns     # and records the override on tiny real runs
+.\Scripts\Test-BenchSuite.ps1                       # the suite runner, over stub steps
+.\Scripts\Test-AtlasCompare.ps1                     # the stack comparison rules
+.\Scripts\Test-AtlasCanary.ps1                      # the canary rules; -IncludeRuns runs it for real
 ```
 
 The harness scripts require **PowerShell 7** (`pwsh`, not `powershell`) and say so
@@ -1662,12 +1665,40 @@ the code revision, the conditions), `steps.json`, `records.jsonl`, a log per ste
 `summary.md`. The records also go to the history, tagged `suiteRun`. The time estimates are
 rough, and only `smoke` has been timed: the other four have never been run.
 
+**The canary.** Before the first step the runner runs `Invoke-AtlasCanary.ps1`: a half-minute
+fixed run of the pinned stock llama.cpp on Qwen3-0.6B (CPU and GPU), so no GenieX or Foundry
+update can move it, compared with the median of the last five earlier canary runs that were
+measured on AC power. `ok` and `no-reference` go on, `warn` (below 85 % of the reference) goes
+on with a caveat in the summary, and `abort` (below 60 %) stops the suite unless
+`-IgnoreCanary`. It runs again after the last step, to show a drift during the run; `smoke`
+and `-NoCanary` skip it. **The 85 % and 60 % lines are provisional**: there was no AC data to set
+them from, and the canary has no reference until three healthy AC runs exist, so for now it only
+records. It needs the pinned build unpacked (`Invoke-LlamaCppControl.ps1 -Download`); without it
+the canary is reported unavailable and nothing is gated.
+
+### Comparing two stacks
+
+```powershell
+.\Scripts\Compare-AtlasBenchmarks.ps1 -List                       # the stacks that have records
+.\Scripts\Compare-AtlasBenchmarks.ps1                             # the previous stack against the current one
+.\Scripts\Compare-AtlasBenchmarks.ps1 -From 44a1e6e -To af42e97 -Markdown
+```
+
+For every cell (model, compute unit, prompt length, measuring script) measured on both stacks:
+the figure on each, the change, and whether it is the same, better, worse, within the noise, or
+noisy. Records measured on battery and records marked invalid are never used, and AC power is
+preferred over "not recorded". The stock llama.cpp control is shown first: if it moved, the
+machine was not in the same state on both stacks and everything else has to be read with that
+in mind. On the real history it reproduces the hand-built v0.8.0 to v0.9.0 table (control held;
+the 30B GPU decode 28.9 to 17.4 tok/s; the 30B NPU first token 13.9 to 0.35 s), with every
+figure's power state shown as `?` because none was recorded then.
+
 ### The benchmark history
 
 Results are appended to `.atlas-local/benchmarks/history.jsonl`, stamped with the
 stack they ran under, and now also with the conditions above, the Atlas revision
 (`codeRev`, with `+dirty` when `Scripts`, `src` or `evals` differ from it), a unique
-`id`, and a `kind` (`benchmark`, `control` or `smoke`). Records written before this
+`id`, and a `kind` (`benchmark`, `control`, `canary` or `smoke`). Records written before this
 (`schemaVersion` 2 introduced the fields) still read: the reader fills what they lack.
 
 ```powershell

@@ -1137,8 +1137,9 @@ reimplementing the hash or the policy, so both sides derive the same id for the 
 machine and apply the same rules.
 
 **What a record carries (format 2).** Beside the stack and the figures: a stable
-`id`; `kind` (`benchmark`, `control` or `smoke`; smoke records are the check
-`Update-Workspace.ps1` runs, and are never published); `conditions` and `onAcPower`
+`id`; `kind` (`benchmark`, `control`, `canary` or `smoke`; smoke records are the check
+`Update-Workspace.ps1` runs, canary records the machine-state check before a suite, and
+neither is published); `suiteRun`, the run folder a suite wrote it from; `conditions` and `onAcPower`
 (see the [README](../README.md#benchmark-conditions)); `codeRev`, the Atlas revision
 with `+dirty` when `Scripts`, `src` or `evals` differ from it; and, only where they
 apply, `n`, `stdev`, `reps`, `order`, `promptKind`, `ctxSize`, `seed`, `harness`,
