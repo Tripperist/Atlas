@@ -1466,7 +1466,8 @@ token loop, and accept that you are choosing from a short list of models.
 Two documents hold the detail:
 
 - **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**: the results, the methodology, the published AI Hub
-  figures, and which command reproduces each table.
+  figures, and which command reproduces each table. Its **[Current figures](docs/BENCHMARKS.md#current-figures)**
+  are generated from AC-powered runs and are the baseline.
 - **[docs/RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md)**: how to run the benchmarks, report
   them and compare two runs. One section per script.
 

@@ -63,6 +63,7 @@ Every benchmark answers one of these questions:
 | How do the three runtimes compare: GenieX, Foundry Local, ONNX Runtime GenAI? | [`Invoke-BenchFoundry`](#invoke-benchfoundry), [`Invoke-BenchOrtGenAi`](#invoke-benchortgenai), and the suite `runtimes` |
 | Is the NPU actually doing the work? | [`Invoke-BenchPlacement`](#invoke-benchplacement), [`Invoke-BenchToolCalling`](#invoke-benchtoolcalling) |
 | Did something change after an update? | [`Invoke-BenchSuite`](#5-suites-running-several-at-once) then [`Compare-BenchStacks`](#8-comparing-two-stacks) |
+| What should the documents show? | [`Export-BenchResults`](#publishing-the-results) |
 | Is the machine in its normal state right now? | [`Invoke-BenchCanary`](#invoke-benchcanary), [`Invoke-BenchControl`](#invoke-benchcontrol) |
 
 Three words are used throughout:
@@ -135,6 +136,7 @@ script's own documentation.
 | [`Invoke-BenchToolCalling`](#invoke-benchtoolcalling) | Does a Foundry model call tools, and stay on the NPU doing so? | a couple of minutes | no |
 | [`Invoke-BenchSuite`](#5-suites-running-several-at-once) | Run a named set of the above | 2 to about 40 min | via its steps |
 | [`Compare-BenchStacks`](#8-comparing-two-stacks) | What moved between two stacks? | seconds | reads it |
+| [`Export-BenchResults`](#publishing-the-results) | Which figures does the repository publish, and are the tables up to date? | seconds | reads it |
 | [`Mark-BenchInvalid`](#mark-benchinvalid) | Flag records known not to be comparable | seconds | edits it |
 | [`New-BenchPrompt`](#new-benchprompt) | Build a long prompt of a known size | seconds | no |
 
@@ -419,9 +421,40 @@ Get-AtlasBenchmarkHistory -Kind control                 # one kind
 Get-AtlasBenchmarkHistory -Valid | Where-Object model -like '*Coder-30B*' | Format-Table ts, compute, promptTokens, tokPerSec, prefillTps
 ```
 
-The published tables in [BENCHMARKS.md](BENCHMARKS.md) are written by hand from these results; each names
-what produced it. Records from before the conditions check existed have no recorded power state, and read as
-unknown.
+The **Current figures** in [BENCHMARKS.md](BENCHMARKS.md#current-figures) are generated from these results
+([publishing](#publishing-the-results)); the narrative tables after them were written by hand from earlier runs,
+each naming what produced it. Records from before the conditions check existed have no recorded power state,
+and read as unknown.
+
+### Publishing the results
+
+The history is a local ledger of everything that ran. What the documents show is a curated view of it:
+
+```powershell
+.\Scripts\Export-BenchResults.ps1            # write docs/data/benchmarks.json, regenerate the tables in BENCHMARKS.md
+git diff docs/                               # review what would be published
+.\Scripts\Export-BenchResults.ps1 -Check     # does BENCHMARKS.md match the committed export? (needs no history)
+```
+
+The rule, which is also written into the export:
+
+- **AC-powered, valid benchmark and control records only.** Battery runs, runs with no recorded power state
+  (everything before 2026-10-17), smoke checks and canary runs are never published. The history is not edited;
+  those records just do not qualify.
+- **One figure per cell** (model, compute unit, prompt length, measuring script, context size, and the software
+  variant where one stack can differ, such as the QNN package a C# run was built against): the **median over the
+  latest session** of that cell, where a session is records within 30 minutes of each other. One run is not a
+  fair stand-in, since the three C# runs of one session read 17.3 to 18.9 tok/s.
+- **A `†` in the `Runs` column** marks a cell whose AC records disagree by more than a quarter of the figure:
+  it has had a slow AC session as well as a healthy one, and `benchmarks.json` has the range (`acRange`).
+- **Every figure carries its stack and its date**, and a `*` marks a stack older than the one the machine is on
+  now (not re-measured since).
+- **A pin** in `docs/data/pins.json` names a record that stands alone for a cell, with the reason. A pin that
+  matches nothing is reported.
+
+The tables in [BENCHMARKS.md](BENCHMARKS.md#current-figures) between the `GENERATED` markers are written by the
+script: do not edit them by hand (`-Check` fails if you do). Nothing is published until the regenerated files
+are committed. Run it after a benchmark session, and the figures that moved show up in the diff.
 
 ## 8. Comparing two stacks
 
@@ -498,6 +531,7 @@ The checks that the benchmark code itself works:
 .\Scripts\Test-BenchConditions.ps1              # the conditions policy, then the conditions right now
 .\Scripts\Test-BenchHistory.ps1                 # the history format
 .\Scripts\Test-BenchPrompt.ps1                  # prompts are rebuilt byte for byte
+.\Scripts\Test-BenchExport.ps1                  # which figures qualify for publication, and the tables
 .\Scripts\Test-BenchLint.ps1                    # PSScriptAnalyzer over Scripts/ (install it once: see the script)
 ```
 

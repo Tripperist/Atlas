@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: phases 1 to 4 are implemented and the first AC measurements were taken on 2026-10-17 (see BENCHMARKS.md); phase 5 is a proposal.** Written 2026-10-17 after a session
+**Status: phases 1 to 5 are implemented and the first AC measurements were taken on 2026-10-17 (see BENCHMARKS.md), which are the new baseline.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -14,7 +14,7 @@ measures, and a script's help (`Get-Help .\Scripts\<name>.ps1`) starts with the 
 | --- | --- | --- |
 | Measure something | `Invoke-Bench<What>` | `Invoke-BenchDecode`, `Invoke-BenchPrefill`, `Invoke-BenchFoundry`, `Invoke-BenchFoundryContext`, `Invoke-BenchOrtGenAi`, `Invoke-BenchControl`, `Invoke-BenchPlacement`, `Invoke-BenchToolCalling` |
 | Run a set, or check the machine | `Invoke-Bench<Suite or Canary>` | `Invoke-BenchSuite`, `Invoke-BenchCanary` |
-| Report | `Compare-Bench...`, `Mark-Bench...` | `Compare-BenchStacks`, `Mark-BenchInvalid` |
+| Report | `Compare-Bench...`, `Mark-Bench...`, `Export-Bench...` | `Compare-BenchStacks`, `Mark-BenchInvalid`, `Export-BenchResults` |
 | Support | `New-Bench...`, `Bench*.psm1` | `New-BenchPrompt`, `BenchConditions`, `BenchFoundry`, `BenchCompare`, `BenchCanary` |
 | Check that the scripts work | `Test-Bench...` | `Test-BenchGuards`, `Test-BenchSuite`, `Test-BenchCompare`, `Test-BenchCanary`, `Test-BenchConditions`, `Test-BenchHistory`, `Test-BenchPrompt` |
 
@@ -224,9 +224,25 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
     step running before the in-process step, for the exact prompt lengths.
   - Not built: a `-Set key=value` override of a step's arguments (edit the manifest or run the
     script directly), and the comparison of two suite runs (that is `Compare-BenchStacks.ps1`, below).
-- **Phase 5, export and page:** the export script, the marker-delimited generated tables
-  in BENCHMARKS.md, and the backfill migration. The schema fields they need are added in
-  phase 1, so records written from then on are complete.
+- **Phase 5, export and generated tables (built, 2026-10-17):**
+  - `Export-BenchResults.ps1` (rules in `BenchExport.psm1`) writes `docs/data/benchmarks.json` and regenerates
+    the tables between `GENERATED` markers in BENCHMARKS.md, 'Current figures'. `-Check` verifies the tables
+    against the committed export without the history, so it works on any clone. Tested
+    (`Test-BenchExport.ps1`, over synthetic records and a temporary history and document).
+  - **The rule:** AC-powered, valid benchmark and control records only; smoke and canary never. With the first
+    AC data taken on 2026-10-17 declared the new baseline, everything earlier simply does not qualify, and the
+    history is not edited.
+  - **Differs from what was decided above.** (1) The published figure is the **median over the cell's latest
+    session** (records within 30 minutes), not 'the latest valid AC run': the first export showed a single run
+    can be either end of a spread (the three C# ORT runs of one session read 17.3 to 18.9 tok/s, and one cell had
+    nine AC runs from 7.5 to 18.9). A cell whose AC records disagree by more than a quarter of the figure is
+    marked unstable (`†`). (2) **No backfill.** The reader already fills the missing fields of old records, and
+    under the AC-only rule they could not be published anyway; rewriting the ledger would buy nothing. (3) The
+    export reports no 'cells that differ from what BENCHMARKS.md quotes': the hand-written tables are the
+    narrative of earlier runs, and the generated block is the baseline. (4) It is a set of tables, not an HTML
+    page; the JSON can feed one later.
+  - The first export holds 20 figures, all from stack `af42e97d18e1`, two of them marked unstable (the Python and
+    C# 2.6.0 ONNX Runtime GenAI cells, which had a slow AC session on 2026-10-16).
 - **Phase 4, canary and compare (built):**
   - `Compare-BenchStacks.ps1` (rules in `BenchCompare.psm1`) compares two stacks cell by
     cell. Checked against the real history, where it reproduces the hand-built v0.8.0 to v0.9.0

@@ -45,13 +45,20 @@ $script:FormerSourceNames = @{
     'Test-ToolCalling.ps1' = 'Invoke-BenchToolCalling.ps1'
 }
 
+function Get-AtlasSourceName {
+    <# The script that measured a record, by its current name; 'control' for any control record. #>
+    param([Parameter(Mandatory)]$Record)
+    $source = if ($Record.kind -eq 'control') { 'control' } else { [string]$Record.source }
+    if ($script:FormerSourceNames.ContainsKey($source)) { $source = $script:FormerSourceNames[$source] }
+    $source
+}
+
 function Get-AtlasCellKey {
     <# The identity of a measurement, without the stack or the metric. #>
     param([Parameter(Mandatory)]$Record)
     # A control is the same cell whichever script recorded it, so hand-entered records and the
     # committed harness meet. A script's former name is its current one.
-    $source = if ($Record.kind -eq 'control') { 'control' } else { [string]$Record.source }
-    if ($script:FormerSourceNames.ContainsKey($source)) { $source = $script:FormerSourceNames[$source] }
+    $source = Get-AtlasSourceName $Record
     '{0}|{1}|{2}|{3}' -f $Record.model, $Record.compute, $(if ($null -ne $Record.promptTokens) { [int]$Record.promptTokens } else { '' }), $source
 }
 
@@ -170,4 +177,4 @@ function Get-AtlasStackSummary {
     $rows | Sort-Object Last
 }
 
-Export-ModuleMember -Function Get-AtlasCellKey, Select-AtlasRepresentative, Compare-AtlasStacks, Get-AtlasStateDiff, Get-AtlasStackSummary
+Export-ModuleMember -Function Get-AtlasSourceName, Get-AtlasCellKey, Select-AtlasRepresentative, Compare-AtlasStacks, Get-AtlasStateDiff, Get-AtlasStackSummary

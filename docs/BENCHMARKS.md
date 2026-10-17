@@ -28,6 +28,7 @@ and is compared in [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
 ## Contents
 
 - [How these are measured](#how-these-are-measured)
+- [Current figures](#current-figures)
 - [Decode throughput by compute unit](#decode-throughput-by-compute-unit)
 - [Prefill vs decode](#prefill-vs-decode)
 - [A 30B mixture-of-experts model](#a-30b-mixture-of-experts-model)
@@ -163,6 +164,63 @@ Results taken before this change, on the 1.7B and 0.6B models, were run in
 blocks and are marked as such.
 
 ---
+
+## Current figures
+
+> **Generated, do not edit.** These tables are written by
+> [`Export-BenchResults.ps1`](../Scripts/Export-BenchResults.ps1) from
+> [`docs/data/benchmarks.json`](data/benchmarks.json), which it builds from the benchmark history by a stated
+> rule: **AC-powered, valid records only; the latest run of each cell; every figure with its stack and date.**
+> They are the baseline. Every other table in this document was measured before the conditions check existed,
+> so its power state was never recorded, and it does not qualify: it stays as the record of what was seen then,
+> and where it disagrees with a figure here, this one wins (see
+> [First measurements on AC power](#first-measurements-on-ac-power-2026-10-17)). To change which run stands for a
+> cell, pin it in [`docs/data/pins.json`](data/pins.json). To refresh: run a benchmark, then
+> `.\Scripts\Export-BenchResults.ps1`, review the diff and commit it.
+
+<!-- BEGIN GENERATED: current-figures (Scripts/Export-BenchResults.ps1) -->
+**GenieX decode from a short prompt**
+
+| Model | Compute | Prompt | Prefill tok/s | First token s | Decode tok/s | Runs | Stack | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | cpu |  |  | 0.13 | 28.2 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | gpu |  |  | 0.20 | 30.5 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | npu |  |  | 0.10 | 31.6 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+
+**GenieX prefill and decode by prompt length**
+
+| Model | Compute | Prompt | Prefill tok/s | First token s | Decode tok/s | Runs | Stack | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| qualcomm/Qwen3-4B:W4A16 | qairt/npu | 512 | 2,518 | 0.20 | 34.5 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 | llama_cpp/cpu | 512 | 298 | 1.72 | 27.2 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 | llama_cpp/npu | 512 | 1,667 | 0.31 | 31.9 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | llama_cpp/cpu | 512 | 246 | 2.08 | 27.0 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | llama_cpp/gpu | 512 | 328 | 1.56 | 29.3 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-4B-GGUF:Q4_0 | llama_cpp/npu | 512 | 1,487 | 0.34 | 29.5 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/gpu | 512 | 288 | 1.77 | 31.6 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/gpu | 1,792 | 245 | 7.31 | 27.6 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/gpu | 6,784 | 137 | 49.55 | 18.4 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/npu | 512 | 477 | 1.07 | 27.6 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/npu | 1,792 | 497 | 3.61 | 21.5 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama_cpp/npu | 6,784 | 430 | 15.79 | 16.1 | 1 of 1 | af42e97 (v0.9.0) | 2026-10-17 |
+
+**ONNX Runtime GenAI**
+
+| Model | Compute | Prompt | Prefill tok/s | First token s | Decode tok/s | Runs | Stack | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Phi-4-mini-reasoning-onnx | ort_genai-csharp/npu (QNN 2.6.0) | 512 | 414 | 1.24 | 18.8 | 3 of 9 † | af42e97 (v0.9.0) | 2026-10-17 |
+| Phi-4-mini-reasoning-onnx | ort_genai-csharp/npu (QNN 2.7.0) | 512 | 441 | 1.16 | 18.2 | 3 of 3 | af42e97 (v0.9.0) | 2026-10-16 |
+| Phi-4-mini-reasoning-onnx | ort_genai/npu | 512 | 426 | 1.20 | 18.1 | 3 of 12 † | af42e97 (v0.9.0) | 2026-10-17 |
+
+**Stock llama.cpp (the control)**
+
+| Model | Compute | Prompt | Prefill tok/s | First token s | Decode tok/s | Runs | Stack | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama.cpp-b10566/cpu | 512 | 129 |  | 39.4 | 6 of 6 | af42e97 (v0.9.0) | 2026-10-17 |
+| unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 | llama.cpp-b10566/gpu | 512 | 263 |  | 27.3 | 6 of 6 | af42e97 (v0.9.0) | 2026-10-17 |
+
+20 figures. Each is the median over the latest AC-powered session of its cell (records within 30 minutes of each other); `Runs` reads 'records in that session of all AC records of the cell'. A `†` marks a cell whose AC records disagree by more than a quarter of the figure (2): read it as a range, which is in `benchmarks.json`.
+<!-- END GENERATED: current-figures -->
 
 ## Decode throughput by compute unit
 

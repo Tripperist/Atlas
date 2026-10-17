@@ -1,0 +1,4 @@
+{
+  "comment": "Pins override 'the latest AC run' as the published figure for a cell. Each pin names the cell (the 'key' of a cell in benchmarks.json) and a record id from the history, with the reason. Empty: every cell publishes its latest AC run.",
+  "pins": []
+}
