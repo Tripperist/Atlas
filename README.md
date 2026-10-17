@@ -1594,6 +1594,45 @@ when launched from Windows PowerShell 5.1. The four bootstrap scripts
 still run on a stock machine. With `pwsh -File`, an array parameter such as
 `-Compute cpu,gpu` does not bind; use `pwsh -Command "& .\Scripts\...ps1 -Compute cpu,gpu"`.
 
+### The benchmark scripts
+
+Each one checks the conditions above, interleaves what it compares (the order is reversed
+on alternate sizes or rounds, so a drift in machine state does not belong to one unit),
+records every result with its conditions, and refuses on battery.
+
+| Script | Measures |
+| --- | --- |
+| `Invoke-Benchmark.ps1` | `geniex infer` decode on a short prompt, with utilization |
+| `Invoke-PrefillBench.ps1` | `geniex-bench` prefill and decode; `-PromptTokens` takes a list of sizes |
+| `Invoke-FoundryBench.ps1` | Foundry Local over HTTP: throughput, then NPU placement on a separate request |
+| `Invoke-FoundryContextBench.ps1` | Foundry prefill, first token and decode against prompt length, over HTTP or `-InProcess` |
+| `Invoke-LlamaCppControl.ps1` | Stock llama.cpp, pinned in `Scripts/llamacpp-control.json`, recorded as `kind: control` |
+| `Invoke-OrtGenAiBench.ps1` | ONNX Runtime GenAI from Python and from C# ([OrtBench](src/csharp/OrtBench)) |
+| `New-BenchPrompt.ps1` | A deterministic long prompt from pinned repository text (used by the context bench) |
+
+```powershell
+pwsh -Command "& .\Scripts\Invoke-PrefillBench.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
+pwsh -Command "& .\Scripts\Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
+.\Scripts\Invoke-LlamaCppControl.ps1 -Download        # fetches the pinned release zip, verifies its SHA256
+.\Scripts\Invoke-OrtGenAiBench.ps1 -Rounds 3
+```
+
+Things these scripts do that are easy to get wrong by hand:
+
+- **Foundry:** a small `max_tokens` fails in `GroupQueryAttention` and has been followed by the
+  daemon no longer answering, so the context bench generates 64 tokens or more, restarts the
+  daemon if it stops answering (that recovery path has not been exercised), loads and unloads only the models it needs, and stops the
+  daemon only if it started it. Request bodies are sent as UTF-8 bytes.
+- **llama.cpp control:** nothing is downloaded without `-Download`, and a SHA256 mismatch is
+  refused.
+- **ORT GenAI:** by default the Python side runs the virtual environment's `onnxruntime-qnn`
+  and the C# side the csproj's pin (2.6.0), so the C# run is the unchanged control. Both record
+  the package versions they ran. `-QnnVersion` builds the C# side against another one.
+
+Not yet done: none of these has been run on AC power, so none has reproduced a figure already
+in [BENCHMARKS](docs/BENCHMARKS.md) within its own spread, and the llama.cpp `-Download` path has
+not been run at all. The runs so far were tiny checks on battery.
+
 ### The benchmark history
 
 Results are appended to `.atlas-local/benchmarks/history.jsonl`, stamped with the

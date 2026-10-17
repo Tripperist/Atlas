@@ -1119,13 +1119,18 @@ changes and writes a backup first.
 because short-prompt decode rates understate the NPU's prefill advantage by a
 wide margin. Records predating the field show `-`.
 
-Six harnesses write to the same history —
+Nine write to the same history —
 [`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1),
 [`Invoke-PrefillBench.ps1`](../Scripts/Invoke-PrefillBench.ps1),
 [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
+[`Invoke-FoundryContextBench.ps1`](../Scripts/Invoke-FoundryContextBench.ps1),
+[`Invoke-LlamaCppControl.ps1`](../Scripts/Invoke-LlamaCppControl.ps1),
+[`Invoke-OrtGenAiBench.ps1`](../Scripts/Invoke-OrtGenAiBench.ps1),
 [`Update-Workspace.ps1`](../Scripts/Update-Workspace.ps1),
 [`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
-[`bench_ort_genai.py`](../src/setup/bench_ort_genai.py). The Python harnesses
+[`bench_ort_genai.py`](../src/setup/bench_ort_genai.py) (the last two are also run
+by the context and ORT scripts; see the [README](../README.md#the-benchmark-scripts) for
+what each measures). The Python harnesses
 shell out to [`AtlasBaseline.psm1`](../Scripts/AtlasBaseline.psm1) and
 [`AtlasConditions.psm1`](../Scripts/AtlasConditions.psm1) rather than
 reimplementing the hash or the policy, so both sides derive the same id for the same

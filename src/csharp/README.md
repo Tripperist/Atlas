@@ -16,6 +16,7 @@ X2 Elite (X2E78100).
 | [**AtlasChat**](AtlasChat) | Chat console driving three runtimes behind one interface | The usable thing |
 | [QnnProbe](QnnProbe) | Proves which attachment API puts an ONNX graph on the NPU | `QNNExecutionProvider=1` via the policy API |
 | [GenAiProbe](GenAiProbe) | Runs a language model through ONNX Runtime GenAI | 17.7–22 tok/s, NPU peak **98.9 %** |
+| [OrtBench](OrtBench) | The same path as a benchmark: seeded prompt, prefill and decode timed apart, package versions recorded. Run it through `Scripts\Invoke-OrtGenAiBench.ps1`, which checks the machine's conditions first | See [BENCHMARKS](../../docs/BENCHMARKS.md#benchmark-history) |
 | [FoundryProbe](FoundryProbe) | Benchmarks Foundry Local's in-process SDK | 109.3 tok/s on 2026-10-05; the Python SDK varied 30–97 across runs on 2026-10-16 |
 
 The three probes are deliberately single-purpose: each establishes one fact and

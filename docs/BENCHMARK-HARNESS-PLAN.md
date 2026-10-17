@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: phase 1 is implemented (2026-10-17); the rest is a proposal.** Written 2026-10-17 after a session
+**Status: phases 1 and 2 are implemented (2026-10-17), but not yet run on AC power; the rest is a proposal.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -92,7 +92,7 @@ AC it passes; with a `geniex serve` running, an NPU run refuses.
 - Not yet exercised on AC power: the pass path is covered by synthetic cases, and the
   battery hook, but no harness has been run for real while plugged in under this check.
 
-## Phase 2: committed harnesses
+## Phase 2: committed harnesses (built; unverified on AC power)
 
 Each records directly to the history, replacing the hand-typed recorders.
 
@@ -111,6 +111,27 @@ session accumulates history; a sampler running beside the timed request lowers t
 
 **Done when:** each harness runs from a clean checkout, records, and reproduces a figure
 already in BENCHMARKS within its own spread.
+
+**What shipped, and what has not been checked.**
+
+- All six items exist and have been run, on battery with `-AllowBattery`, as tiny checks that
+  recorded to a temporary history: `New-BenchPrompt.ps1` (with `Test-BenchPrompt.ps1`),
+  `Invoke-PrefillBench.ps1` with a size list, `Invoke-FoundryContextBench.ps1` over HTTP and
+  `-InProcess`, `Invoke-LlamaCppControl.ps1` (on a supplied build), and
+  `Invoke-OrtGenAiBench.ps1` with the `OrtBench` project. `Test-BenchmarkGuards.ps1` covers
+  their refusal on battery.
+- **"Reproduces a figure already in BENCHMARKS" has not been checked for any of them.** That
+  needs AC power and the full-size models, and the plan's own definition of done depends on it.
+- The llama.cpp control's `-Download` path has **not** been run (it fetches a release zip and
+  needs the user's go-ahead). Its manifest SHA256 is the one recorded for the original run.
+- Differences from the plan: the Foundry context bench takes prefill from the streamed request's
+  first-token time rather than a separate non-streamed request (a small `max_tokens` fails in
+  `GroupQueryAttention`, which the separate request needed); `New-BenchPrompt.ps1` reads text
+  from a pinned git revision, so a prompt does not change when the docs do; the control and the
+  ORT script are `Invoke-*` scripts that call llama-bench and OrtBench, not new engines.
+- Found on the way: on `qwen2.5-0.5b` (NPU), a `max_tokens` of 8 failed with a 1,408-token prompt
+  and 16 failed with a 49-token one, and the daemon stopped answering after a failure. Not
+  explained; the README open question about `max_tokens` already covers it.
 
 ## History format (additive)
 
