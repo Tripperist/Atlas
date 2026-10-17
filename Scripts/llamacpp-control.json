@@ -1,0 +1,10 @@
+{
+  "purpose": "The unmodified upstream llama.cpp build used as the control for GenieX's llama_cpp plugin. Pinned, so a control run today is comparable with one run later. Change it deliberately and say why in the commit.",
+  "tag": "b10566",
+  "released": "2026-08-21",
+  "asset": "llama-b10566-bin-win-opencl-adreno-arm64.zip",
+  "url": "https://github.com/ggml-org/llama.cpp/releases/download/b10566/llama-b10566-bin-win-opencl-adreno-arm64.zip",
+  "sha256": "d78bd4db577eff9f8e3d77fe43e921c2c43aed9bacb35350723b23eaf373decd",
+  "buildCommit": "bb4caa754",
+  "notes": "Adreno OpenCL backend; it needs no test signing, unlike the Hexagon backend. llama-bench labels both -ngl 99 and -ngl 0 as OpenCL, the backend it loaded."
+}
