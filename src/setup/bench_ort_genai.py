@@ -52,6 +52,7 @@ def main() -> int:
         action="store_true",
         help="Skip QNN attachment, for a CPU baseline on the same model.",
     )
+    parser.add_argument("--json-out", help="Also write the result to this file as JSON.")
     parser.add_argument("--allow-battery", action="store_true",
                         help="Run on battery anyway; the result is recorded as onAcPower = false.")
     args = parser.parse_args()
@@ -69,6 +70,17 @@ def main() -> int:
 
     version = getattr(og, "__version__", "?")
     print(f"onnxruntime-genai : {version}")
+    from importlib import metadata
+
+    def pkg(name: str) -> str:
+        try:
+            return metadata.version(name)
+        except metadata.PackageNotFoundError:
+            return "absent"
+
+    # The packages are the variable under test in an upgrade comparison, so say which ran.
+    versions = {n: pkg(n) for n in ("onnxruntime-genai", "onnxruntime-qnn", "onnxruntime", "numpy")}
+    print("packages          : " + ", ".join(f"{k} {v}" for k, v in versions.items()))
     if version.startswith("0.16"):
         print("[WARN] 0.16.x regresses EPContext/QNN models; expect failure.")
 
@@ -150,6 +162,24 @@ def main() -> int:
         f"decode {mean_decode:.1f} tok/s"
     )
 
+    if args.json_out:
+        import json
+
+        Path(args.json_out).write_text(
+            json.dumps(
+                {
+                    "provider": provider, "nPrompt": args.n_prompt, "nGen": args.n_gen,
+                    "n": len(prefills), "seed": args.seed, "loadSeconds": round(load_s, 2),
+                    "prefillTps": mean_prefill, "decodeTps": mean_decode, "ttftSeconds": ttft_ms / 1000,
+                    "decodeStdev": statistics.stdev(decodes) if len(decodes) > 1 else 0.0,
+                    "decodeReps": decodes, "prefillStdev": statistics.stdev(prefills) if len(prefills) > 1 else 0.0,
+                    "versions": versions,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
     if not args.no_record:
         # The same history Invoke-Benchmark.ps1 and Invoke-PrefillBench.ps1
         # write to, so all three runtimes land on one timeline under the
@@ -172,7 +202,12 @@ def main() -> int:
             prefill_tps=round(mean_prefill, 1),
             prompt_tokens=args.n_prompt,
             n=len(prefills),
+            stdev=round(statistics.stdev(decodes), 2) if len(decodes) > 1 else None,
+            reps=[round(d, 2) for d in decodes],
+            seed=args.seed,
+            prompt_kind="random token ids (seeded)",
             harness="bench_ort_genai.py",
+            extra={"statistic": "mean", "loadSeconds": round(load_s, 1), "packages": versions},
         )
         if stack:
             print(f"[history] recorded under stack {stack}")

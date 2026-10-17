@@ -59,6 +59,8 @@ try {
         @('Invoke-FoundryBench.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryBench.ps1", '-Model', 'qwen2.5-0.5b')),
         @('Invoke-FoundryContextBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256')),
         @('  ... -InProcess',         'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-InProcess')),
+        @('Invoke-LlamaCppControl.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-LlamaCppControl.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF')),
+        @('Invoke-OrtGenAiBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-OrtGenAiBench.ps1")),
         @('Test-ToolCalling.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ToolCalling.ps1")),
         @('Test-ComputeUnits.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ComputeUnits.ps1", '-Model', 'x', '-Compute', 'cpu')),
         @('bench_foundry_sdk.py',     $py,    @("$root\src\setup\bench_foundry_sdk.py", '--model', 'qwen2.5-0.5b')),

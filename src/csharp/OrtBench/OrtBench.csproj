@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <!-- The QNN package is the variable under test in a package-upgrade comparison:
+         dotnet build -p:QnnVersion=2.7.0 -->
+    <QnnVersion Condition="'$(QnnVersion)' == ''">2.6.0</QnnVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime" Version="1.30.0" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntimeGenAI" Version="0.17.1" />
+    <PackageReference Include="Qualcomm.ML.OnnxRuntime.QNN" Version="$(QnnVersion)" />
+  </ItemGroup>
+
+</Project>
