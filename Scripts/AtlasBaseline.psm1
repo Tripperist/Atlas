@@ -306,7 +306,7 @@ function Add-AtlasBenchmarkRecord {
 
 # Read the history. Older records lack the format-2 fields, so the reader fills them:
 #   n          from `repetitions` or `runs`, whichever the harness used
-#   kind       smoke for the Update-Workspace check, control for the stock-engine runs
+#   kind       smoke for the Update-Workspace check, control for the stock-engine (llama-bench) runs
 #   valid      true unless a record says otherwise
 #   onAcPower  null (unknown) unless recorded
 function Get-AtlasBenchmarkHistory {
@@ -331,7 +331,7 @@ function Get-AtlasBenchmarkHistory {
         }
         if ('kind' -notin $names) {
             $k = if ($r.source -eq 'Update-Workspace.ps1') { 'smoke' }
-                 elseif (('control' -in $names -and $r.control) -or $r.source -like '*control*') { 'control' }
+                 elseif (('control' -in $names -and $r.control) -or $r.source -like '*control*' -or $r.source -like 'llama-bench*') { 'control' }
                  else { 'benchmark' }
             $r | Add-Member -NotePropertyName kind -NotePropertyValue $k -Force
         }

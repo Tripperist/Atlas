@@ -78,18 +78,19 @@ try {
         @{ ts = 'd'; stateId = 's'; source = 'llama-bench (stock llama.cpp b10566, control)'; model = 'm'; compute = 'gpu' },
         @{ ts = 'e'; stateId = 's'; source = 'x'; model = 'm'; compute = 'npu'; valid = $false; validReason = 'contended' },
         @{ ts = 'f'; stateId = 's'; source = 'x'; model = 'm'; compute = 'npu'; onAcPower = $false },
-        @{ ts = 'g'; stateId = 'other'; source = 'x'; model = 'm'; compute = 'npu' }
+        @{ ts = 'g'; stateId = 'other'; source = 'x'; model = 'm'; compute = 'npu' },
+        @{ ts = 'h'; stateId = 's'; source = 'llama-bench (stock llama.cpp b10566)'; model = 'm'; compute = 'cpu' }
     )
     $legacy | ForEach-Object { Add-Content -Path $tmp -Value ($_ | ConvertTo-Json -Compress) -Encoding UTF8 }
     $all = @(Get-AtlasBenchmarkHistory)
-    Check 'all seven records read' ($all.Count -eq 7)
+    Check 'all eight records read' ($all.Count -eq 8)
     Check 'n from repetitions, and from runs' (($all[0].n -eq 3) -and ($all[1].n -eq 2))
     Check 'n is null when neither was recorded' ($null -eq $all[2].n)
-    Check 'kind: smoke for Update-Workspace, control for a control, benchmark otherwise' (($all[2].kind -eq 'smoke') -and ($all[3].kind -eq 'control') -and ($all[0].kind -eq 'benchmark'))
+    Check 'kind: smoke for Update-Workspace, control for a control or a llama-bench run, benchmark otherwise' (($all[2].kind -eq 'smoke') -and ($all[3].kind -eq 'control') -and ($all[7].kind -eq 'control') -and ($all[0].kind -eq 'benchmark'))
     Check 'valid defaults to true; an explicit false is kept' (($all[0].valid -eq $true) -and ($all[4].valid -eq $false))
     Check 'onAcPower reads null unless recorded' (($null -eq $all[0].onAcPower) -and ($all[5].onAcPower -eq $false))
     $valid = @(Get-AtlasBenchmarkHistory -Valid)
-    Check '-Valid leaves out the invalid and the battery record' (($valid.Count -eq 5) -and (-not ($valid | Where-Object { $_.ts -in 'e', 'f' })))
+    Check '-Valid leaves out the invalid and the battery record' (($valid.Count -eq 6) -and (-not ($valid | Where-Object { $_.ts -in 'e', 'f' })))
     Check '-Kind smoke' (@(Get-AtlasBenchmarkHistory -Kind smoke).Count -eq 1)
     Check '-StateId still filters' (@(Get-AtlasBenchmarkHistory -StateId other).Count -eq 1)
 
