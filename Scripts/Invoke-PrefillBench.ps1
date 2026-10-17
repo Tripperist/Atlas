@@ -39,7 +39,11 @@
     -Model, -Plugin and -Device.
 
 .PARAMETER PromptTokens
-    Prompt length. 512 approximates a retrieval-augmented turn.
+    Prompt length, or a list of lengths. 512 approximates a retrieval-augmented turn.
+    With a list, every size is run for every cell and the cell order is reversed on
+    alternate sizes, so a drift in machine state over the run does not line up with
+    one unit. Under `pwsh -File` an array does not bind; use `pwsh -Command "& ..."`
+    (see the second example).
 
 .PARAMETER CtxSize
     Model context window, passed to geniex-bench as -c. 0 (the default) leaves
@@ -55,6 +59,10 @@
 
 .EXAMPLE
     .\Scripts\Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
+
+.EXAMPLE
+    # prefill against prompt length; -CtxSize must cover the longest prompt plus -GenTokens
+    pwsh -Command "& .\Scripts\Invoke-PrefillBench.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -65,7 +73,7 @@ param(
     [ValidateSet('cpu', 'gpu', 'npu')]
     [string[]]$Device = @('npu', 'gpu', 'cpu'),
     [switch]$Matrix,
-    [int]$PromptTokens = 512,
+    [int[]]$PromptTokens = @(512),
     [int]$GenTokens = 128,
     [int]$Repeat = 3,
     [int]$CtxSize = 0,
@@ -216,13 +224,29 @@ Write-Host ''
 $cells = if ($Matrix) { $Section93Cells }
          else { $Device | ForEach-Object { @{ Plugin = $Plugin; Device = $_; Model = $Model } } }
 
+$longest = ($PromptTokens | Measure-Object -Maximum).Maximum
+if ($CtxSize -gt 0 -and $CtxSize -lt ($longest + $GenTokens)) {
+    Write-Host "-CtxSize $CtxSize is smaller than the longest prompt ($longest) plus $GenTokens generated tokens." -ForegroundColor Red
+    exit 1
+}
+
 $results = [System.Collections.Generic.List[object]]::new()
-foreach ($c in $cells) {
-    Write-Host ("  {0,-34} {1,-10} {2} ..." -f $c.Model, $c.Plugin, $c.Device)
-    $r = Invoke-Cell -Exe $exe -Plugin $c.Plugin -Device $c.Device -Model $c.Model `
-                     -Prompt $PromptTokens -Gen $GenTokens -Reps $Repeat -Ctx $CtxSize
-    $results.Add($r)
-    if (-not $r.Ok) { Write-Host ("    FAILED: {0}" -f $r.Tail) -ForegroundColor Red }
+$sizeIndex = 0
+foreach ($size in $PromptTokens) {
+    # Reverse the cell order on alternate sizes, so the unit measured last the first time
+    # is measured first the next, and a slow drift does not belong to one unit.
+    $ordered = if ($sizeIndex % 2 -eq 1) { @($cells)[($cells.Count - 1)..0] } else { @($cells) }
+    $sizeIndex++
+    $orderLabel = ($ordered | ForEach-Object { "$($_.Plugin)/$($_.Device)" }) -join '>'
+    foreach ($c in $ordered) {
+        Write-Host ("  {0,6} tok  {1,-34} {2,-10} {3} ..." -f $size, $c.Model, $c.Plugin, $c.Device)
+        $r = Invoke-Cell -Exe $exe -Plugin $c.Plugin -Device $c.Device -Model $c.Model `
+                         -Prompt $size -Gen $GenTokens -Reps $Repeat -Ctx $CtxSize
+        $r | Add-Member -NotePropertyName PromptTokens -NotePropertyValue $size -Force
+        $r | Add-Member -NotePropertyName Order -NotePropertyValue $orderLabel -Force
+        $results.Add($r)
+        if (-not $r.Ok) { Write-Host ("    FAILED: {0}" -f $r.Tail) -ForegroundColor Red }
+    }
 }
 
 Write-Host ''
@@ -230,8 +254,8 @@ $good = @($results | Where-Object Ok)
 if ($good.Count -eq 0) { Write-Host 'No cell produced a result.' -ForegroundColor Red; exit 1 }
 
 $good |
-    Sort-Object PrefillTps -Descending |
-    Format-Table -AutoSize -Property Model, Plugin, Device,
+    Sort-Object PromptTokens, @{ Expression = 'PrefillTps'; Descending = $true } |
+    Format-Table -AutoSize -Property @{n = 'Prompt'; e = { $_.PromptTokens } }, Model, Plugin, Device,
         @{n = 'TTFT(ms)'; e = { $_.TtftMs } },
         @{n = 'Prefill tok/s'; e = { $_.PrefillTps } },
         @{n = 'Decode tok/s'; e = { $_.DecodeTps } } |
@@ -242,8 +266,9 @@ if (-not $NoRecord) {
         Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-PrefillBench.ps1' `
             -Model $r.Model -Compute "$($r.Plugin)/$($r.Device)" `
             -TokPerSec $r.DecodeTps -FirstTokenS ([math]::Round($r.TtftMs / 1000, 3)) `
-            -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $PromptTokens `
+            -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $r.PromptTokens `
             -N $Repeat -Harness 'geniex-bench' -HarnessVersion $state.geniex.version -CtxSize $CtxSize `
+            -Order $r.Order -PromptKind 'synthetic (geniex-bench -p)' `
             -Extra (@{ statistic = 'median' } +
                     $(if ($r.Spread) { $r.Spread } else { @{} })) | Out-Null
     }
