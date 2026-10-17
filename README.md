@@ -1463,6 +1463,64 @@ token loop, and accept that you are choosing from a short list of models.
 
 ## 10. Benchmarks
 
+### Running the benchmarks
+
+**Before the first run**
+
+- **PowerShell 7** (`pwsh`), not Windows PowerShell 5.1. The scripts say so if started under 5.1.
+  Array arguments need `pwsh -Command "& .\Scripts\X.ps1 -Compute cpu,gpu"`, not `pwsh -File`.
+- **The workspace works:** `.\Scripts\Test-Environment.ps1` passes, and `uv sync` has been run.
+- **`gh`** (GitHub CLI) is installed and signed in. `Invoke-PrefillBench.ps1` and
+  `Update-Workspace.ps1` fetch `geniex-bench` and release information through it.
+- **The models are present.** GenieX: `geniex pull <model>`. Foundry: `foundry model download <alias>`.
+  The ORT GenAI bundle: the `hf download` command the script prints if it is missing.
+- **Plugged in, and nothing else running.** Every script checks, records what it found, and
+  refuses on battery or when something else may hold the NPU (`-AllowBattery` overrides, and the
+  result is then kept out of published figures). Close browsers: ORT GenAI loses about half its
+  speed to about one core of background load.
+- **Once:** `.\Scripts\Invoke-LlamaCppControl.ps1 -Download` fetches the pinned stock llama.cpp
+  (checked against a SHA256). Without it the control and the canary cannot run.
+
+**A first run, in order**
+
+```powershell
+.\Scripts\Test-Environment.ps1                      # the machine and the workspace
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite smoke   # about two minutes: proves the harnesses run
+.\Scripts\Invoke-LlamaCppControl.ps1 -Download      # once; needed by the control and the canary
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare -DryRun   # see what the real one will do
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare           # about 40 minutes, canary first
+```
+
+**After a stack change** (a GenieX, Foundry or package update): `.\Scripts\Update-Workspace.ps1 -Apply`,
+then `-Accept` once it verifies, then the `stack-compare` suite, then
+`.\Scripts\Compare-AtlasBenchmarks.ps1` to see what moved. Details are in
+[11. Keeping the workspace current](#11-keeping-the-workspace-current).
+
+**From a published table to its command.** Each table in [BENCHMARKS](docs/BENCHMARKS.md) was
+measured with one of these. The suites use the same methods, but **they have not been checked to
+reproduce the published numbers**, which were measured before the conditions check existed, so
+their power state was not recorded.
+
+| Table in BENCHMARKS.md | Command | Suite step |
+| --- | --- | --- |
+| Decode throughput by compute unit | `Invoke-Benchmark.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Compute cpu,gpu,npu` | `stack-compare`: `decode-short-4b` |
+| Prefill vs decode (the matrix) | `Invoke-PrefillBench.ps1 -Matrix` | `stack-compare`, `runtimes`: the prefill matrix |
+| ORT GenAI, Python and C# | `Invoke-OrtGenAiBench.ps1`; `-QnnVersion 2.7.0` builds the C# side against another QNN package | `ort`, `runtimes`, `stack-compare` |
+| Same model, two runtimes | Interactive, not a harness: `dotnet run -c Release --project src\csharp\AtlasChat` | none |
+| 30B model, long prompts | `Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0' -Device npu,gpu -PromptTokens 512,1792,6784 -CtxSize 8192` | `longctx`: `genie-30b` |
+| Stock llama.cpp on the same file | `Invoke-LlamaCppControl.ps1` | `stack-compare`: `llamacpp-control` |
+| GenieX v0.9.0 against v0.8.0 | `Compare-AtlasBenchmarks.ps1 -From 44a1e6e -To af42e97` | none (a view of the history) |
+| Foundry throughput and NPU placement | `Invoke-FoundryBench.ps1 -Model qwen2.5-0.5b` | none |
+| Foundry against prompt length, HTTP and in process | `Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096,6784` (and `-InProcess`) | `longctx`: `foundry-7b-http`, `foundry-7b-inprocess`; `runtimes`: `foundry-7b` |
+| Foundry tool calling and placement | `Test-ToolCalling.ps1` | none |
+| Does a compute-unit flag change where the work runs | `Test-ComputeUnits.ps1` | none |
+
+`-List` shows the suites and `-DryRun` shows each step's exact command. The scripts, the conditions
+they check, the history and the comparison are described in section 11. The array-valued
+commands above need `pwsh -Command "& .\Scripts\<script>.ps1 ..."` (see the first bullet).
+
+### Headline results
+
 Full results, methodology and the published AI Hub figures are in
 **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**. The headline, Q4_0 GGUF via
 llama.cpp, 400 tokens, warm machine, compute units interleaved:
