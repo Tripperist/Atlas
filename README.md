@@ -1463,70 +1463,17 @@ token loop, and accept that you are choosing from a short list of models.
 
 ## 10. Benchmarks
 
-### Running the benchmarks
+Two documents hold the detail:
 
-> The full guide, with a section per script, the suites, reporting and comparing, is
-> **[docs/RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md)**. What follows is the short version.
-
-**Before the first run**
-
-- **PowerShell 7** (`pwsh`), not Windows PowerShell 5.1. The scripts say so if started under 5.1.
-  Array arguments need `pwsh -Command "& .\Scripts\X.ps1 -Compute cpu,gpu"`, not `pwsh -File`.
-- **The workspace works:** `.\Scripts\Test-Environment.ps1` passes, and `uv sync` has been run.
-- **`gh`** (GitHub CLI) is installed and signed in. `Invoke-BenchPrefill.ps1` and
-  `Update-Workspace.ps1` fetch `geniex-bench` and release information through it.
-- **The models are present.** GenieX: `geniex pull <model>`. Foundry: `foundry model download <alias>`.
-  The ORT GenAI bundle: the `hf download` command the script prints if it is missing.
-- **Plugged in, and nothing else running.** Every script checks, records what it found, and
-  refuses on battery or when something else may hold the NPU (`-AllowBattery` overrides, and the
-  result is then kept out of published figures). Close browsers: ORT GenAI loses about half its
-  speed to about one core of background load.
-- **Once:** `.\Scripts\Invoke-BenchControl.ps1 -Download` fetches the pinned stock llama.cpp
-  (checked against a SHA256). Without it the control and the canary cannot run.
-
-**A first run, in order**
-
-```powershell
-.\Scripts\Test-Environment.ps1                      # the machine and the workspace
-.\Scripts\Invoke-BenchSuite.ps1 -Suite smoke   # about two minutes: proves the harnesses run
-.\Scripts\Invoke-BenchControl.ps1 -Download      # once; needed by the control and the canary
-.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun   # see what the real one will do
-.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare           # about 40 minutes, canary first
-```
-
-**After a stack change** (a GenieX, Foundry or package update): `.\Scripts\Update-Workspace.ps1 -Apply`,
-then `-Accept` once it verifies, then the `stack-compare` suite, then
-`.\Scripts\Compare-BenchStacks.ps1` to see what moved. Details are in
-[11. Keeping the workspace current](#11-keeping-the-workspace-current).
-
-**From a published table to its command.** Each table in [BENCHMARKS](docs/BENCHMARKS.md) was
-measured with one of these. The suites use the same methods, but **they have not been checked to
-reproduce the published numbers**, which were measured before the conditions check existed, so
-their power state was not recorded.
-
-| Table in BENCHMARKS.md | Command | Suite step |
-| --- | --- | --- |
-| Decode throughput by compute unit | `Invoke-BenchDecode.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Compute cpu,gpu,npu` | `stack-compare`: `decode-short-4b` |
-| Prefill vs decode (the matrix) | `Invoke-BenchPrefill.ps1 -Matrix` | `stack-compare`, `runtimes`: the prefill matrix |
-| ORT GenAI, Python and C# | `Invoke-BenchOrtGenAi.ps1`; `-QnnVersion 2.7.0` builds the C# side against another QNN package | `ort`, `runtimes`, `stack-compare` |
-| Same model, two runtimes | Interactive, not a harness: `dotnet run -c Release --project src\csharp\AtlasChat` | none |
-| 30B model, long prompts | `Invoke-BenchPrefill.ps1 -Model 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0' -Device npu,gpu -PromptTokens 512,1792,6784 -CtxSize 8192` | `longctx`: `genie-30b` |
-| Stock llama.cpp on the same file | `Invoke-BenchControl.ps1` | `stack-compare`: `control` |
-| GenieX v0.9.0 against v0.8.0 | `Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97` | none (a view of the history) |
-| Foundry throughput and NPU placement | `Invoke-BenchFoundry.ps1 -Model qwen2.5-0.5b` | none |
-| Foundry against prompt length, HTTP and in process | `Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096,6784` (and `-InProcess`) | `longctx`: `foundry-7b-http`, `foundry-7b-inprocess`; `runtimes`: `foundry-7b` |
-| Foundry tool calling and placement | `Invoke-BenchToolCalling.ps1` | none |
-| Does a compute-unit flag change where the work runs | `Invoke-BenchPlacement.ps1` | none |
-
-`-List` shows the suites and `-DryRun` shows each step's exact command. The scripts, the conditions
-they check, the history and the comparison are described in section 11. The array-valued
-commands above need `pwsh -Command "& .\Scripts\<script>.ps1 ..."` (see the first bullet).
+- **[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**: the results, the methodology, the published AI Hub
+  figures, and which command reproduces each table.
+- **[docs/RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md)**: how to run the benchmarks, report
+  them and compare two runs. One section per script.
 
 ### Headline results
 
-Full results, methodology and the published AI Hub figures are in
-**[docs/BENCHMARKS.md](docs/BENCHMARKS.md)**. The headline, Q4_0 GGUF via
-llama.cpp, 400 tokens, warm machine, compute units interleaved:
+The headline, Q4_0 GGUF via llama.cpp, 400 tokens, warm machine, compute units
+interleaved:
 
 | Model | Compute | Tok/s | NPU peak | CPU % |
 | --- | --- | --- | --- | --- |
@@ -1565,18 +1512,20 @@ either route at a short prompt, with prefill falling from about 520 to about
 tokens; see
 [BENCHMARKS](docs/BENCHMARKS.md#a-7-gb-model-on-the-npu-qwen25-coder-7b).
 
-Run them yourself:
+### Running them
 
 ```powershell
-.\Scripts\Invoke-BenchDecode.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0'   # decode + utilization
-.\Scripts\Invoke-BenchPrefill.ps1 -Matrix                            # prefill vs decode
-.\Scripts\Invoke-BenchFoundry.ps1                                    # Foundry Local
-.\Scripts\Update-Workspace.ps1 -History                              # past runs, by stack
+.\Scripts\Invoke-BenchSuite.ps1 -Suite smoke            # 2 minutes: do the benchmarks run on this machine?
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare    # what to run after a stack change (about 40 minutes)
+.\Scripts\Compare-BenchStacks.ps1                       # what moved since the previous stack
+.\Scripts\Update-Workspace.ps1 -History                 # past runs, grouped by stack
 ```
 
-Every run is recorded with a hash of the software stack that produced it, so
-results measured under different drivers or runtime versions are never silently
-compared.
+Plug the laptop in first: every script checks, and refuses on battery. Every run is
+recorded with a hash of the software stack that produced it and the conditions it ran
+under, so results measured under different drivers or runtime versions are never silently
+compared. [RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md) has the prerequisites, a first
+run in order, and each script.
 
 **Coding quality, not just speed.** [`evals/csharp-task-planner`](evals/csharp-task-planner)
 scores what local coding models actually write on one task, against tests whose
@@ -1618,162 +1567,12 @@ The baseline lives in `.atlas-local/baseline.json`, git-ignored because driver
 versions are per-machine. Record a new one with `-Accept` **after** verification
 passes — an accepted baseline is a claim that this combination worked.
 
-### Benchmark conditions
-
-A benchmark figure depends on more than the software stack. Every benchmark script
-checks its conditions **before loading anything** and records them with the result:
-AC or battery, the Windows power scheme, how busy the CPU is, any process that could
-hold the NPU (`geniex`, `llama-*`, `atlas-chat`), the models a Foundry daemon has
-loaded, and background processes using more than about 0.3 core.
-
-| Condition | What happens |
-| --- | --- |
-| On battery | **Refused.** Pass `-AllowBattery` (`--allow-battery` for the Python scripts) to run anyway; the result is recorded `onAcPower: false` and kept out of published figures |
-| A run that needs the NPU, and another process may hold it | **Refused**, naming the process and, for Foundry, the `foundry model unload` command |
-| A busy CPU, a background consumer, a competing process off the NPU | A warning |
-
-The reason is a measured one: an ONNX Runtime GenAI benchmark run on battery looked
-like a 3× regression from a package upgrade, and an unchanged control on the older
-package fell the same way. `Update-Workspace.ps1` runs its smoke check **warn-only**
-and marks it `kind: smoke`, because refusing there would block the update it is
-there to verify.
-
-Foundry is checked without starting it: `foundry cache ls` starts the daemon as a
-side effect, so the loaded models are asked for only when the daemon is already
-running, and a stopped daemon holds none.
-
-```powershell
-.\Scripts\Test-BenchConditions.ps1                  # the policy, then the conditions right now
-.\Scripts\Test-BenchHistory.ps1                     # the history format, against a temporary file
-.\Scripts\Test-BenchGuards.ps1                  # every harness refuses on battery
-.\Scripts\Test-BenchGuards.ps1 -IncludeRuns     # and records the override on tiny real runs
-.\Scripts\Test-BenchSuite.ps1                       # the suite runner, over stub steps
-.\Scripts\Test-BenchCompare.ps1                     # the stack comparison rules
-.\Scripts\Test-BenchCanary.ps1                      # the canary rules; -IncludeRuns runs it for real
-.\Scripts\Test-BenchLint.ps1                        # PSScriptAnalyzer over Scripts/ (Install-Module PSScriptAnalyzer first)
-```
-
-The harness scripts require **PowerShell 7** (`pwsh`, not `powershell`) and say so
-when launched from Windows PowerShell 5.1. The four bootstrap scripts
-(`Get-SystemInfo`, `Initialize-Workspace`, `Install-Prerequisites`, `Test-Environment`)
-still run on a stock machine. With `pwsh -File`, an array parameter such as
-`-Compute cpu,gpu` does not bind; use `pwsh -Command "& .\Scripts\...ps1 -Compute cpu,gpu"`.
-
-### The benchmark scripts
-
-Each one checks the conditions above, interleaves what it compares (the order is reversed
-on alternate sizes or rounds, so a drift in machine state does not belong to one unit),
-records every result with its conditions, and refuses on battery.
-
-| Script | Measures |
-| --- | --- |
-| `Invoke-BenchDecode.ps1` | `geniex infer` decode on a short prompt, with utilization |
-| `Invoke-BenchPrefill.ps1` | `geniex-bench` prefill and decode; `-PromptTokens` takes a list of sizes |
-| `Invoke-BenchFoundry.ps1` | Foundry Local over HTTP: throughput, then NPU placement on a separate request |
-| `Invoke-BenchFoundryContext.ps1` | Foundry prefill, first token and decode against prompt length, over HTTP or `-InProcess` |
-| `Invoke-BenchControl.ps1` | Stock llama.cpp, pinned in `Scripts/bench-control.json`, recorded as `kind: control` |
-| `Invoke-BenchOrtGenAi.ps1` | ONNX Runtime GenAI from Python and from C# ([OrtBench](src/csharp/OrtBench)) |
-| `New-BenchPrompt.ps1` | A deterministic long prompt from pinned repository text (used by the context bench) |
-
-```powershell
-pwsh -Command "& .\Scripts\Invoke-BenchPrefill.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
-pwsh -Command "& .\Scripts\Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
-.\Scripts\Invoke-BenchControl.ps1 -Download        # fetches the pinned release zip, verifies its SHA256
-.\Scripts\Invoke-BenchOrtGenAi.ps1 -Rounds 3
-```
-
-Things these scripts do that are easy to get wrong by hand:
-
-- **Foundry:** a small `max_tokens` fails in `GroupQueryAttention` and has been followed by the
-  daemon no longer answering, so the context bench generates 64 tokens or more, restarts the
-  daemon if it stops answering (that recovery path has not been exercised), loads and unloads only the models it needs, and stops the
-  daemon only if it started it. Request bodies are sent as UTF-8 bytes.
-- **llama.cpp control:** nothing is downloaded without `-Download`, and a SHA256 mismatch is
-  refused.
-- **ORT GenAI:** by default the Python side runs the virtual environment's `onnxruntime-qnn`
-  and the C# side the csproj's pin (2.6.0), so the C# run is the unchanged control. Both record
-  the package versions they ran. `-QnnVersion` builds the C# side against another one.
-
-Not yet done: none of the scripts above has been run on AC power, so none has reproduced a figure already
-in [BENCHMARKS](docs/BENCHMARKS.md) within its own spread, and the llama.cpp `-Download` path has
-not been run at all. The runs so far were tiny checks on battery.
-
-### Suites
-
-`Invoke-BenchSuite.ps1` runs a named set of the scripts above from a manifest in
-`Scripts/suites/`, so "the stack-compare numbers" is a command and not a recollection.
-
-| Suite | For | About |
-| --- | --- | --- |
-| `smoke` | Proving the harnesses run end to end on a small model each | 2 min |
-| `stack-compare` | After a stack change: prefill matrix, short-prompt decode, the llama.cpp control, ORT GenAI | 40 min |
-| `runtimes` | GenieX, Foundry and ORT GenAI side by side at 512 tokens | 25 min |
-| `longctx` | Prefill and decode from 512 to 6,784 tokens, GenieX 30B and Foundry 7B | 60 min |
-| `ort` | ORT GenAI from Python and C#, after an onnxruntime package change | 12 min |
-
-```powershell
-.\Scripts\Invoke-BenchSuite.ps1 -List
-.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun    # the steps and commands, nothing run
-.\Scripts\Invoke-BenchSuite.ps1 -Suite smoke
-pwsh -Command "& .\Scripts\Invoke-BenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
-```
-
-The conditions are checked once up front, so a suite on battery stops before anything loads.
-Each step runs in its own process; a failed step is reported and the rest still run
-(`-StopOnError` stops), and a step that exits 4 (a prerequisite is absent, such as the llama.cpp
-build not yet downloaded) is reported as skipped. Everything lands in
-`.atlas-local/benchmarks/runs/<time>-<suite>/`: `suite.json` (the manifest as run, the stack,
-the code revision, the conditions), `steps.json`, `records.jsonl`, a log per step and
-`summary.md`. The records also go to the history, tagged `suiteRun`. The time estimates are
-rough, and only `smoke` has been timed: the other four have never been run.
-
-**The canary.** Before the first step the runner runs `Invoke-BenchCanary.ps1`: a half-minute
-fixed run of the pinned stock llama.cpp on Qwen3-0.6B (CPU and GPU), so no GenieX or Foundry
-update can move it, compared with the median of the last five earlier canary runs that were
-measured on AC power. `ok` and `no-reference` go on, `warn` (below 85 % of the reference) goes
-on with a caveat in the summary, and `abort` (below 60 %) stops the suite unless
-`-IgnoreCanary`. It runs again after the last step, to show a drift during the run; `smoke`
-and `-NoCanary` skip it. **The 85 % and 60 % lines are provisional**: there was no AC data to set
-them from, and the canary has no reference until three healthy AC runs exist, so for now it only
-records. It needs the pinned build unpacked (`Invoke-BenchControl.ps1 -Download`); without it
-the canary is reported unavailable and nothing is gated.
-
-### Comparing two stacks
-
-```powershell
-.\Scripts\Compare-BenchStacks.ps1 -List                       # the stacks that have records
-.\Scripts\Compare-BenchStacks.ps1                             # the previous stack against the current one
-.\Scripts\Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97 -Markdown
-```
-
-For every cell (model, compute unit, prompt length, measuring script) measured on both stacks:
-the figure on each, the change, and whether it is the same, better, worse, within the noise, or
-noisy. Records measured on battery and records marked invalid are never used, and AC power is
-preferred over "not recorded". The stock llama.cpp control is shown first: if it moved, the
-machine was not in the same state on both stacks and everything else has to be read with that
-in mind. On the real history it reproduces the hand-built v0.8.0 to v0.9.0 table (control held;
-the 30B GPU decode 28.9 to 17.4 tok/s; the 30B NPU first token 13.9 to 0.35 s), with every
-figure's power state shown as `?` because none was recorded then.
-
-### The benchmark history
-
-Results are appended to `.atlas-local/benchmarks/history.jsonl`, stamped with the
-stack they ran under, and now also with the conditions above, the Atlas revision
-(`codeRev`, with `+dirty` when `Scripts`, `src` or `evals` differ from it), a unique
-`id`, and a `kind` (`benchmark`, `control`, `canary` or `smoke`). Records written before this
-(`schemaVersion` 2 introduced the fields) still read: the reader fills what they lack.
-
-```powershell
-Import-Module .\Scripts\AtlasBaseline.psm1
-Get-AtlasBenchmarkHistory -Valid            # without invalid records and those measured on battery
-Get-AtlasBenchmarkHistory -Kind control     # the stock-engine runs
-.\Scripts\Mark-BenchInvalid.ps1 -DryRun   # flag records whose note says they were not comparable
-```
-
-See [BENCHMARKS](docs/BENCHMARKS.md#benchmark-history) for the format. The plan for what
-comes next (committed harnesses for the runs that were ad hoc, a suite runner, and a
-page generated from the data) is in
-[docs/BENCHMARK-HARNESS-PLAN.md](docs/BENCHMARK-HARNESS-PLAN.md).
+Benchmarks are run, recorded and compared with the `Invoke-Bench*` and `Compare-Bench*`
+scripts, not with this one. See [RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md): what a
+benchmark checks before it runs ([conditions](docs/RUNNING-BENCHMARKS.md#6-the-conditions-check)),
+where results go ([the history](docs/RUNNING-BENCHMARKS.md#7-reporting-where-results-go)), and how to
+see what changed after an update ([comparing two stacks](docs/RUNNING-BENCHMARKS.md#8-comparing-two-stacks)).
+After `-Apply` and `-Accept`, the usual next step is the `stack-compare` suite.
 
 ---
 

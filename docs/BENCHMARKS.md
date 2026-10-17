@@ -54,6 +54,28 @@ Four harnesses, measuring different things. Mixing their outputs is a mistake:
 | ORT GenAI loop | prefill and decode separately, same axes as `geniex-bench` | [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py) |
 | OpenAI endpoint | end-to-end throughput including HTTP overhead | [`Invoke-BenchFoundry.ps1`](../Scripts/Invoke-BenchFoundry.ps1) |
 
+### Reproducing these tables
+
+Each table below was measured with one of these commands, run from the repository root (a
+list-valued argument needs `pwsh -Command "& .\Scripts\<script>.ps1 ..."`). The suites use the same
+methods, but **they have not been checked to reproduce the published numbers**, which were measured before
+the conditions check existed, so their power state was not recorded. See
+[RUNNING-BENCHMARKS.md](RUNNING-BENCHMARKS.md) for what each script does and how to read it.
+
+| Table in BENCHMARKS.md | Command | Suite step |
+| --- | --- | --- |
+| Decode throughput by compute unit | `Invoke-BenchDecode.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Compute cpu,gpu,npu` | `stack-compare`: `decode-short-4b` |
+| Prefill vs decode (the matrix) | `Invoke-BenchPrefill.ps1 -Matrix` | `stack-compare`, `runtimes`: the prefill matrix |
+| ORT GenAI, Python and C# | `Invoke-BenchOrtGenAi.ps1`; `-QnnVersion 2.7.0` builds the C# side against another QNN package | `ort`, `runtimes`, `stack-compare` |
+| Same model, two runtimes | Interactive, not a harness: `dotnet run -c Release --project src\csharp\AtlasChat` | none |
+| 30B model, long prompts | `Invoke-BenchPrefill.ps1 -Model 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0' -Device npu,gpu -PromptTokens 512,1792,6784 -CtxSize 8192` | `longctx`: `genie-30b` |
+| Stock llama.cpp on the same file | `Invoke-BenchControl.ps1` | `stack-compare`: `control` |
+| GenieX v0.9.0 against v0.8.0 | `Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97` | none (a view of the history) |
+| Foundry throughput and NPU placement | `Invoke-BenchFoundry.ps1 -Model qwen2.5-0.5b` | none |
+| Foundry against prompt length, HTTP and in process | `Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096,6784` (and `-InProcess`) | `longctx`: `foundry-7b-http`, `foundry-7b-inprocess`; `runtimes`: `foundry-7b` |
+| Foundry tool calling and placement | `Invoke-BenchToolCalling.ps1` | none |
+| Does a compute-unit flag change where the work runs | `Invoke-BenchPlacement.ps1` | none |
+
 ### Utilization counters
 
 The NPU registers as an **MCDM compute accelerator** (device class GUID
@@ -1170,7 +1192,7 @@ Nine write to the same history —
 [`Update-Workspace.ps1`](../Scripts/Update-Workspace.ps1),
 [`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
 [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py) (the last two are also run
-by the context and ORT scripts; see the [README](../README.md#the-benchmark-scripts) for
+by the context and ORT scripts; see [RUNNING-BENCHMARKS.md](RUNNING-BENCHMARKS.md#4-the-scripts) for
 what each measures). The Python harnesses
 shell out to [`AtlasBaseline.psm1`](../Scripts/AtlasBaseline.psm1) and
 [`BenchConditions.psm1`](../Scripts/BenchConditions.psm1) rather than
@@ -1181,7 +1203,7 @@ machine and apply the same rules.
 `id`; `kind` (`benchmark`, `control`, `canary` or `smoke`; smoke records are the check
 `Update-Workspace.ps1` runs, canary records the machine-state check before a suite, and
 neither is published); `suiteRun`, the run folder a suite wrote it from; `conditions` and `onAcPower`
-(see the [README](../README.md#benchmark-conditions)); `codeRev`, the Atlas revision
+(see [RUNNING-BENCHMARKS.md](RUNNING-BENCHMARKS.md#6-the-conditions-check)); `codeRev`, the Atlas revision
 with `+dirty` when `Scripts`, `src` or `evals` differ from it; and, only where they
 apply, `n`, `stdev`, `reps`, `order`, `promptKind`, `ctxSize`, `seed`, `harness`,
 `harnessVersion` and `modelArtifact`. Records written before format 2 lack the new

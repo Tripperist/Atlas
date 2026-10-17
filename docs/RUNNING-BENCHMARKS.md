@@ -24,6 +24,20 @@ in PowerShell 7.
 
 ---
 
+> **Status of the tooling (2026-10-17): what has actually been run.**
+>
+> - **Run for real on AC power:** the `ort` suite (about 9 minutes against an estimate of 12); the C#
+>   `OrtBench` against `onnxruntime-qnn` 2.6.0 and 2.7.0; the `smoke` suite; `Test-BenchGuards` with real
+>   runs.
+> - **Run only as tiny checks, or on battery:** each measuring script, on small models.
+> - **Never run at full size:** the `stack-compare`, `runtimes` and `longctx` suites, the prefill matrix, and
+>   the Foundry context benchmark on the 7B model through this tooling. Their time estimates are guesses.
+> - **Never run:** `Invoke-BenchControl.ps1 -Download` (so the canary has had no pinned build to run);
+>   `Invoke-BenchPlacement` and `Invoke-BenchToolCalling` since they were renamed.
+> - **The canary has no reference yet**, so it records and gates nothing, and its 85 % and 60 % lines are
+>   provisional.
+> - **No published table has been reproduced with these scripts.**
+
 ## 1. What the benchmarks show
 
 A local language model is used in two phases, and they behave differently:
