@@ -1,0 +1,9 @@
+# Editors: match .gitattributes (CRLF working files, UTF-8, a final newline).
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = false
+indent_style = space
