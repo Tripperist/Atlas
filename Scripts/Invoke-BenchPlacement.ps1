@@ -37,10 +37,10 @@
     HTP power mode. Pin this when benchmarking.
 
 .EXAMPLE
-    .\Scripts\Test-ComputeUnits.ps1
+    .\Scripts\Invoke-BenchPlacement.ps1
 
 .EXAMPLE
-    .\Scripts\Test-ComputeUnits.ps1 -Model qualcomm/Qwen3-4B:W4A16 -Repeat 3
+    .\Scripts\Invoke-BenchPlacement.ps1 -Model qualcomm/Qwen3-4B:W4A16 -Repeat 3
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -57,7 +57,7 @@ param(
 )
 
 $ErrorActionPreference = 'Continue'
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 $needs = @($Compute | ForEach-Object { if ($_ -in 'npu', 'hybrid') { 'npu' } else { $_ } } | Select-Object -Unique)
 $null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
 
@@ -200,7 +200,7 @@ else {
         Write-Host 'the machine was cold and the run was short. Measured on this' -ForegroundColor Yellow
         Write-Host 'hardware, CPU throughput drops ~19% as it warms while the NPU' -ForegroundColor Yellow
         Write-Host 'holds steady, which reverses the ranking. Re-check with:' -ForegroundColor Yellow
-        Write-Host '  .\Scripts\Invoke-Benchmark.ps1 -MaxTokens 400 -Repeat 3' -ForegroundColor Yellow
+        Write-Host '  .\Scripts\Invoke-BenchDecode.ps1 -MaxTokens 400 -Repeat 3' -ForegroundColor Yellow
     }
 }
 

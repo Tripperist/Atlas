@@ -6,7 +6,7 @@
 .DESCRIPTION
     Automates docs/BENCHMARKS.md "Prefill vs decode".
 
-    Invoke-Benchmark.ps1 drives `geniex infer` from a short prompt, where
+    Invoke-BenchDecode.ps1 drives `geniex infer` from a short prompt, where
     prefill is negligible and decode dominates. That understates the NPU
     badly: with a realistic 512-token prompt the NPU leads prefill by 5.8x on
     llama.cpp and 8.7x on QAIRT, while the short-prompt decode figures show it
@@ -55,14 +55,14 @@
     Print results without appending them to the benchmark history.
 
 .EXAMPLE
-    .\Scripts\Invoke-PrefillBench.ps1 -Matrix
+    .\Scripts\Invoke-BenchPrefill.ps1 -Matrix
 
 .EXAMPLE
-    .\Scripts\Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
+    .\Scripts\Invoke-BenchPrefill.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
 
 .EXAMPLE
     # prefill against prompt length; -CtxSize must cover the longest prompt plus -GenTokens
-    pwsh -Command "& .\Scripts\Invoke-PrefillBench.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
+    pwsh -Command "& .\Scripts\Invoke-BenchPrefill.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -84,7 +84,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 # Refuse to measure on battery, or with something else holding the NPU.
 $needs = if ($Matrix -or $Plugin -eq 'qairt') { @('npu') } else { @($Device) }
 $null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
@@ -263,7 +263,7 @@ $good |
 
 if (-not $NoRecord) {
     foreach ($r in $good) {
-        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-PrefillBench.ps1' `
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchPrefill.ps1' `
             -Model $r.Model -Compute "$($r.Plugin)/$($r.Device)" `
             -TokPerSec $r.DecodeTps -FirstTokenS ([math]::Round($r.TtftMs / 1000, 3)) `
             -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $r.PromptTokens `

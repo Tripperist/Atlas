@@ -34,7 +34,7 @@
     A step that exits with code 4 means a prerequisite is not present (for example the
     pinned llama.cpp build is not unpacked) and is reported as skipped, not failed.
 
-    Before the first step the canary runs (Invoke-AtlasCanary.ps1: a half-minute fixed run of
+    Before the first step the canary runs (Invoke-BenchCanary.ps1: a half-minute fixed run of
     the pinned stock llama.cpp, compared with earlier AC runs). ok and no-reference go on; warn
     goes on and the summary says the figures need a caveat; abort stops the suite, unless
     -IgnoreCanary. It runs again after the last step, to show whether the machine drifted
@@ -72,13 +72,13 @@
     Run the suite even if the canary says abort. The summary says it was overridden.
 
 .EXAMPLE
-    .\Scripts\Invoke-AtlasBenchSuite.ps1 -List
+    .\Scripts\Invoke-BenchSuite.ps1 -List
 
 .EXAMPLE
-    .\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare -DryRun
+    .\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun
 
 .EXAMPLE
-    pwsh -Command "& .\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
+    pwsh -Command "& .\Scripts\Invoke-BenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -90,7 +90,7 @@ param(
     [string[]]$Skip,
     [switch]$StopOnError,
     [switch]$AllowBattery,
-    # The canary (Invoke-AtlasCanary.ps1) runs before the steps, and again after them. Abort
+    # The canary (Invoke-BenchCanary.ps1) runs before the steps, and again after them. Abort
     # stops the suite unless -IgnoreCanary; -NoCanary skips it.
     [switch]$NoCanary,
     [switch]$IgnoreCanary,
@@ -105,7 +105,7 @@ $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 $suiteDir = if ($SuiteDir) { $SuiteDir } else { Join-Path $PSScriptRoot 'suites' }
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
 function Get-Suites {
     Get-ChildItem $suiteDir -Filter '*.json' | Sort-Object Name | ForEach-Object {
@@ -196,7 +196,7 @@ $results = [System.Collections.Generic.List[object]]::new()
 $allRecords = [System.Collections.Generic.List[string]]::new()
 $canaries = [System.Collections.Generic.List[object]]::new()
 $useCanary = (-not $NoCanary) -and $def.Canary
-$canaryPath = if ($CanaryScript) { $CanaryScript } else { Join-Path $PSScriptRoot 'Invoke-AtlasCanary.ps1' }
+$canaryPath = if ($CanaryScript) { $CanaryScript } else { Join-Path $PSScriptRoot 'Invoke-BenchCanary.ps1' }
 
 function Invoke-SuiteCanary([string]$When) {
     Write-Host ("[canary {0}]" -f $When) -ForegroundColor Cyan

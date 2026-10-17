@@ -10,8 +10,8 @@
     purpose -- most of those rows are conclusions rather than probes, such as
     a negative result about silently ignored provider lists, or a measurement
     taken once under a recorded stack. Nothing here measures throughput or
-    proves a model runs on the NPU; use Test-ComputeUnits.ps1 for placement
-    and Invoke-Benchmark.ps1 for throughput.
+    proves a model runs on the NPU; use Invoke-BenchPlacement.ps1 for placement
+    and Invoke-BenchDecode.ps1 for throughput.
 
 .PARAMETER SkipNetwork
     Skip checks that contact Qualcomm AI Hub.
@@ -134,6 +134,6 @@ else {
 }
 Write-Host ''
 Write-Host 'Note: this verifies the stack loads. It does NOT prove a model runs' -ForegroundColor DarkGray
-Write-Host 'on the NPU. Run .\Scripts\Test-ComputeUnits.ps1 for that.' -ForegroundColor DarkGray
+Write-Host 'on the NPU. Run .\Scripts\Invoke-BenchPlacement.ps1 for that.' -ForegroundColor DarkGray
 
 exit $failed

@@ -6,7 +6,7 @@
 //   * a fixed number of generated tokens (default 128)
 //   * prefill and decode timed separately
 //
-// Run it through Scripts/Invoke-OrtGenAiBench.ps1, which checks the machine's conditions
+// Run it through Scripts/Invoke-BenchOrtGenAi.ps1, which checks the machine's conditions
 // first (a battery-powered run looks like a 3x regression) and records the result. Run
 // directly, it prints and, with --json-out, writes one JSON object.
 //

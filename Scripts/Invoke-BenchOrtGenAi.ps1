@@ -49,10 +49,10 @@
     Skip QNN on both sides, for a CPU baseline on the same model.
 
 .EXAMPLE
-    .\Scripts\Invoke-OrtGenAiBench.ps1
+    .\Scripts\Invoke-BenchOrtGenAi.ps1
 
 .EXAMPLE
-    pwsh -Command "& .\Scripts\Invoke-OrtGenAiBench.ps1 -Runtime csharp -Rounds 2 -QnnVersion 2.7.0"
+    pwsh -Command "& .\Scripts\Invoke-BenchOrtGenAi.ps1 -Runtime csharp -Rounds 2 -QnnVersion 2.7.0"
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -74,7 +74,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
 $null = Assert-AtlasConditions -Needs $(if ($CpuOnly) { @() } else { 'npu' }) -AllowBattery:$AllowBattery
 
@@ -152,7 +152,7 @@ if (-not $NoRecord) {
         $isPy = $x.Runtime -eq 'python'
         $extra = @{ statistic = 'mean'; round = $x.Round; loadSeconds = $r.loadSeconds; packages = $r.versions }
         if (-not $isPy -and $QnnVersion) { $extra.qnnVersionRequested = $QnnVersion }
-        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-OrtGenAiBench.ps1' `
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchOrtGenAi.ps1' `
             -Model $label -Compute "$(if ($isPy) { 'ort_genai' } else { 'ort_genai-csharp' })/$(if ($CpuOnly) { 'cpu' } else { 'npu' })" `
             -TokPerSec ([math]::Round($r.decodeTps, 2)) -FirstTokenS ([math]::Round($r.ttftSeconds, 3)) -Tokens $NGen `
             -PrefillTps ([math]::Round($r.prefillTps, 1)) -PromptTokens $NPrompt `

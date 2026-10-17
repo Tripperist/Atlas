@@ -33,10 +33,10 @@
     Print results without appending them to the benchmark history.
 
 .EXAMPLE
-    .\Scripts\Invoke-FoundryBench.ps1
+    .\Scripts\Invoke-BenchFoundry.ps1
 
 .EXAMPLE
-    .\Scripts\Invoke-FoundryBench.ps1 -Model qwen2.5-1.5b -Repeat 5
+    .\Scripts\Invoke-BenchFoundry.ps1 -Model qwen2.5-1.5b -Repeat 5
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -52,7 +52,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 # Refuse to measure on battery, or with something else holding the NPU. The Foundry
 # daemon is the thing under test here, so it is expected and not flagged.
 $needs = if ($Model -match 'generic-(gpu|cpu)') { @() } else { @('npu') }
@@ -229,7 +229,7 @@ if (-not $NoRecord) {
         'generic-cpu' { 'cpu';  break }
         default       { 'auto' }
     }
-    Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-FoundryBench.ps1' `
+    Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchFoundry.ps1' `
         -Model $Model -Compute "foundry/$unit" `
         -TokPerSec ([math]::Round($meanTps, 1)) `
         -Tokens ([int](($rows | Measure-Object Tokens -Average).Average)) `

@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-    Check Invoke-AtlasBenchSuite.ps1 against stub steps, without running a benchmark.
+    Check Invoke-BenchSuite.ps1 against stub steps, without running a benchmark.
 
 .DESCRIPTION
     Builds a temporary suite of stub scripts (one that records a measurement, one that
@@ -27,7 +27,7 @@
 param()
 
 $ErrorActionPreference = 'Stop'
-$runner = Join-Path $PSScriptRoot 'Invoke-AtlasBenchSuite.ps1'
+$runner = Join-Path $PSScriptRoot 'Invoke-BenchSuite.ps1'
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) ("atlas-suite-test-" + [guid]::NewGuid().ToString('N').Substring(0, 8))
 $suites = Join-Path $tmp 'suites'; $runs = Join-Path $tmp 'runs'
 New-Item -ItemType Directory -Force -Path $suites, $runs | Out-Null

@@ -3,7 +3,7 @@
     Helpers for benchmarking Foundry Local over its OpenAI-compatible endpoint.
 
 .DESCRIPTION
-    Shared by Invoke-FoundryContextBench.ps1. Invoke-FoundryBench.ps1 predates it and
+    Shared by Invoke-BenchFoundryContext.ps1. Invoke-BenchFoundry.ps1 predates it and
     keeps its own copy of the endpoint discovery.
 
     Rules the helpers keep, each learned from a wrong number:

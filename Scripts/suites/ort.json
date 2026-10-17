@@ -3,7 +3,7 @@
   "steps": [
     {
       "id": "ort-genai",
-      "script": "Invoke-OrtGenAiBench.ps1",
+      "script": "Invoke-BenchOrtGenAi.ps1",
       "estimateMinutes": 12,
       "needs": ["npu"],
       "args": { "Rounds": 3 }

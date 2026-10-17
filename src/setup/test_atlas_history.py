@@ -1,7 +1,7 @@
 """Check the Python side of the benchmark history format.
 
 Writes to a temporary history (ATLAS_HISTORY_PATH), never the real one.
-Called by Scripts/Test-AtlasHistory.ps1; exit code is the number of failures.
+Called by Scripts/Test-BenchHistory.ps1; exit code is the number of failures.
 
     python src/setup/test_atlas_history.py
 """

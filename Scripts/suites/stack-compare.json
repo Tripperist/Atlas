@@ -3,30 +3,30 @@
   "steps": [
     {
       "id": "prefill-matrix",
-      "script": "Invoke-PrefillBench.ps1",
+      "script": "Invoke-BenchPrefill.ps1",
       "estimateMinutes": 8,
       "needs": ["npu"],
       "args": { "Matrix": true, "PromptTokens": [512], "Repeat": 3 }
     },
     {
       "id": "decode-short-4b",
-      "script": "Invoke-Benchmark.ps1",
+      "script": "Invoke-BenchDecode.ps1",
       "estimateMinutes": 8,
       "needs": ["npu"],
       "args": { "Model": "unsloth/Qwen3-4B-GGUF:Q4_0", "Compute": ["cpu", "gpu", "npu"], "Repeat": 3 }
     },
     {
-      "id": "llamacpp-control",
-      "script": "Invoke-LlamaCppControl.ps1",
+      "id": "control",
+      "script": "Invoke-BenchControl.ps1",
       "estimateMinutes": 10,
       "needs": ["cpu", "gpu"],
       "optional": true,
-      "note": "Skipped, not failed, if the pinned build is not unpacked: it is fetched only by running Invoke-LlamaCppControl.ps1 -Download.",
+      "note": "Skipped, not failed, if the pinned build is not unpacked: it is fetched only by running Invoke-BenchControl.ps1 -Download.",
       "args": { "Model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "Rounds": 3 }
     },
     {
       "id": "ort-genai",
-      "script": "Invoke-OrtGenAiBench.ps1",
+      "script": "Invoke-BenchOrtGenAi.ps1",
       "estimateMinutes": 12,
       "needs": ["npu"],
       "args": { "Rounds": 3 }

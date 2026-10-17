@@ -1,6 +1,6 @@
 """Benchmark Foundry Local through its in-process Python SDK.
 
-Scripts/Invoke-FoundryBench.ps1 measures the other route: the CLI plus the
+Scripts/Invoke-BenchFoundry.ps1 measures the other route: the CLI plus the
 OpenAI-compatible HTTP endpoint. That number carries request overhead the SDK
 does not pay, because the SDK loads the Foundry Local Core API into this
 process and calls it directly. Run both against the same model to see what the

@@ -41,7 +41,7 @@
     Length of each measurement window.
 
 .EXAMPLE
-    .\Scripts\Test-ToolCalling.ps1 -Model qwen2.5-0.5b
+    .\Scripts\Invoke-BenchToolCalling.ps1 -Model qwen2.5-0.5b
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -55,7 +55,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 # Placement is measured here, so the NPU must be free of anything but the Foundry daemon.
 $null = Assert-AtlasConditions -Needs 'npu' -AllowBattery:$AllowBattery -Expect 'foundry'
 

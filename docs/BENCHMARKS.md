@@ -47,10 +47,10 @@ Four harnesses, measuring different things. Mixing their outputs is a mistake:
 
 | Harness | Measures | Script |
 | --- | --- | --- |
-| `geniex infer` loop | decode throughput from a short prompt, plus CPU/NPU/GPU utilization | [`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1) |
-| `geniex-bench` | prefill and decode **separately**, from a fixed 512-token prompt | [`Invoke-PrefillBench.ps1`](../Scripts/Invoke-PrefillBench.ps1) |
+| `geniex infer` loop | decode throughput from a short prompt, plus CPU/NPU/GPU utilization | [`Invoke-BenchDecode.ps1`](../Scripts/Invoke-BenchDecode.ps1) |
+| `geniex-bench` | prefill and decode **separately**, from a fixed 512-token prompt | [`Invoke-BenchPrefill.ps1`](../Scripts/Invoke-BenchPrefill.ps1) |
 | ORT GenAI loop | prefill and decode separately, same axes as `geniex-bench` | [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py) |
-| OpenAI endpoint | end-to-end throughput including HTTP overhead | [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1) |
+| OpenAI endpoint | end-to-end throughput including HTTP overhead | [`Invoke-BenchFoundry.ps1`](../Scripts/Invoke-BenchFoundry.ps1) |
 
 ### Utilization counters
 
@@ -105,7 +105,7 @@ A warm-up fixes the start of a run, not the drift across it. Running every
 repeat of one compute unit before moving to the next charges all of that drift
 to whichever unit went last, and a community report on this same SoC saw a
 9 % gap between two configurations shrink to 2 % once the runs were
-interleaved. [`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1)
+interleaved. [`Invoke-BenchDecode.ps1`](../Scripts/Invoke-BenchDecode.ps1)
 therefore **round-robins across the units and reverses the order on alternate
 rounds**.
 
@@ -165,7 +165,7 @@ against 18.8 %). Something was using the Adreno. Per-round spread was 2 %
 not known. One model, one size: this says nothing about larger ones.
 
 **Qwen3-4B — 2026-10-16, units interleaved, utilization sampler off**
-(`Invoke-Benchmark.ps1 -NoUtilization`, three rounds, order cpu > gpu > npu,
+(`Invoke-BenchDecode.ps1 -NoUtilization`, three rounds, order cpu > gpu > npu,
 then reversed, then as the first):
 
 | Model | Compute | Tok/s (rounds) | First token (s) | Startup (s) |
@@ -215,8 +215,8 @@ raise them. The GPU was otherwise idle across that run's other two repetitions.
 The runs above use short prompts, so prefill is negligible and decode dominates. That understates the NPU badly. `geniex-bench` — shipped in the GenieX releases, llama-bench style — reports prefill and decode separately against a fixed 512-token prompt, which is far closer to a retrieval-augmented workload.
 
 ```powershell
-.\Scripts\Invoke-PrefillBench.ps1 -Matrix     # the whole table below
-.\Scripts\Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
+.\Scripts\Invoke-BenchPrefill.ps1 -Matrix     # the whole table below
+.\Scripts\Invoke-BenchPrefill.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
 ```
 
 `geniex-bench` ships as a per-release archive rather than with the CLI, so the
@@ -257,7 +257,7 @@ Measured with [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py), which mir
 The GenieX v0.9.0 stack change also moved `onnxruntime-qnn` from 2.6.0 to 2.7.0, and the ORT
 GenAI path had not been re-measured on AC power. Measured 2026-10-16 on AC power, power scheme
 Balanced, Phi-4-mini-reasoning `qnn-int4`, a 512-token prompt, 128 generated, 3 repetitions per
-run, with `Scripts/Invoke-OrtGenAiBench.ps1`. The C# side is [`OrtBench`](../src/csharp/OrtBench),
+run, with `Scripts/Invoke-BenchOrtGenAi.ps1`. The C# side is [`OrtBench`](../src/csharp/OrtBench),
 built against each version of `Qualcomm.ML.OnnxRuntime.QNN` (`-QnnVersion`); the records show the
 provider DLL that loaded. Six single-round runs, interleaved 2.6.0, 2.7.0, 2.7.0, 2.6.0, 2.6.0, 2.7.0:
 
@@ -633,7 +633,7 @@ report.
 > figures from before that date are single-session snapshots and can be 10–40 %
 > low.
 
-**Measured here** with [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
+**Measured here** with [`Invoke-BenchFoundry.ps1`](../Scripts/Invoke-BenchFoundry.ps1),
 `phi-3.5-mini` (variant `phi-3.5-mini-instruct-qnn-npu`) over the OpenAI endpoint, 357 tokens, 3 runs:
 
 | Metric | Value | Previously |
@@ -666,7 +666,7 @@ prompted a re-test of four things that looked settled. Foundry daemon running
 since the restart, stack `44a1e6e37bc4`.
 
 **1. The harness's sampler lowered the numbers it reported.**
-`Invoke-FoundryBench.ps1` timed each request while a performance-counter loop
+`Invoke-BenchFoundry.ps1` timed each request while a performance-counter loop
 ran alongside it, competing for the CPU the model's graph uses. The same request
 with and without the loop, NPU variants:
 
@@ -896,7 +896,7 @@ with a note.
 
 Three 25-second windows against `qwen2.5-0.5b-instruct-qnn-npu`, NPU sampled
 throughout, measured with
-[`Test-ToolCalling.ps1`](../Scripts/Test-ToolCalling.ps1):
+[`Invoke-BenchToolCalling.ps1`](../Scripts/Invoke-BenchToolCalling.ps1):
 
 | Condition | Requests | Tokens | Tool calls | NPU peak |
 | --- | --- | --- | --- | --- |
@@ -1138,7 +1138,7 @@ stack 44a1e6e37bc4  <-- current stack
   adreno 32.0.172.2 | npu 30.0.228.10000 | os 28120 | geniex v0.8.0 | llama.cpp 9425611
 
 when             model                        compute       prefill decode firstTok source
-2026-10-05 21:24 qualcomm/Qwen3-4B:W4A16      qairt/npu     2105.00  27.80     0.24 Invoke-PrefillBench.ps1
+2026-10-05 21:24 qualcomm/Qwen3-4B:W4A16      qairt/npu     2105.00  27.80     0.24 Invoke-BenchPrefill.ps1
 ```
 
 **Why the stack is hashed.** A throughput number means little without the
@@ -1150,7 +1150,7 @@ history stays readable after the baseline is replaced.
 The format is JSON Lines and the harnesses only ever append to it, so the file
 concatenates and diffs cleanly and a crashed run costs at most its own line. The one
 exception is
-[`Mark-AtlasInvalidRecords.ps1`](../Scripts/Mark-AtlasInvalidRecords.ps1), which sets
+[`Mark-BenchInvalid.ps1`](../Scripts/Mark-BenchInvalid.ps1), which sets
 `valid: false` on records known not to be comparable. It rewrites only the lines it
 changes and writes a backup first.
 
@@ -1159,19 +1159,19 @@ because short-prompt decode rates understate the NPU's prefill advantage by a
 wide margin. Records predating the field show `-`.
 
 Nine write to the same history —
-[`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1),
-[`Invoke-PrefillBench.ps1`](../Scripts/Invoke-PrefillBench.ps1),
-[`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
-[`Invoke-FoundryContextBench.ps1`](../Scripts/Invoke-FoundryContextBench.ps1),
-[`Invoke-LlamaCppControl.ps1`](../Scripts/Invoke-LlamaCppControl.ps1),
-[`Invoke-OrtGenAiBench.ps1`](../Scripts/Invoke-OrtGenAiBench.ps1),
+[`Invoke-BenchDecode.ps1`](../Scripts/Invoke-BenchDecode.ps1),
+[`Invoke-BenchPrefill.ps1`](../Scripts/Invoke-BenchPrefill.ps1),
+[`Invoke-BenchFoundry.ps1`](../Scripts/Invoke-BenchFoundry.ps1),
+[`Invoke-BenchFoundryContext.ps1`](../Scripts/Invoke-BenchFoundryContext.ps1),
+[`Invoke-BenchControl.ps1`](../Scripts/Invoke-BenchControl.ps1),
+[`Invoke-BenchOrtGenAi.ps1`](../Scripts/Invoke-BenchOrtGenAi.ps1),
 [`Update-Workspace.ps1`](../Scripts/Update-Workspace.ps1),
 [`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
 [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py) (the last two are also run
 by the context and ORT scripts; see the [README](../README.md#the-benchmark-scripts) for
 what each measures). The Python harnesses
 shell out to [`AtlasBaseline.psm1`](../Scripts/AtlasBaseline.psm1) and
-[`AtlasConditions.psm1`](../Scripts/AtlasConditions.psm1) rather than
+[`BenchConditions.psm1`](../Scripts/BenchConditions.psm1) rather than
 reimplementing the hash or the policy, so both sides derive the same id for the same
 machine and apply the same rules.
 

@@ -33,7 +33,7 @@ geniex pull unsloth/Qwen3-0.6B-GGUF:Q4_0 --model-hub hf
 geniex infer unsloth/Qwen3-0.6B-GGUF:Q4_0 -p "Hello" --compute npu --think=false
 ```
 
-Then run `.\Scripts\Test-ComputeUnits.ps1` to see CPU, GPU and NPU compared on
+Then run `.\Scripts\Invoke-BenchPlacement.ps1` to see CPU, GPU and NPU compared on
 the same prompt.
 
 ---
@@ -442,9 +442,9 @@ does that.
 | [§4.4 Verify](#44-verify) | [`Test-Environment.ps1`](Scripts/Test-Environment.ps1) | Yes, read-only |
 | [§6 ONNX Runtime GenAI](#6-onnx-runtime-genai) | [`check_qnn.py`](src/setup/check_qnn.py) · [`model_format.py`](src/setup/model_format.py) | Yes, read-only |
 | [§6.3 Hello world — Python](#63-hello-world--python) | [`run_ort_genai.py`](src/setup/run_ort_genai.py) | Yes; runs inference |
-| [§7.5 Tool calling](#75-tool-calling) | [`Test-ToolCalling.ps1`](Scripts/Test-ToolCalling.ps1) | Yes; runs inference |
-| [§8 Proving which compute unit ran](#8-proving-which-compute-unit-ran) | [`Test-ComputeUnits.ps1`](Scripts/Test-ComputeUnits.ps1) · [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
-| [§10 Benchmarks](#10-benchmarks) | [`Invoke-Benchmark.ps1`](Scripts/Invoke-Benchmark.ps1) · [`Invoke-PrefillBench.ps1`](Scripts/Invoke-PrefillBench.ps1) · [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) · [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
+| [§7.5 Tool calling](#75-tool-calling) | [`Invoke-BenchToolCalling.ps1`](Scripts/Invoke-BenchToolCalling.ps1) | Yes; runs inference |
+| [§8 Proving which compute unit ran](#8-proving-which-compute-unit-ran) | [`Invoke-BenchPlacement.ps1`](Scripts/Invoke-BenchPlacement.ps1) · [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1) | Yes; runs inference |
+| [§10 Benchmarks](#10-benchmarks) | [`Invoke-BenchDecode.ps1`](Scripts/Invoke-BenchDecode.ps1) · [`Invoke-BenchPrefill.ps1`](Scripts/Invoke-BenchPrefill.ps1) · [`Invoke-BenchFoundry.ps1`](Scripts/Invoke-BenchFoundry.ps1) · [`bench_ort_genai.py`](src/setup/bench_ort_genai.py) | Yes; runs inference |
 | [§11 Keeping the workspace current](#11-keeping-the-workspace-current) | [`Update-Workspace.ps1`](Scripts/Update-Workspace.ps1) | Reports only; `-Apply` to act |
 | Published model performance | [`model_catalog.py`](src/setup/model_catalog.py) | Yes, read-only; no token |
 | [§6.4 Hello world — C#](#64-hello-world--c) | [`src/csharp/GenAiProbe`](src/csharp/GenAiProbe) | Yes; runs inference |
@@ -1125,7 +1125,7 @@ print(response.json()["choices"][0]["message"]["content"])
 > `parent` in `/v1/models`. And being **downloaded is not being loaded** —
 > `/v1/models` lists what is on disk, but a request against an unloaded model
 > fails with *"Model … is not loaded"*. Run `foundry model load <alias>` first.
-> [`Invoke-FoundryBench.ps1`](Scripts/Invoke-FoundryBench.ps1) handles both.
+> [`Invoke-BenchFoundry.ps1`](Scripts/Invoke-BenchFoundry.ps1) handles both.
 
 ### 7.3 Hello world — in-process SDK
 
@@ -1216,7 +1216,7 @@ native core behind two bindings.
 > utilization sampler competing for the CPU, which the harness no longer does. See
 > [BENCHMARKS](docs/BENCHMARKS.md#re-measured-2026-10-16).
 
-Anything measured through `Invoke-FoundryBench.ps1` before 2026-10-16 had that
+Anything measured through `Invoke-BenchFoundry.ps1` before 2026-10-16 had that
 sampler running and may be 10–40 % low.
 
 > **`phi-3.5-mini` does not work through the SDK**, though it works fine over
@@ -1291,7 +1291,7 @@ then 2, then 11 again, all on CLI 0.10.3 (the history is in the
 ### 7.5 Tool calling
 
 ```powershell
-.\Scripts\Test-ToolCalling.ps1 -Model qwen2.5-0.5b
+.\Scripts\Invoke-BenchToolCalling.ps1 -Model qwen2.5-0.5b
 ```
 
 Tool calling **works** on the NPU variant: forced requests return well-formed
@@ -1326,7 +1326,7 @@ A provider appearing in a list, or a busy NPU graph in Task Manager, does
 because no single run is self-evident.
 
 ```powershell
-.\Scripts\Test-ComputeUnits.ps1
+.\Scripts\Invoke-BenchPlacement.ps1
 ```
 
 Runs the same prompt across `cpu`, `gpu` and `npu` with a fixed seed, a pinned
@@ -1380,7 +1380,7 @@ Three habits follow:
 > **Adapter LUIDs are assigned per boot — never hardcode them.** A recorded
 > value silently reads **zero** later rather than erroring. Re-derive with
 > [`Get-AcceleratorLuid.ps1`](Scripts/Get-AcceleratorLuid.ps1); `-UseQairt`
-> works even when the GGUF path is unavailable. `Invoke-Benchmark.ps1`
+> works even when the GGUF path is unavailable. `Invoke-BenchDecode.ps1`
 > self-calibrates for the same reason.
 
 **Step 5 — pin the conditions.** Benchmark on AC, in `burst` power mode, with
@@ -1470,7 +1470,7 @@ token loop, and accept that you are choosing from a short list of models.
 - **PowerShell 7** (`pwsh`), not Windows PowerShell 5.1. The scripts say so if started under 5.1.
   Array arguments need `pwsh -Command "& .\Scripts\X.ps1 -Compute cpu,gpu"`, not `pwsh -File`.
 - **The workspace works:** `.\Scripts\Test-Environment.ps1` passes, and `uv sync` has been run.
-- **`gh`** (GitHub CLI) is installed and signed in. `Invoke-PrefillBench.ps1` and
+- **`gh`** (GitHub CLI) is installed and signed in. `Invoke-BenchPrefill.ps1` and
   `Update-Workspace.ps1` fetch `geniex-bench` and release information through it.
 - **The models are present.** GenieX: `geniex pull <model>`. Foundry: `foundry model download <alias>`.
   The ORT GenAI bundle: the `hf download` command the script prints if it is missing.
@@ -1478,22 +1478,22 @@ token loop, and accept that you are choosing from a short list of models.
   refuses on battery or when something else may hold the NPU (`-AllowBattery` overrides, and the
   result is then kept out of published figures). Close browsers: ORT GenAI loses about half its
   speed to about one core of background load.
-- **Once:** `.\Scripts\Invoke-LlamaCppControl.ps1 -Download` fetches the pinned stock llama.cpp
+- **Once:** `.\Scripts\Invoke-BenchControl.ps1 -Download` fetches the pinned stock llama.cpp
   (checked against a SHA256). Without it the control and the canary cannot run.
 
 **A first run, in order**
 
 ```powershell
 .\Scripts\Test-Environment.ps1                      # the machine and the workspace
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite smoke   # about two minutes: proves the harnesses run
-.\Scripts\Invoke-LlamaCppControl.ps1 -Download      # once; needed by the control and the canary
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare -DryRun   # see what the real one will do
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare           # about 40 minutes, canary first
+.\Scripts\Invoke-BenchSuite.ps1 -Suite smoke   # about two minutes: proves the harnesses run
+.\Scripts\Invoke-BenchControl.ps1 -Download      # once; needed by the control and the canary
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun   # see what the real one will do
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare           # about 40 minutes, canary first
 ```
 
 **After a stack change** (a GenieX, Foundry or package update): `.\Scripts\Update-Workspace.ps1 -Apply`,
 then `-Accept` once it verifies, then the `stack-compare` suite, then
-`.\Scripts\Compare-AtlasBenchmarks.ps1` to see what moved. Details are in
+`.\Scripts\Compare-BenchStacks.ps1` to see what moved. Details are in
 [11. Keeping the workspace current](#11-keeping-the-workspace-current).
 
 **From a published table to its command.** Each table in [BENCHMARKS](docs/BENCHMARKS.md) was
@@ -1503,17 +1503,17 @@ their power state was not recorded.
 
 | Table in BENCHMARKS.md | Command | Suite step |
 | --- | --- | --- |
-| Decode throughput by compute unit | `Invoke-Benchmark.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Compute cpu,gpu,npu` | `stack-compare`: `decode-short-4b` |
-| Prefill vs decode (the matrix) | `Invoke-PrefillBench.ps1 -Matrix` | `stack-compare`, `runtimes`: the prefill matrix |
-| ORT GenAI, Python and C# | `Invoke-OrtGenAiBench.ps1`; `-QnnVersion 2.7.0` builds the C# side against another QNN package | `ort`, `runtimes`, `stack-compare` |
+| Decode throughput by compute unit | `Invoke-BenchDecode.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Compute cpu,gpu,npu` | `stack-compare`: `decode-short-4b` |
+| Prefill vs decode (the matrix) | `Invoke-BenchPrefill.ps1 -Matrix` | `stack-compare`, `runtimes`: the prefill matrix |
+| ORT GenAI, Python and C# | `Invoke-BenchOrtGenAi.ps1`; `-QnnVersion 2.7.0` builds the C# side against another QNN package | `ort`, `runtimes`, `stack-compare` |
 | Same model, two runtimes | Interactive, not a harness: `dotnet run -c Release --project src\csharp\AtlasChat` | none |
-| 30B model, long prompts | `Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0' -Device npu,gpu -PromptTokens 512,1792,6784 -CtxSize 8192` | `longctx`: `genie-30b` |
-| Stock llama.cpp on the same file | `Invoke-LlamaCppControl.ps1` | `stack-compare`: `llamacpp-control` |
-| GenieX v0.9.0 against v0.8.0 | `Compare-AtlasBenchmarks.ps1 -From 44a1e6e -To af42e97` | none (a view of the history) |
-| Foundry throughput and NPU placement | `Invoke-FoundryBench.ps1 -Model qwen2.5-0.5b` | none |
-| Foundry against prompt length, HTTP and in process | `Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096,6784` (and `-InProcess`) | `longctx`: `foundry-7b-http`, `foundry-7b-inprocess`; `runtimes`: `foundry-7b` |
-| Foundry tool calling and placement | `Test-ToolCalling.ps1` | none |
-| Does a compute-unit flag change where the work runs | `Test-ComputeUnits.ps1` | none |
+| 30B model, long prompts | `Invoke-BenchPrefill.ps1 -Model 'unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0' -Device npu,gpu -PromptTokens 512,1792,6784 -CtxSize 8192` | `longctx`: `genie-30b` |
+| Stock llama.cpp on the same file | `Invoke-BenchControl.ps1` | `stack-compare`: `control` |
+| GenieX v0.9.0 against v0.8.0 | `Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97` | none (a view of the history) |
+| Foundry throughput and NPU placement | `Invoke-BenchFoundry.ps1 -Model qwen2.5-0.5b` | none |
+| Foundry against prompt length, HTTP and in process | `Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096,6784` (and `-InProcess`) | `longctx`: `foundry-7b-http`, `foundry-7b-inprocess`; `runtimes`: `foundry-7b` |
+| Foundry tool calling and placement | `Invoke-BenchToolCalling.ps1` | none |
+| Does a compute-unit flag change where the work runs | `Invoke-BenchPlacement.ps1` | none |
 
 `-List` shows the suites and `-DryRun` shows each step's exact command. The scripts, the conditions
 they check, the history and the comparison are described in section 11. The array-valued
@@ -1565,9 +1565,9 @@ tokens; see
 Run them yourself:
 
 ```powershell
-.\Scripts\Invoke-Benchmark.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0'   # decode + utilization
-.\Scripts\Invoke-PrefillBench.ps1 -Matrix                            # prefill vs decode
-.\Scripts\Invoke-FoundryBench.ps1                                    # Foundry Local
+.\Scripts\Invoke-BenchDecode.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0'   # decode + utilization
+.\Scripts\Invoke-BenchPrefill.ps1 -Matrix                            # prefill vs decode
+.\Scripts\Invoke-BenchFoundry.ps1                                    # Foundry Local
 .\Scripts\Update-Workspace.ps1 -History                              # past runs, by stack
 ```
 
@@ -1640,13 +1640,13 @@ side effect, so the loaded models are asked for only when the daemon is already
 running, and a stopped daemon holds none.
 
 ```powershell
-.\Scripts\Test-AtlasConditions.ps1                  # the policy, then the conditions right now
-.\Scripts\Test-AtlasHistory.ps1                     # the history format, against a temporary file
-.\Scripts\Test-BenchmarkGuards.ps1                  # every harness refuses on battery
-.\Scripts\Test-BenchmarkGuards.ps1 -IncludeRuns     # and records the override on tiny real runs
+.\Scripts\Test-BenchConditions.ps1                  # the policy, then the conditions right now
+.\Scripts\Test-BenchHistory.ps1                     # the history format, against a temporary file
+.\Scripts\Test-BenchGuards.ps1                  # every harness refuses on battery
+.\Scripts\Test-BenchGuards.ps1 -IncludeRuns     # and records the override on tiny real runs
 .\Scripts\Test-BenchSuite.ps1                       # the suite runner, over stub steps
-.\Scripts\Test-AtlasCompare.ps1                     # the stack comparison rules
-.\Scripts\Test-AtlasCanary.ps1                      # the canary rules; -IncludeRuns runs it for real
+.\Scripts\Test-BenchCompare.ps1                     # the stack comparison rules
+.\Scripts\Test-BenchCanary.ps1                      # the canary rules; -IncludeRuns runs it for real
 ```
 
 The harness scripts require **PowerShell 7** (`pwsh`, not `powershell`) and say so
@@ -1663,19 +1663,19 @@ records every result with its conditions, and refuses on battery.
 
 | Script | Measures |
 | --- | --- |
-| `Invoke-Benchmark.ps1` | `geniex infer` decode on a short prompt, with utilization |
-| `Invoke-PrefillBench.ps1` | `geniex-bench` prefill and decode; `-PromptTokens` takes a list of sizes |
-| `Invoke-FoundryBench.ps1` | Foundry Local over HTTP: throughput, then NPU placement on a separate request |
-| `Invoke-FoundryContextBench.ps1` | Foundry prefill, first token and decode against prompt length, over HTTP or `-InProcess` |
-| `Invoke-LlamaCppControl.ps1` | Stock llama.cpp, pinned in `Scripts/llamacpp-control.json`, recorded as `kind: control` |
-| `Invoke-OrtGenAiBench.ps1` | ONNX Runtime GenAI from Python and from C# ([OrtBench](src/csharp/OrtBench)) |
+| `Invoke-BenchDecode.ps1` | `geniex infer` decode on a short prompt, with utilization |
+| `Invoke-BenchPrefill.ps1` | `geniex-bench` prefill and decode; `-PromptTokens` takes a list of sizes |
+| `Invoke-BenchFoundry.ps1` | Foundry Local over HTTP: throughput, then NPU placement on a separate request |
+| `Invoke-BenchFoundryContext.ps1` | Foundry prefill, first token and decode against prompt length, over HTTP or `-InProcess` |
+| `Invoke-BenchControl.ps1` | Stock llama.cpp, pinned in `Scripts/bench-control.json`, recorded as `kind: control` |
+| `Invoke-BenchOrtGenAi.ps1` | ONNX Runtime GenAI from Python and from C# ([OrtBench](src/csharp/OrtBench)) |
 | `New-BenchPrompt.ps1` | A deterministic long prompt from pinned repository text (used by the context bench) |
 
 ```powershell
-pwsh -Command "& .\Scripts\Invoke-PrefillBench.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
-pwsh -Command "& .\Scripts\Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
-.\Scripts\Invoke-LlamaCppControl.ps1 -Download        # fetches the pinned release zip, verifies its SHA256
-.\Scripts\Invoke-OrtGenAiBench.ps1 -Rounds 3
+pwsh -Command "& .\Scripts\Invoke-BenchPrefill.ps1 -Device gpu,npu -PromptTokens 512,2048,8192 -CtxSize 10240"
+pwsh -Command "& .\Scripts\Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
+.\Scripts\Invoke-BenchControl.ps1 -Download        # fetches the pinned release zip, verifies its SHA256
+.\Scripts\Invoke-BenchOrtGenAi.ps1 -Rounds 3
 ```
 
 Things these scripts do that are easy to get wrong by hand:
@@ -1696,7 +1696,7 @@ not been run at all. The runs so far were tiny checks on battery.
 
 ### Suites
 
-`Invoke-AtlasBenchSuite.ps1` runs a named set of the scripts above from a manifest in
+`Invoke-BenchSuite.ps1` runs a named set of the scripts above from a manifest in
 `Scripts/suites/`, so "the stack-compare numbers" is a command and not a recollection.
 
 | Suite | For | About |
@@ -1708,10 +1708,10 @@ not been run at all. The runs so far were tiny checks on battery.
 | `ort` | ORT GenAI from Python and C#, after an onnxruntime package change | 12 min |
 
 ```powershell
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -List
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare -DryRun    # the steps and commands, nothing run
-.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite smoke
-pwsh -Command "& .\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
+.\Scripts\Invoke-BenchSuite.ps1 -List
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun    # the steps and commands, nothing run
+.\Scripts\Invoke-BenchSuite.ps1 -Suite smoke
+pwsh -Command "& .\Scripts\Invoke-BenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
 ```
 
 The conditions are checked once up front, so a suite on battery stops before anything loads.
@@ -1723,7 +1723,7 @@ the code revision, the conditions), `steps.json`, `records.jsonl`, a log per ste
 `summary.md`. The records also go to the history, tagged `suiteRun`. The time estimates are
 rough, and only `smoke` has been timed: the other four have never been run.
 
-**The canary.** Before the first step the runner runs `Invoke-AtlasCanary.ps1`: a half-minute
+**The canary.** Before the first step the runner runs `Invoke-BenchCanary.ps1`: a half-minute
 fixed run of the pinned stock llama.cpp on Qwen3-0.6B (CPU and GPU), so no GenieX or Foundry
 update can move it, compared with the median of the last five earlier canary runs that were
 measured on AC power. `ok` and `no-reference` go on, `warn` (below 85 % of the reference) goes
@@ -1731,15 +1731,15 @@ on with a caveat in the summary, and `abort` (below 60 %) stops the suite unless
 `-IgnoreCanary`. It runs again after the last step, to show a drift during the run; `smoke`
 and `-NoCanary` skip it. **The 85 % and 60 % lines are provisional**: there was no AC data to set
 them from, and the canary has no reference until three healthy AC runs exist, so for now it only
-records. It needs the pinned build unpacked (`Invoke-LlamaCppControl.ps1 -Download`); without it
+records. It needs the pinned build unpacked (`Invoke-BenchControl.ps1 -Download`); without it
 the canary is reported unavailable and nothing is gated.
 
 ### Comparing two stacks
 
 ```powershell
-.\Scripts\Compare-AtlasBenchmarks.ps1 -List                       # the stacks that have records
-.\Scripts\Compare-AtlasBenchmarks.ps1                             # the previous stack against the current one
-.\Scripts\Compare-AtlasBenchmarks.ps1 -From 44a1e6e -To af42e97 -Markdown
+.\Scripts\Compare-BenchStacks.ps1 -List                       # the stacks that have records
+.\Scripts\Compare-BenchStacks.ps1                             # the previous stack against the current one
+.\Scripts\Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97 -Markdown
 ```
 
 For every cell (model, compute unit, prompt length, measuring script) measured on both stacks:
@@ -1763,7 +1763,7 @@ stack they ran under, and now also with the conditions above, the Atlas revision
 Import-Module .\Scripts\AtlasBaseline.psm1
 Get-AtlasBenchmarkHistory -Valid            # without invalid records and those measured on battery
 Get-AtlasBenchmarkHistory -Kind control     # the stock-engine runs
-.\Scripts\Mark-AtlasInvalidRecords.ps1 -DryRun   # flag records whose note says they were not comparable
+.\Scripts\Mark-BenchInvalid.ps1 -DryRun   # flag records whose note says they were not comparable
 ```
 
 See [BENCHMARKS](docs/BENCHMARKS.md#benchmark-history) for the format. The plan for what
@@ -1828,7 +1828,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | **NPU and GPU decode cross over with prompt length** | On v0.8.0 the GPU decoded the 30B faster than the NPU at every prompt length. On v0.9.0 the NPU is faster up to about 1,800 tokens (19.3, 23.4 and 17.5 tok/s against 17.4, 18.1 and 15.3 at 512, 896 and 1,792) and slower from 3,456 (12.4 against 15.3). Cause unknown ([BENCHMARKS](docs/BENCHMARKS.md#geniex-v090-against-v080)) |
 | **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
 | **Foundry throughput is not stable between sessions** | Figures from before 2026-10-16 came from a harness whose own sampler lowered them by about 9 % at 7B and about 40 % at 0.5B, and some runs sat in an unexplained half-speed state (the 7B at 7.1 tok/s where it later gave 14.1). `phi-3.5-mini` moved the other way, 27.7 to 19.7. The harness is fixed; the half-speed state and the `phi-3.5-mini` drop are not explained. **Next step:** repeat a fixed Foundry workload across several sessions to see how often the state appears |
-| **`Invoke-Benchmark.ps1` samples counters while timing** | The same flaw as the Foundry harness. Unsampled, Qwen3-4B gave 31.3 / 28.3 / 27.6 against 30.4 / 24.6 / 21.9 sampled, and the unsampled CPU varied 33 % in one run. Records now carry `sampled`; older ones should be assumed sampled. **Next step:** repeat unsampled before quoting any CPU or GPU figure from `geniex infer` |
+| **`Invoke-BenchDecode.ps1` samples counters while timing** | The same flaw as the Foundry harness. Unsampled, Qwen3-4B gave 31.3 / 28.3 / 27.6 against 30.4 / 24.6 / 21.9 sampled, and the unsampled CPU varied 33 % in one run. Records now carry `sampled`; older ones should be assumed sampled. **Next step:** repeat unsampled before quoting any CPU or GPU figure from `geniex infer` |
 | **GenieX v0.9.0 GPU decode on the 30B MoE fell about 40 %** | 28.9 to 17.4 tok/s at a 512-token prompt, below stock llama.cpp b10566 on the same file (21), where v0.8.0 was above it. Qwen3-4B and Phi-4-mini on the GPU did not move, and at 6,784 tokens the 30B is unchanged. A control run showed the machine in its normal state. The llama.cpp bump to `e467e5b` is the obvious suspect; not isolated or reported. **Next step:** another MoE model on the GPU, and `geniex` with the old engine if one can be built |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 

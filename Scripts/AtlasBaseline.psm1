@@ -14,7 +14,7 @@
     benchmark is stamped with a short hash of the state it ran under. Results
     recorded under different stacks are never silently comparable.
 
-    Used by Update-Workspace.ps1 and Invoke-Benchmark.ps1.
+    Used by Update-Workspace.ps1 and Invoke-BenchDecode.ps1.
 #>
 
 Set-StrictMode -Version Latest
@@ -184,7 +184,7 @@ function Write-AtlasBaseline {
 
     History format 2 (schemaVersion 2) adds, beside the original fields: a stable
     `id`; `kind` (benchmark, control or smoke); `conditions` and `onAcPower`, the
-    state the run was made under (AtlasConditions.psm1); `codeRev`, the Atlas
+    state the run was made under (BenchConditions.psm1); `codeRev`, the Atlas
     revision, with +dirty when Scripts, src or evals differ from it; and optional
     n, stdev, reps, order, promptKind, ctxSize, seed, harness, harnessVersion and
     modelArtifact. Fields that do not apply are left out. Older records stay valid
@@ -193,7 +193,7 @@ function Write-AtlasBaseline {
 # The conditions the current run was checked under, set by Assert-AtlasConditions
 # (it calls Set-AtlasRunConditions if this module is loaded) and stamped on every
 # record written afterwards. Held here, with the history, so that reloading
-# AtlasConditions.psm1 with -Force cannot orphan it.
+# BenchConditions.psm1 with -Force cannot orphan it.
 $script:RunConditions = $null
 $script:CodeRev = $null
 
@@ -289,7 +289,7 @@ function Add-AtlasBenchmarkRecord {
     foreach ($k in $optional.Keys) {
         if ($null -ne $optional[$k] -and -not ($optional[$k] -is [string] -and -not $optional[$k])) { $record[$k] = $optional[$k] }
     }
-    # A suite run (Invoke-AtlasBenchSuite.ps1) names itself here, so its records can be found again.
+    # A suite run (Invoke-BenchSuite.ps1) names itself here, so its records can be found again.
     if ($env:ATLAS_SUITE_RUN) { $record['suiteRun'] = $env:ATLAS_SUITE_RUN }
     $record['onAcPower'] = if ($conditions) { $conditions.onAcPower } else { $null }
     if ($conditions) { $record['conditions'] = $conditions }

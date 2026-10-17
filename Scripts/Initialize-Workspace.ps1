@@ -112,7 +112,7 @@ try {
     Write-Host 'Next steps:' -ForegroundColor Cyan
     Write-Host '  .\Scripts\Test-Environment.ps1      # verify the stack'
     Write-Host '  geniex pull ai-hub-models/Qwen3-4B  # get a model'
-    Write-Host '  .\Scripts\Test-ComputeUnits.ps1     # compare CPU/GPU/NPU'
+    Write-Host '  .\Scripts\Invoke-BenchPlacement.ps1     # compare CPU/GPU/NPU'
 }
 finally {
     Pop-Location

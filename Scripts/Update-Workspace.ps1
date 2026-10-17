@@ -75,7 +75,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
 $root         = Get-AtlasRoot
 $venvPy       = Join-Path $root '.venv\Scripts\python.exe'
@@ -88,7 +88,7 @@ if ($History) {
     $records = @(Get-AtlasBenchmarkHistory)
     if ($records.Count -eq 0) {
         Write-Host "No benchmark history yet at $(Get-AtlasHistoryPath)."
-        Write-Host 'It is written by Update-Workspace.ps1 and Invoke-Benchmark.ps1.'
+        Write-Host 'It is written by Update-Workspace.ps1 and Invoke-BenchDecode.ps1.'
         exit 0
     }
     Write-Host "Benchmark history ($($records.Count) record(s))" -ForegroundColor Cyan
@@ -572,7 +572,7 @@ if (-not $SkipVerify) {
             Write-Host ("  recorded under stack {0}; see -History" -f (Get-AtlasShortId $current.id)) -ForegroundColor DarkGray
             Write-Host '  Smoke test only. geniex rounds first-token to 0.1s, so a warm' -ForegroundColor DarkGray
             Write-Host '  short prompt reads 0.0s. For numbers comparable to docs/BENCHMARKS.md,' -ForegroundColor DarkGray
-            Write-Host '  run .\Scripts\Invoke-Benchmark.ps1.' -ForegroundColor DarkGray
+            Write-Host '  run .\Scripts\Invoke-BenchDecode.ps1.' -ForegroundColor DarkGray
         }
         else {
             Write-Host '  benchmark                 FAIL - no tokens generated'

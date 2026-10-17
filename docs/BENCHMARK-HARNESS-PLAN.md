@@ -5,6 +5,45 @@ in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
 
+## Naming (renamed 2026-10-17)
+
+One pattern: **`<Verb>-Bench<What>`**. The verb says what kind of thing it is, the noun says what it
+measures, and a script's help (`Get-Help .\Scripts\<name>.ps1`) starts with the same sentence.
+
+| Kind | Pattern | Scripts |
+| --- | --- | --- |
+| Measure something | `Invoke-Bench<What>` | `Invoke-BenchDecode`, `Invoke-BenchPrefill`, `Invoke-BenchFoundry`, `Invoke-BenchFoundryContext`, `Invoke-BenchOrtGenAi`, `Invoke-BenchControl`, `Invoke-BenchPlacement`, `Invoke-BenchToolCalling` |
+| Run a set, or check the machine | `Invoke-Bench<Suite or Canary>` | `Invoke-BenchSuite`, `Invoke-BenchCanary` |
+| Report | `Compare-Bench...`, `Mark-Bench...` | `Compare-BenchStacks`, `Mark-BenchInvalid` |
+| Support | `New-Bench...`, `Bench*.psm1` | `New-BenchPrompt`, `BenchConditions`, `BenchFoundry`, `BenchCompare`, `BenchCanary` |
+| Check that the scripts work | `Test-Bench...` | `Test-BenchGuards`, `Test-BenchSuite`, `Test-BenchCompare`, `Test-BenchCanary`, `Test-BenchConditions`, `Test-BenchHistory`, `Test-BenchPrompt` |
+
+Former names, for anything that still mentions them (old records in the history keep the old
+names in `source`; `Compare-BenchStacks` treats a former name and its current one as the same cell):
+
+| Was | Is |
+| --- | --- |
+| `Invoke-Benchmark` | `Invoke-BenchDecode` |
+| `Invoke-PrefillBench` | `Invoke-BenchPrefill` |
+| `Invoke-FoundryBench` | `Invoke-BenchFoundry` |
+| `Invoke-FoundryContextBench` | `Invoke-BenchFoundryContext` |
+| `Invoke-LlamaCppControl` (and `llamacpp-control.json`, step `llamacpp-control`) | `Invoke-BenchControl` (`bench-control.json`, step `control`) |
+| `Invoke-OrtGenAiBench` | `Invoke-BenchOrtGenAi` |
+| `Invoke-AtlasCanary` | `Invoke-BenchCanary` |
+| `Invoke-AtlasBenchSuite` | `Invoke-BenchSuite` |
+| `Compare-AtlasBenchmarks` | `Compare-BenchStacks` |
+| `Mark-AtlasInvalidRecords` | `Mark-BenchInvalid` |
+| `Test-ComputeUnits` | `Invoke-BenchPlacement` (it measures, it does not test the code) |
+| `Test-ToolCalling` | `Invoke-BenchToolCalling` |
+| `Test-BenchmarkGuards`, `Test-AtlasCanary`, `Test-AtlasCompare`, `Test-AtlasConditions`, `Test-AtlasHistory` | `Test-BenchGuards`, `Test-BenchCanary`, `Test-BenchCompare`, `Test-BenchConditions`, `Test-BenchHistory` |
+| `AtlasConditions.psm1`, `AtlasCanary.psm1`, `AtlasCompare.psm1`, `AtlasFoundry.psm1` | `BenchConditions.psm1`, `BenchCanary.psm1`, `BenchCompare.psm1`, `BenchFoundry.psm1` |
+
+Not renamed: the functions inside the modules (`Get-AtlasBenchmarkHistory`, `Add-AtlasBenchmarkRecord`,
+`Assert-AtlasConditions`, ...), `AtlasBaseline.psm1` (stack identity and baseline, which are not
+benchmark-specific), `Update-Workspace.ps1` and the setup scripts, and the Python harnesses, which
+already follow the pattern (`bench_foundry_sdk.py`, `bench_ort_genai.py`). Scripts are still in
+`Scripts/`; grouping them into a folder is a separate step.
+
 ## Why
 
 Three problems, all seen this session:
@@ -41,7 +80,7 @@ records the conditions it ran under.
 
 ## Phase 1: conditions check (done)
 
-A PowerShell module, `Scripts/AtlasConditions.psm1`, used by every harness. Python
+A PowerShell module, `Scripts/BenchConditions.psm1`, used by every harness. Python
 harnesses reach it through `atlas_history.py`, the way they already reach the stack
 hash in `AtlasBaseline.psm1`.
 
@@ -70,7 +109,7 @@ AC it passes; with a `geniex serve` running, an NPU run refuses.
 
 **What shipped, and where it differs from the plan.**
 
-- `Scripts/AtlasConditions.psm1` and the history format fields, as planned. Checked live
+- `Scripts/BenchConditions.psm1` and the history format fields, as planned. Checked live
   against a Foundry daemon with a model loaded on the NPU and a running `geniex serve`.
 - `#requires -Version 7` is on the harness scripts, `Update-Workspace.ps1` and the tests,
   **not** on the four bootstrap scripts: `Install-Prerequisites.ps1` does not install
@@ -79,15 +118,15 @@ AC it passes; with a `geniex serve` running, an NPU run refuses.
   refusing would block the update its smoke check is verifying.
 - `bench_foundry_sdk.py` does not expect the Foundry daemon: it needs the NPU for itself, so
   a daemon holding a model there blocks it. (A daemon holding the same model during the one
-  464 s in-process load is a candidate cause; that is not established.) `Invoke-FoundryBench.ps1`
+  464 s in-process load is a candidate cause; that is not established.) `Invoke-BenchFoundry.ps1`
   talks to the daemon and does expect it.
 - Two test-only hooks were added: `ATLAS_HISTORY_PATH` redirects the history, and
   `ATLAS_TEST_ON_BATTERY` makes the check report battery, so the refusal can be tested
   plugged in.
-- Six existing records are marked `valid: false` by `Mark-AtlasInvalidRecords.ps1`, which is
+- Six existing records are marked `valid: false` by `Mark-BenchInvalid.ps1`, which is
   committed and idempotent.
-- Tests: `Test-AtlasConditions.ps1` (the policy over 14 synthetic cases, a live capture, and the
-  battery hook), `Test-AtlasHistory.ps1` (PowerShell and Python) and `Test-BenchmarkGuards.ps1` (all seven harnesses refuse on battery in about 5 s,
+- Tests: `Test-BenchConditions.ps1` (the policy over 14 synthetic cases, a live capture, and the
+  battery hook), `Test-BenchHistory.ps1` (PowerShell and Python) and `Test-BenchGuards.ps1` (all seven harnesses refuse on battery in about 5 s,
   and four tiny real runs record the override).
 - Not yet exercised on AC power: the pass path is covered by synthetic cases, and the
   battery hook, but no harness has been run for real while plugged in under this check.
@@ -98,11 +137,11 @@ Each records directly to the history, replacing the hand-typed recorders.
 
 | Harness | Replaces | Measures |
 | --- | --- | --- |
-| `Invoke-FoundryContextBench.ps1` | scratch prefill and stream scripts | Prefill and decode against prompt length over HTTP, stateless, UTF-8 request bodies, exact token counts from `usage`, units interleaved |
+| `Invoke-BenchFoundryContext.ps1` | scratch prefill and stream scripts | Prefill and decode against prompt length over HTTP, stateless, UTF-8 request bodies, exact token counts from `usage`, units interleaved |
 | the same, `-InProcess` | inline loops over `bench_foundry_sdk.py` | The same lengths through the SDK, fresh session per run |
-| `Invoke-LlamaCppControl.ps1` | inline `llama-bench` loops | Stock llama.cpp, pinned release and SHA256 in a manifest, GPU and CPU interleaved, recorded as `control: true` |
-| `Invoke-OrtGenAiBench.ps1` | the inline Python/C#/Python sequence | `bench_ort_genai.py` and the new `src/csharp/OrtBench` project, interleaved, with package versions recorded |
-| `Invoke-PrefillBench.ps1` takes a list of prompt sizes | inline loops | Alternates unit order itself |
+| `Invoke-BenchControl.ps1` | inline `llama-bench` loops | Stock llama.cpp, pinned release and SHA256 in a manifest, GPU and CPU interleaved, recorded as `control: true` |
+| `Invoke-BenchOrtGenAi.ps1` | the inline Python/C#/Python sequence | `bench_ort_genai.py` and the new `src/csharp/OrtBench` project, interleaved, with package versions recorded |
+| `Invoke-BenchPrefill.ps1` takes a list of prompt sizes | inline loops | Alternates unit order itself |
 | `New-BenchPrompt` | scratch prompt files | A deterministic prompt built from repository source, to a target size, cached locally |
 
 Known traps to build in from the start: `pwsh -File` cannot bind array parameters; a
@@ -116,9 +155,9 @@ already in BENCHMARKS within its own spread.
 
 - All six items exist and have been run, on battery with `-AllowBattery`, as tiny checks that
   recorded to a temporary history: `New-BenchPrompt.ps1` (with `Test-BenchPrompt.ps1`),
-  `Invoke-PrefillBench.ps1` with a size list, `Invoke-FoundryContextBench.ps1` over HTTP and
-  `-InProcess`, `Invoke-LlamaCppControl.ps1` (on a supplied build), and
-  `Invoke-OrtGenAiBench.ps1` with the `OrtBench` project. `Test-BenchmarkGuards.ps1` covers
+  `Invoke-BenchPrefill.ps1` with a size list, `Invoke-BenchFoundryContext.ps1` over HTTP and
+  `-InProcess`, `Invoke-BenchControl.ps1` (on a supplied build), and
+  `Invoke-BenchOrtGenAi.ps1` with the `OrtBench` project. `Test-BenchGuards.ps1` covers
   their refusal on battery.
 - **"Reproduces a figure already in BENCHMARKS" has not been checked for any of them.** That
   needs AC power and the full-size models, and the plan's own definition of done depends on it.
@@ -168,7 +207,7 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
 
 ## Later
 
-- **Phase 3, suite runner (built):** `Invoke-AtlasBenchSuite.ps1 -Suite <name>` over committed
+- **Phase 3, suite runner (built):** `Invoke-BenchSuite.ps1 -Suite <name>` over committed
   manifests in `Scripts/suites/` (`smoke`, `stack-compare`, `runtimes`, `longctx`, `ort`),
   writing a run folder and a summary table.
 
@@ -184,17 +223,17 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
     arguments in them have not been exercised through the runner. `longctx` relies on its HTTP
     step running before the in-process step, for the exact prompt lengths.
   - Not built: a `-Set key=value` override of a step's arguments (edit the manifest or run the
-    script directly), and the comparison of two suite runs (that is `Compare-AtlasBenchmarks.ps1`, below).
+    script directly), and the comparison of two suite runs (that is `Compare-BenchStacks.ps1`, below).
 - **Phase 5, export and page:** the export script, the marker-delimited generated tables
   in BENCHMARKS.md, and the backfill migration. The schema fields they need are added in
   phase 1, so records written from then on are complete.
 - **Phase 4, canary and compare (built):**
-  - `Compare-AtlasBenchmarks.ps1` (rules in `AtlasCompare.psm1`) compares two stacks cell by
+  - `Compare-BenchStacks.ps1` (rules in `BenchCompare.psm1`) compares two stacks cell by
     cell. Checked against the real history, where it reproduces the hand-built v0.8.0 to v0.9.0
     findings (control held; 30B GPU decode -39.7 %; 30B NPU first token 13.9 to 0.35 s). It
     adds a `noisy` verdict where a stack's own records disagree by half the mean or more
     (several first-token cells did, where an earlier lazy-mapping artifact had been recorded).
-  - `Invoke-AtlasCanary.ps1` (rules in `AtlasCanary.psm1`) runs the pinned llama.cpp on
+  - `Invoke-BenchCanary.ps1` (rules in `BenchCanary.psm1`) runs the pinned llama.cpp on
     Qwen3-0.6B (CPU and GPU, 256-token prompt, 32 generated, two rounds) and compares with the
     median of the last five healthy AC canary runs. The suite runner runs it before and after
     the steps; abort stops the suite (exit 11), warn adds a caveat.
@@ -206,7 +245,7 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
   - Tested over synthetic records, and the canary script for real against llama-bench with
     a seeded history (no-reference; abort against an inflated reference; ok against a tiny one).
     Not tested: a canary on AC power building its own reference, or a genuine abort.
-  - The canary needs the pinned build unpacked, which needs `Invoke-LlamaCppControl.ps1
+  - The canary needs the pinned build unpacked, which needs `Invoke-BenchControl.ps1
     -Download` (not run). Without it the canary is unavailable.
 
 ## Not in scope

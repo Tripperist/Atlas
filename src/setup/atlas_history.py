@@ -28,7 +28,7 @@ from typing import Any
 
 _REPO = Path(__file__).resolve().parents[2]
 _MODULE = _REPO / "Scripts" / "AtlasBaseline.psm1"
-_CONDITIONS_MODULE = _REPO / "Scripts" / "AtlasConditions.psm1"
+_CONDITIONS_MODULE = _REPO / "Scripts" / "BenchConditions.psm1"
 _HISTORY = _REPO / ".atlas-local" / "benchmarks" / "history.jsonl"
 
 
@@ -80,7 +80,7 @@ def _ps_list(items) -> str:
 def check_conditions(needs=(), allow_battery: bool = False, expect=(), seconds: int = 3) -> dict[str, Any]:
     """Capture the run conditions and refuse (exit code 3) when the policy says so.
 
-    The policy lives in Scripts/AtlasConditions.psm1 and is not repeated here:
+    The policy lives in Scripts/BenchConditions.psm1 and is not repeated here:
     battery is refused unless allow_battery; a competing process or a Foundry NPU
     model refuses a run that needs the NPU; the rest only warns. The result is kept
     and stamped on every record written afterwards. If PowerShell is unavailable the

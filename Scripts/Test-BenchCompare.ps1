@@ -3,7 +3,7 @@
     Check the stack comparison rules over synthetic records.
 
 .DESCRIPTION
-    Covers the rules Compare-AtlasBenchmarks.ps1 depends on: which record stands for a
+    Covers the rules Compare-BenchStacks.ps1 depends on: which record stands for a
     cell (never battery, never invalid, AC over "not recorded", latest of a tier), the
     noise among a stack's records, the verdicts (same, better, worse, within noise, noisy),
     lower-is-better for first-token time, controls pairing across recorders, cells present
@@ -12,14 +12,14 @@
     Exit code is the number of failures.
 
 .EXAMPLE
-    .\Scripts\Test-AtlasCompare.ps1
+    .\Scripts\Test-BenchCompare.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'AtlasCompare.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchCompare.psm1') -Force
 $fail = 0
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
     if (-not $Ok) { $script:fail++ }
@@ -27,7 +27,7 @@ function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
 }
 $n = 0
 function Rec([string]$Stack, [double]$Decode, [Nullable[double]]$Prefill = $null, [Nullable[double]]$First = $null, $Ac = $null, $Valid = $true,
-             [string]$Model = 'm', [string]$Compute = 'llama_cpp/gpu', [Nullable[int]]$Prompt = 512, [string]$Source = 'Invoke-PrefillBench.ps1', [string]$Kind = 'benchmark') {
+             [string]$Model = 'm', [string]$Compute = 'llama_cpp/gpu', [Nullable[int]]$Prompt = 512, [string]$Source = 'Invoke-BenchPrefill.ps1', [string]$Kind = 'benchmark') {
     $script:n++
     [pscustomobject]@{
         ts = (Get-Date '2026-10-01').AddMinutes($script:n).ToString('o'); stateId = $Stack; source = $Source; kind = $Kind
@@ -77,8 +77,10 @@ $r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Ac $true), (Rec 'b' 20 -Ac $tru
 Check 'a cell on one stack only is not compared' ((@($r | Where-Object Model -In 'only-a', 'only-b').Count -eq 0) -and (@($r).Count -ge 1))
 $r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Prompt 512 -Ac $true), (Rec 'b' 20 -Prompt 2048 -Ac $true)) -From a -To b
 Check 'different prompt lengths are different cells' (@($r).Count -eq 0)
-$r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Source 'llama-bench (stock llama.cpp b10566)' -Kind control -Ac $null), (Rec 'b' 21 -Source 'Invoke-LlamaCppControl.ps1' -Kind control -Ac $true)) -From a -To b
+$r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Source 'llama-bench (stock llama.cpp b10566)' -Kind control -Ac $null), (Rec 'b' 21 -Source 'Invoke-BenchControl.ps1' -Kind control -Ac $true)) -From a -To b
 Check 'a control pairs across recorders, and is marked' ((@($r).Count -ge 1) -and (Row $r 'decode').Control)
+$r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Source 'Invoke-PrefillBench.ps1' -Ac $true), (Rec 'b' 21 -Source 'Invoke-BenchPrefill.ps1' -Ac $true)) -From a -To b
+Check 'a record under a script''s former name meets one under its new name' (@($r).Count -ge 1)
 $r = Compare-AtlasStacks -Records @((Rec 'abc123' 20 -Ac $true), (Rec 'def456' 20 -Ac $true)) -From abc -To def
 Check 'stack ids match by prefix' (@($r).Count -eq 1)
 $r = Compare-AtlasStacks -Records @((Rec 'a' 20 -Ac $null), (Rec 'b' 20 -Ac $true)) -From a -To b
@@ -106,14 +108,14 @@ try {
         (Rec 'aaaaaaaaaaaa' 30 -Ac $true -Model 'real'), (Rec 'bbbbbbbbbbbb' 15 -Ac $true -Model 'real')
     ) | ForEach-Object { $_ | Add-Member -NotePropertyName state -NotePropertyValue $s1 -PassThru }
     $all | ForEach-Object { Add-Content $tmp ($_ | ConvertTo-Json -Compress -Depth 6) }
-    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-AtlasBenchmarks.ps1') -From aaaa -To bbbb 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-BenchStacks.ps1') -From aaaa -To bbbb 2>&1 | Out-String)
     Check 'names the stacks, says the control held, lists the real change as worse' (($out -match 'aaaaaaaaaaaa -> bbbbbbbbbbbb') -and ($out -match 'The control held') -and ($out -match 'real .* worse')) $out
-    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-AtlasBenchmarks.ps1') -List 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-BenchStacks.ps1') -List 2>&1 | Out-String)
     Check '-List shows both stacks' (($out -match 'aaaaaaaaaaaa') -and ($out -match 'bbbbbbbbbbbb'))
     Add-Content $tmp (Rec 'cccccccccccc' 5 -Ac $true -Source 'x' -Kind control -Model 'ctl' -Compute 'c/gpu' | Add-Member -NotePropertyName state -NotePropertyValue $s1 -PassThru | ConvertTo-Json -Compress -Depth 6)
-    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-AtlasBenchmarks.ps1') -From aaaa -To cccc 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-BenchStacks.ps1') -From aaaa -To cccc 2>&1 | Out-String)
     Check 'a control that moved is called out' ($out -match 'A CONTROL MOVED') $out
-    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-AtlasBenchmarks.ps1') -From zzzz -To bbbb 2>&1 | Out-String)
+    $out = (& pwsh -NoProfile -File (Join-Path $PSScriptRoot 'Compare-BenchStacks.ps1') -From zzzz -To bbbb 2>&1 | Out-String)
     Check 'an unknown stack is refused' ($out -match "matches 0 stacks")
 }
 finally { Remove-Item Env:ATLAS_HISTORY_PATH -ErrorAction SilentlyContinue; Remove-Item $tmp -Force -ErrorAction SilentlyContinue }

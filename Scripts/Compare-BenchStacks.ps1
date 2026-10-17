@@ -8,7 +8,7 @@
     prompt length, measuring script) measured on both stacks, the figure on each, the change,
     and whether it is a real change, within the noise, or the same.
 
-    Rules, see AtlasCompare.psm1: records measured on battery and records marked invalid are
+    Rules, see BenchCompare.psm1: records measured on battery and records marked invalid are
     never used; AC power is preferred over "not recorded"; the latest record stands for a
     cell. A control (stock llama.cpp) is shown first and apart: if it moved, the machine was
     not in the same state, and everything else has to be read with that in mind.
@@ -45,10 +45,10 @@
     Return the rows as objects.
 
 .EXAMPLE
-    .\Scripts\Compare-AtlasBenchmarks.ps1 -List
+    .\Scripts\Compare-BenchStacks.ps1 -List
 
 .EXAMPLE
-    .\Scripts\Compare-AtlasBenchmarks.ps1 -From 44a1e6e -To af42e97
+    .\Scripts\Compare-BenchStacks.ps1 -From 44a1e6e -To af42e97
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -65,7 +65,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasCompare.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchCompare.psm1') -Force
 
 $records = @(Get-AtlasBenchmarkHistory)
 if (-not $records.Count) { Write-Host 'The history is empty.' -ForegroundColor Yellow; return }

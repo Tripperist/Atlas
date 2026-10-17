@@ -8,23 +8,23 @@
     state nobody explained. The conditions check catches battery. The canary catches the rest
     by measuring something that should not change and comparing it with what it gave before.
 
-    It runs the pinned stock llama.cpp (Scripts/llamacpp-control.json) on a small model, CPU
+    It runs the pinned stock llama.cpp (Scripts/bench-control.json) on a small model, CPU
     and GPU, a fixed prompt and generation length, two interleaved rounds: about half a
     minute. That is the control build, so a GenieX or Foundry update cannot move it; only the
     machine can. The result is compared with the median of the last five earlier canary runs
-    that were measured on AC power and were healthy themselves (see AtlasCanary.psm1).
+    that were measured on AC power and were healthy themselves (see BenchCanary.psm1).
 
         ok            at or above 85 % of the reference
         warn          below 85 %: the run goes on, and the figures need a caveat
         abort         below 60 %: do not benchmark now
         no-reference  fewer than three earlier AC canary runs: recorded, nothing gated
 
-    The thresholds are provisional; there was no AC data to set them from (AtlasCanary.psm1
+    The thresholds are provisional; there was no AC data to set them from (BenchCanary.psm1
     says what they were chosen from). Every run is recorded as kind canary, with its verdict,
     and a run that warned or aborted is never used as a reference.
 
     Exit code: 0 ok or no-reference, 10 warn, 11 abort, 4 the pinned build is not unpacked
-    (see Invoke-LlamaCppControl.ps1 -Download), 1 anything else.
+    (see Invoke-BenchControl.ps1 -Download), 1 anything else.
 
 .PARAMETER WarnBelow
     Ratio below which the verdict is warn. Default 0.85.
@@ -39,7 +39,7 @@
     Print the verdict without appending to the history.
 
 .EXAMPLE
-    .\Scripts\Invoke-AtlasCanary.ps1
+    .\Scripts\Invoke-BenchCanary.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -55,8 +55,8 @@ param(
 
 $ErrorActionPreference = 'Stop'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasCanary.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchCanary.psm1') -Force
 
 # The fixed cell. Changing any of these starts a new reference, so change them on purpose.
 $model = 'unsloth/Qwen3-0.6B-GGUF'
@@ -70,10 +70,10 @@ if ($LlamaBenchPath) { $controlArgs.LlamaBenchPath = $LlamaBenchPath }
 
 Write-Host 'Canary: stock llama.cpp, small model, fixed run' -ForegroundColor Cyan
 $global:LASTEXITCODE = 0
-$run = & (Join-Path $PSScriptRoot 'Invoke-LlamaCppControl.ps1') @controlArgs | Where-Object { $_ -is [pscustomobject] -and $_.PSObject.Properties['Results'] } | Select-Object -Last 1
+$run = & (Join-Path $PSScriptRoot 'Invoke-BenchControl.ps1') @controlArgs | Where-Object { $_ -is [pscustomobject] -and $_.PSObject.Properties['Results'] } | Select-Object -Last 1
 $code = $LASTEXITCODE
 if (-not $run) {
-    if ($code -eq 4) { Write-Host 'The canary needs the pinned llama.cpp build. Run Invoke-LlamaCppControl.ps1 -Download once.' -ForegroundColor Yellow; exit 4 }
+    if ($code -eq 4) { Write-Host 'The canary needs the pinned llama.cpp build. Run Invoke-BenchControl.ps1 -Download once.' -ForegroundColor Yellow; exit 4 }
     Write-Host 'The canary run produced no result.' -ForegroundColor Red; exit 1
 }
 
@@ -111,7 +111,7 @@ switch ($v.Verdict) {
 
 if (-not $NoRecord) {
     foreach ($r in $run.Results) {
-        Add-AtlasBenchmarkRecord -State $run.State -Source 'Invoke-AtlasCanary.ps1' -Kind canary `
+        Add-AtlasBenchmarkRecord -State $run.State -Source 'Invoke-BenchCanary.ps1' -Kind canary `
             -Model $run.Model -Compute "llama.cpp-$($run.Tag)/$($r.Config)" `
             -TokPerSec ([math]::Round($r.Decode, 2)) -Tokens $gen -PrefillTps ([math]::Round($r.Prefill, 2)) -PromptTokens $prompt `
             -N $run.Repeat -Order $r.Order -PromptKind 'synthetic (llama-bench -p)' `

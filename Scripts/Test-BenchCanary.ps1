@@ -8,7 +8,7 @@
     the ok / warn / abort levels at the default and at custom thresholds, and no verdict
     without enough reference.
 
-    Part 2 (-IncludeRuns) runs Invoke-AtlasCanary.ps1 for real against a temporary history
+    Part 2 (-IncludeRuns) runs Invoke-BenchCanary.ps1 for real against a temporary history
     it seeds: with no reference (no-reference, exit 0), with a reference far above this
     machine (abort, exit 11), and far below it (ok, exit 0); then checks what was recorded.
     It needs llama-bench: the pinned build if it is unpacked under .atlas-local/tools, or
@@ -24,14 +24,14 @@
     An extracted llama-bench.exe for -IncludeRuns.
 
 .EXAMPLE
-    .\Scripts\Test-AtlasCanary.ps1
+    .\Scripts\Test-BenchCanary.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]
 param([switch]$IncludeRuns, [string]$LlamaBenchPath)
 
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'AtlasCanary.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchCanary.psm1') -Force
 $fail = 0
 function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
     if (-not $Ok) { $script:fail++ }
@@ -108,7 +108,7 @@ if ($IncludeRuns) {
         $env:ATLAS_HISTORY_PATH = $tmp
         # report battery whatever the charger is doing, so the checks mean the same plugged in or not
         $env:ATLAS_TEST_ON_BATTERY = '1'
-        $script = Join-Path $PSScriptRoot 'Invoke-AtlasCanary.ps1'
+        $script = Join-Path $PSScriptRoot 'Invoke-BenchCanary.ps1'
         $model = 'unsloth/Qwen3-0.6B-GGUF:Q4_0'
         function Seed([double]$Decode, [double]$Prefill) {
             if (Test-Path $tmp) { Remove-Item $tmp -Force }
@@ -118,7 +118,7 @@ if ($IncludeRuns) {
                 Add-Content $tmp ($r | ConvertTo-Json -Compress) } }
         }
         function RunCanary { $o = (& pwsh -NoProfile -File $script -LlamaBenchPath $bench -AllowBattery 2>&1 | Out-String); [pscustomobject]@{ Output = $o; Exit = $LASTEXITCODE } }
-        function Recorded { @(Get-Content $tmp | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object source -EQ 'Invoke-AtlasCanary.ps1') }
+        function Recorded { @(Get-Content $tmp | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object source -EQ 'Invoke-BenchCanary.ps1') }
         try {
             if (Test-Path $tmp) { Remove-Item $tmp -Force }
             $r = RunCanary
@@ -134,7 +134,7 @@ if ($IncludeRuns) {
             Seed 1 1
             $r = RunCanary
             Check 'a reference far below it: ok, exit 0' (($r.Exit -eq 0) -and ($r.Output -match 'Canary ok')) "exit $($r.Exit)"
-            Check 'the records of an ok run on battery are not eligible as a reference' (@(Get-AtlasCanaryReference -Records @(Get-Content $tmp | ForEach-Object { $_ | ConvertFrom-Json }) -Model $model -PromptTokens 256 | Where-Object source -EQ 'Invoke-AtlasCanary.ps1').Count -eq 0)
+            Check 'the records of an ok run on battery are not eligible as a reference' (@(Get-AtlasCanaryReference -Records @(Get-Content $tmp | ForEach-Object { $_ | ConvertFrom-Json }) -Model $model -PromptTokens 256 | Where-Object source -EQ 'Invoke-BenchCanary.ps1').Count -eq 0)
         }
         finally { Remove-Item Env:ATLAS_HISTORY_PATH, Env:ATLAS_TEST_ON_BATTERY -ErrorAction SilentlyContinue; Remove-Item $tmp -Force -ErrorAction SilentlyContinue }
     }

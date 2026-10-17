@@ -16,7 +16,7 @@
     The prompt is built by New-BenchPrompt.ps1 from pinned repository text, so it can be
     rebuilt byte for byte; its SHA256 is recorded. Request bodies are sent as UTF-8 bytes.
     Nothing samples utilization during a timed request (a sampler lowers the rate), so
-    this measures speed and does not prove placement; see Invoke-FoundryBench.ps1 for that.
+    this measures speed and does not prove placement; see Invoke-BenchFoundry.ps1 for that.
 
     -InProcess runs the same prompts through bench_foundry_sdk.py (the Python SDK, a fresh
     ChatSession per run). The SDK does not report prompt_tokens, so the exact count comes
@@ -38,7 +38,7 @@
 
 .PARAMETER MaxTokens
     Tokens to generate, 64 or more: a small value relative to the prompt fails in
-    GroupQueryAttention on Foundry (see AtlasFoundry.psm1).
+    GroupQueryAttention on Foundry (see BenchFoundry.psm1).
 
 .PARAMETER Repeat
     Measured runs per cell, after one warm-up request per model.
@@ -53,11 +53,11 @@
     Print results without appending them to the history.
 
 .EXAMPLE
-    pwsh -Command "& .\Scripts\Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
+    pwsh -Command "& .\Scripts\Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096"
 
 .EXAMPLE
     # the same lengths through the SDK; run the HTTP route first so the counts are exact
-    pwsh -Command "& .\Scripts\Invoke-FoundryContextBench.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096 -InProcess"
+    pwsh -Command "& .\Scripts\Invoke-BenchFoundryContext.ps1 -Model qwen2.5-coder-7b -PromptTokens 512,2048,4096 -InProcess"
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -76,8 +76,8 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasFoundry.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchFoundry.psm1') -Force
 if (-not (Get-Command foundry -ErrorAction SilentlyContinue)) {
     Write-Host 'foundry not found on PATH. See the README "Foundry Local" section.' -ForegroundColor Red
     exit 1
@@ -227,7 +227,7 @@ if ($cells.Count -eq 0) { Write-Host 'No cell produced a result.' -ForegroundCol
 
 if (-not $NoRecord) {
     foreach ($c in $cells) {
-        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-FoundryContextBench.ps1' `
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchFoundryContext.ps1' `
             -Model $c.Target.Alias -Compute "foundry/$($c.Target.Unit)" `
             -TokPerSec ([math]::Round($c.Decode, 1)) -FirstTokenS ([math]::Round($c.Ttft, 3)) `
             -Tokens $c.Gen -PrefillTps ([math]::Round($c.Prefill, 1)) -PromptTokens $c.PromptTokens `

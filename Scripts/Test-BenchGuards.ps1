@@ -21,10 +21,10 @@
     Exit code is the number of failures.
 
 .EXAMPLE
-    .\Scripts\Test-BenchmarkGuards.ps1
+    .\Scripts\Test-BenchGuards.ps1
 
 .EXAMPLE
-    .\Scripts\Test-BenchmarkGuards.ps1 -IncludeRuns
+    .\Scripts\Test-BenchGuards.ps1 -IncludeRuns
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -54,15 +54,15 @@ function LastRecord { if (Test-Path $tmp) { Get-Content $tmp | Select-Object -La
 try {
     $ort = 'models/Phi-4-mini-reasoning-onnx/npu/qnn-int4'
     $guards = @(
-        @('Invoke-Benchmark.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-Benchmark.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu')),
-        @('Invoke-PrefillBench.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-PrefillBench.ps1", '-Device', 'cpu')),
-        @('Invoke-FoundryBench.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryBench.ps1", '-Model', 'qwen2.5-0.5b')),
-        @('Invoke-FoundryContextBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256')),
-        @('  ... -InProcess',         'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-InProcess')),
-        @('Invoke-LlamaCppControl.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-LlamaCppControl.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF')),
-        @('Invoke-OrtGenAiBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-OrtGenAiBench.ps1")),
-        @('Test-ToolCalling.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ToolCalling.ps1")),
-        @('Test-ComputeUnits.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ComputeUnits.ps1", '-Model', 'x', '-Compute', 'cpu')),
+        @('Invoke-BenchDecode.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchDecode.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu')),
+        @('Invoke-BenchPrefill.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchPrefill.ps1", '-Device', 'cpu')),
+        @('Invoke-BenchFoundry.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchFoundry.ps1", '-Model', 'qwen2.5-0.5b')),
+        @('Invoke-BenchFoundryContext.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchFoundryContext.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256')),
+        @('  ... -InProcess',         'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchFoundryContext.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-InProcess')),
+        @('Invoke-BenchControl.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchControl.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF')),
+        @('Invoke-BenchOrtGenAi.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchOrtGenAi.ps1")),
+        @('Invoke-BenchToolCalling.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchToolCalling.ps1")),
+        @('Invoke-BenchPlacement.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchPlacement.ps1", '-Model', 'x', '-Compute', 'cpu')),
         @('bench_foundry_sdk.py',     $py,    @("$root\src\setup\bench_foundry_sdk.py", '--model', 'qwen2.5-0.5b')),
         @('bench_ort_genai.py',       $py,    @("$root\src\setup\bench_ort_genai.py", '--model-dir', "$root\$ort"))
     )
@@ -76,17 +76,17 @@ try {
 
     Write-Host ''
     Write-Host 'Windows PowerShell 5.1 stops with a clear message' -ForegroundColor Cyan
-    $r = Invoke-Tool 'powershell' @('-NoProfile', '-File', "$PSScriptRoot\Invoke-Benchmark.ps1", '-Model', 'x')
-    Check 'Invoke-Benchmark.ps1 under 5.1 mentions #requires' ($r.Output -match 'requires') ($r.Output.Trim().Substring(0, [Math]::Min(200, $r.Output.Trim().Length)))
+    $r = Invoke-Tool 'powershell' @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchDecode.ps1", '-Model', 'x')
+    Check 'Invoke-BenchDecode.ps1 under 5.1 mentions #requires' ($r.Output -match 'requires') ($r.Output.Trim().Substring(0, [Math]::Min(200, $r.Output.Trim().Length)))
     Check 'and ran nothing' (-not (Test-Path $tmp))
 
     if ($IncludeRuns) {
         Write-Host ''
         Write-Host 'With -AllowBattery, tiny runs record the override' -ForegroundColor Cyan
         $runs = @(
-            @('Invoke-Benchmark.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-Benchmark.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu', '-Repeat', '1', '-MaxTokens', '16', '-NoUtilization', '-AllowBattery')),
-            @('Invoke-PrefillBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-PrefillBench.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Device', 'cpu', '-PromptTokens', '128', '-GenTokens', '16', '-Repeat', '1', '-AllowBattery')),
-            @('Invoke-FoundryContextBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-MaxTokens', '64', '-Repeat', '1', '-AllowBattery')),
+            @('Invoke-BenchDecode.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchDecode.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu', '-Repeat', '1', '-MaxTokens', '16', '-NoUtilization', '-AllowBattery')),
+            @('Invoke-BenchPrefill.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchPrefill.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Device', 'cpu', '-PromptTokens', '128', '-GenTokens', '16', '-Repeat', '1', '-AllowBattery')),
+            @('Invoke-BenchFoundryContext.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-BenchFoundryContext.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-MaxTokens', '64', '-Repeat', '1', '-AllowBattery')),
             @('bench_foundry_sdk.py',    $py,    @("$root\src\setup\bench_foundry_sdk.py", '--model', 'qwen2.5-0.5b', '--repeat', '1', '--max-tokens', '16', '--allow-battery')),
             @('bench_ort_genai.py',      $py,    @("$root\src\setup\bench_ort_genai.py", '--model-dir', "$root\$ort", '--repetitions', '1', '--n-gen', '8', '--n-prompt', '64', '--allow-battery'))
         )

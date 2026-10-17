@@ -22,10 +22,10 @@
     Say what would be marked without writing anything.
 
 .EXAMPLE
-    .\Scripts\Mark-AtlasInvalidRecords.ps1 -DryRun
+    .\Scripts\Mark-BenchInvalid.ps1 -DryRun
 
 .EXAMPLE
-    .\Scripts\Mark-AtlasInvalidRecords.ps1
+    .\Scripts\Mark-BenchInvalid.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]

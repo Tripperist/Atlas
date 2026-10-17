@@ -16,7 +16,7 @@
     Exit code is the number of failures.
 
 .EXAMPLE
-    .\Scripts\Test-AtlasHistory.ps1
+    .\Scripts\Test-BenchHistory.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -28,7 +28,7 @@ $env:ATLAS_HISTORY_PATH = $tmp
 
 try {
     Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-    Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+    Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
     $fail = 0
     function Check([string]$Name, [bool]$Ok, [string]$Detail = '') {
@@ -79,8 +79,8 @@ try {
     Write-Host 'Get-AtlasBenchmarkHistory, over records written before format 2' -ForegroundColor Cyan
     Remove-Item $tmp -Force
     $legacy = @(
-        @{ ts = 'a'; stateId = 's'; source = 'Invoke-Benchmark.ps1'; model = 'm'; compute = 'npu'; repetitions = 3 },
-        @{ ts = 'b'; stateId = 's'; source = 'Invoke-Benchmark.ps1'; model = 'm'; compute = 'cpu'; runs = 2 },
+        @{ ts = 'a'; stateId = 's'; source = 'Invoke-BenchDecode.ps1'; model = 'm'; compute = 'npu'; repetitions = 3 },
+        @{ ts = 'b'; stateId = 's'; source = 'Invoke-BenchDecode.ps1'; model = 'm'; compute = 'cpu'; runs = 2 },
         @{ ts = 'c'; stateId = 's'; source = 'Update-Workspace.ps1'; model = 'm'; compute = 'npu' },
         @{ ts = 'd'; stateId = 's'; source = 'llama-bench (stock llama.cpp b10566, control)'; model = 'm'; compute = 'gpu' },
         @{ ts = 'e'; stateId = 's'; source = 'x'; model = 'm'; compute = 'npu'; valid = $false; validReason = 'contended' },

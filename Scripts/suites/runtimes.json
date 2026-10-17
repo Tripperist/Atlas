@@ -3,21 +3,21 @@
   "steps": [
     {
       "id": "genie-matrix",
-      "script": "Invoke-PrefillBench.ps1",
+      "script": "Invoke-BenchPrefill.ps1",
       "estimateMinutes": 8,
       "needs": ["npu"],
       "args": { "Matrix": true, "PromptTokens": [512], "Repeat": 3 }
     },
     {
       "id": "foundry-7b",
-      "script": "Invoke-FoundryContextBench.ps1",
+      "script": "Invoke-BenchFoundryContext.ps1",
       "estimateMinutes": 6,
       "needs": ["npu"],
       "args": { "Model": ["qwen2.5-coder-7b"], "PromptTokens": [512], "MaxTokens": 128, "Repeat": 3 }
     },
     {
       "id": "ort-genai",
-      "script": "Invoke-OrtGenAiBench.ps1",
+      "script": "Invoke-BenchOrtGenAi.ps1",
       "estimateMinutes": 12,
       "needs": ["npu"],
       "args": { "Rounds": 3 }

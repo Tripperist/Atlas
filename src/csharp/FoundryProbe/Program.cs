@@ -1,7 +1,7 @@
 // Benchmark Foundry Local through its in-process C# SDK.
 //
 // Two other routes are measured elsewhere in this repo:
-//   Scripts/Invoke-FoundryBench.ps1   CLI + OpenAI HTTP endpoint
+//   Scripts/Invoke-BenchFoundry.ps1   CLI + OpenAI HTTP endpoint
 //   src/setup/bench_foundry_sdk.py    in-process Python SDK
 //
 // This is the .NET equivalent of the Python one, so the three can be compared

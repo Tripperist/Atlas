@@ -9,7 +9,7 @@
     on 2026-10-16 the GenieX v0.9.0 GPU decode on the 30B model fell about 40 %, and the
     control showed the machine in its normal state.
 
-    The build is PINNED in Scripts/llamacpp-control.json (release tag, asset, SHA256).
+    The build is PINNED in Scripts/bench-control.json (release tag, asset, SHA256).
     Nothing is installed: the release zip is unpacked under .atlas-local/tools/. It is
     downloaded only when -Download is given, after which its SHA256 is checked against the
     manifest and a mismatch is refused. -LlamaBenchPath uses an existing extracted build
@@ -44,10 +44,10 @@
     Record the model file's SHA256 (a 16 GiB file takes a minute or two).
 
 .EXAMPLE
-    .\Scripts\Invoke-LlamaCppControl.ps1 -Download
+    .\Scripts\Invoke-BenchControl.ps1 -Download
 
 .EXAMPLE
-    .\Scripts\Invoke-LlamaCppControl.ps1 -Model unsloth/Qwen3-4B-GGUF -Rounds 3 -LlamaBenchPath D:\tools\llama\llama-bench.exe
+    .\Scripts\Invoke-BenchControl.ps1 -Model unsloth/Qwen3-4B-GGUF -Rounds 3 -LlamaBenchPath D:\tools\llama\llama-bench.exe
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -63,7 +63,7 @@ param(
     [switch]$Download,
     [switch]$HashModel,
     [switch]$NoRecord,
-    # Invoke-AtlasCanary.ps1 runs this with a small model and records the result itself, with
+    # Invoke-BenchCanary.ps1 runs this with a small model and records the result itself, with
     # the verdict, so it asks for the results back instead of letting this script record them.
     [switch]$PassThru,
     # Run on battery anyway; the result is recorded as onAcPower = false
@@ -73,12 +73,12 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
 # A control compares engines on the CPU and GPU; the NPU is not involved.
 $null = Assert-AtlasConditions -Needs @($Config) -AllowBattery:$AllowBattery
 
-$manifest = Get-Content (Join-Path $PSScriptRoot 'llamacpp-control.json') -Raw | ConvertFrom-Json
+$manifest = Get-Content (Join-Path $PSScriptRoot 'bench-control.json') -Raw | ConvertFrom-Json
 
 # ----------------------------------------------------------------------- binary
 
@@ -105,7 +105,7 @@ else {
         Write-Host "  sha256: $($manifest.sha256)"
         if (-not $Download) {
             Write-Host 'Run again with -Download to fetch it (nothing is installed), or give -LlamaBenchPath.' -ForegroundColor Yellow
-            exit 4   # a prerequisite is not present; Invoke-AtlasBenchSuite.ps1 reports that as skipped
+            exit 4   # a prerequisite is not present; Invoke-BenchSuite.ps1 reports that as skipped
         }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $zip = Join-Path $dir $manifest.asset
@@ -189,7 +189,7 @@ $results | Group-Object Config | ForEach-Object {
 
 if (-not $NoRecord) {
     foreach ($r in $results) {
-        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-LlamaCppControl.ps1' -Kind control `
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchControl.ps1' -Kind control `
             -Model $modelLabel -Compute "llama.cpp-$($manifest.tag)/$($r.Config)" `
             -TokPerSec ([math]::Round($r.Decode, 2)) -Tokens $GenTokens `
             -PrefillTps ([math]::Round($r.Prefill, 2)) -PromptTokens $PromptTokens `

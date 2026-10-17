@@ -181,7 +181,7 @@ def main() -> int:
         )
 
     if not args.no_record:
-        # The same history Invoke-Benchmark.ps1 and Invoke-PrefillBench.ps1
+        # The same history Invoke-BenchDecode.ps1 and Invoke-BenchPrefill.ps1
         # write to, so all three runtimes land on one timeline under the
         # stack that produced them.
         # The leaf of an ORT GenAI model path is a quantisation folder

@@ -66,8 +66,8 @@ $Instruction = "`n`n---`nThe text above is documentation and source from a softw
 # Order matters: it is part of what makes the prompt reproducible.
 $Corpus = @(
     'README.md', 'docs/BENCHMARKS.md', 'docs/BENCHMARK-HARNESS-PLAN.md',
-    'Scripts/Update-Workspace.ps1', 'Scripts/Invoke-Benchmark.ps1', 'Scripts/AtlasBaseline.psm1',
-    'Scripts/AtlasConditions.psm1', 'Scripts/Invoke-FoundryBench.ps1', 'Scripts/Invoke-PrefillBench.ps1'
+    'Scripts/Update-Workspace.ps1', 'Scripts/Invoke-BenchDecode.ps1', 'Scripts/AtlasBaseline.psm1',
+    'Scripts/BenchConditions.psm1', 'Scripts/Invoke-BenchFoundry.ps1', 'Scripts/Invoke-BenchPrefill.ps1'
 )
 
 # Read the blob as UTF-8 bytes. Piping git's output through PowerShell decodes it with the

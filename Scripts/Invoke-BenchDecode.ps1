@@ -3,7 +3,7 @@
     Benchmark a model across compute units, sampling CPU, GPU and NPU utilization.
 
 .DESCRIPTION
-    Automates docs/BENCHMARKS.md. Where Test-ComputeUnits.ps1 is a quick three-way
+    Automates docs/BENCHMARKS.md. Where Invoke-BenchPlacement.ps1 is a quick three-way
     sanity check, this produces a recorded result set: generation rate, first-token
     latency, startup cost, per-core CPU utilization and per-accelerator engine
     utilization sampled DURING each run, written to CSV.
@@ -42,10 +42,10 @@
     Skip counter sampling; timing only.
 
 .EXAMPLE
-    .\Scripts\Invoke-Benchmark.ps1 -Model "unsloth/Qwen3-4B-GGUF:Q4_0" -Repeat 3
+    .\Scripts\Invoke-BenchDecode.ps1 -Model "unsloth/Qwen3-4B-GGUF:Q4_0" -Repeat 3
 
 .EXAMPLE
-    .\Scripts\Invoke-Benchmark.ps1 -Compute cpu,npu -MaxTokens 256 -Repeat 5
+    .\Scripts\Invoke-BenchDecode.ps1 -Compute cpu,npu -MaxTokens 256 -Repeat 5
 #>
 #requires -Version 7
 [CmdletBinding()]
@@ -66,7 +66,7 @@ param(
 $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 # Refuse to measure on battery, or with something else holding the NPU.
 $needs = @($Compute | ForEach-Object { if ($_ -in 'npu', 'hybrid') { 'npu' } else { $_ } } | Select-Object -Unique)
 $null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
@@ -347,7 +347,7 @@ try {
     $state = Get-AtlasState
     foreach ($g in ($rows | Group-Object Compute)) {
         $avg = { param($f) ($g.Group | Measure-Object $f -Average).Average }
-        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-Benchmark.ps1' `
+        Add-AtlasBenchmarkRecord -State $state -Source 'Invoke-BenchDecode.ps1' `
             -Model $Model -Compute $g.Name `
             -TokPerSec   ([math]::Round((& $avg 'TokPerSec'), 1)) `
             -FirstTokenS ([math]::Round((& $avg 'FirstTokS'), 2)) `

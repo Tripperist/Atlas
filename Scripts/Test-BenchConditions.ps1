@@ -13,14 +13,14 @@
     Exit code is the number of failures.
 
 .EXAMPLE
-    .\Scripts\Test-AtlasConditions.ps1
+    .\Scripts\Test-BenchConditions.ps1
 #>
 #requires -Version 7
 [CmdletBinding()]
 param()
 
 $ErrorActionPreference = 'Stop'
-Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'BenchConditions.psm1') -Force
 
 function New-Conditions {
     param(

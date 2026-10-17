@@ -3,7 +3,7 @@
     The canary verdict: is the machine in the state that earlier AC runs measured?
 
 .DESCRIPTION
-    A short fixed run (Invoke-AtlasCanary.ps1) is compared with the median of earlier runs of
+    A short fixed run (Invoke-BenchCanary.ps1) is compared with the median of earlier runs of
     the same cell that were measured on AC power and were themselves healthy. Pure functions,
     so the rules can be tested without a machine in a bad state.
 

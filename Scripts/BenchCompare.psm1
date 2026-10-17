@@ -31,12 +31,27 @@ $script:Metrics = @(
     @{ Name = 'first';   Property = 'firstTokenS'; Unit = 's';     HigherIsBetter = $false }
 )
 
+# The scripts were renamed (2026-10-17). Records written under the old names stay in the
+# history under those names, and must meet the new ones in the same cell.
+$script:FormerSourceNames = @{
+    'Invoke-Benchmark.ps1' = 'Invoke-BenchDecode.ps1'
+    'Invoke-PrefillBench.ps1' = 'Invoke-BenchPrefill.ps1'
+    'Invoke-FoundryBench.ps1' = 'Invoke-BenchFoundry.ps1'
+    'Invoke-FoundryContextBench.ps1' = 'Invoke-BenchFoundryContext.ps1'
+    'Invoke-LlamaCppControl.ps1' = 'Invoke-BenchControl.ps1'
+    'Invoke-OrtGenAiBench.ps1' = 'Invoke-BenchOrtGenAi.ps1'
+    'Invoke-AtlasCanary.ps1' = 'Invoke-BenchCanary.ps1'
+    'Test-ComputeUnits.ps1' = 'Invoke-BenchPlacement.ps1'
+    'Test-ToolCalling.ps1' = 'Invoke-BenchToolCalling.ps1'
+}
+
 function Get-AtlasCellKey {
     <# The identity of a measurement, without the stack or the metric. #>
     param([Parameter(Mandatory)]$Record)
     # A control is the same cell whichever script recorded it, so hand-entered records and the
-    # committed harness meet.
+    # committed harness meet. A script's former name is its current one.
     $source = if ($Record.kind -eq 'control') { 'control' } else { [string]$Record.source }
+    if ($script:FormerSourceNames.ContainsKey($source)) { $source = $script:FormerSourceNames[$source] }
     '{0}|{1}|{2}|{3}' -f $Record.model, $Record.compute, $(if ($null -ne $Record.promptTokens) { [int]$Record.promptTokens } else { '' }), $source
 }
 
