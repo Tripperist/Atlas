@@ -43,6 +43,8 @@ and is compared in [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
 
 ## How these are measured
 
+To run these yourself, see [RUNNING-BENCHMARKS.md](RUNNING-BENCHMARKS.md).
+
 Four harnesses, measuring different things. Mixing their outputs is a mistake:
 
 | Harness | Measures | Script |

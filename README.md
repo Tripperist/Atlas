@@ -1465,6 +1465,9 @@ token loop, and accept that you are choosing from a short list of models.
 
 ### Running the benchmarks
 
+> The full guide, with a section per script, the suites, reporting and comparing, is
+> **[docs/RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md)**. What follows is the short version.
+
 **Before the first run**
 
 - **PowerShell 7** (`pwsh`), not Windows PowerShell 5.1. The scripts say so if started under 5.1.
