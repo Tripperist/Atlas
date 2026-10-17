@@ -317,7 +317,7 @@ function Get-AtlasBenchmarkHistory {
         [string]$StateId,
         # leave out records marked invalid and those measured on battery
         [switch]$Valid,
-        [ValidateSet('benchmark', 'control', 'smoke')][string]$Kind
+        [ValidateSet('benchmark', 'control', 'smoke', 'canary')][string]$Kind
     )
 
     $path = Get-AtlasHistoryPath
