@@ -9,12 +9,13 @@
 
     The text comes from a fixed list of files read from a PINNED git revision
     (`git show <rev>:<path>`), so the same -Rev and -Tokens always give the same
-    bytes. LF line endings, UTF-8 without a BOM, cut at a line boundary, with a short
+    bytes. LF line endings, UTF-8 without a BOM, cut at a line boundary (or a space, inside a long paragraph), with a short
     instruction at the END, so the model has to read all of it before it can answer.
 
-    -Tokens is a TARGET. The length in characters is Tokens x 3.7 (English prose and
-    PowerShell measured about that), and the real count differs by a few percent
-    between tokenizers. The harnesses that can report an exact count do: the Foundry
+    -Tokens is a TARGET. The length in characters is Tokens x 3.3, which is what this
+    corpus measured on the Qwen2.5 tokenizer (1,152 tokens for a 3,789-character
+    prompt built for 1,024 at 3.7). It is a code-and-table-heavy text, and another
+    tokenizer will differ by several percent. The harnesses that can report an exact count do: the Foundry
     HTTP endpoint returns `usage.prompt_tokens`. Label results with the count a run
     reports, not with this target.
 
@@ -50,7 +51,7 @@
 #requires -Version 7
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateRange(64, 200000)][int]$Tokens,
+    [Parameter(Mandatory)][ValidateRange(128, 200000)][int]$Tokens,
     [string]$Rev = 'f1f890f',
     [switch]$AsciiOnly,
     [switch]$Force
@@ -58,7 +59,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $root = Split-Path $PSScriptRoot -Parent
-$CharsPerToken = 3.7
+$CharsPerToken = 3.3
 $Instruction = "`n`n---`nThe text above is documentation and source from a software repository. " +
                "Explain in a short paragraph what the repository is for and which parts matter most.`n"
 
@@ -99,9 +100,10 @@ if (-not $Force -and (Test-Path $path) -and (Test-Path $meta)) {
 $parts = [System.Collections.Generic.List[string]]::new()
 $used = [System.Collections.Generic.List[string]]::new()
 $have = 0
+$cutShort = $false
 $budget = $chars - $Instruction.Length
 foreach ($file in $Corpus) {
-    if ($budget - $have -lt 400) { break }   # a header and a line or two is not worth another file
+    if ($used.Count -gt 0 -and $budget - $have -lt 400) { break }   # a header and a line or two is not worth another file
     $text = Read-GitBlob $file
     $text = $text -replace "`r`n", "`n"
     if ($AsciiOnly) {
@@ -114,14 +116,17 @@ foreach ($file in $Corpus) {
     $have += $parts[-1].Length
     $room = $budget - $have
     if ($text.Length -gt $room) {
+        $cutShort = $true
         $cut = $text.LastIndexOf("`n", [math]::Max(0, $room - 1))
+        # No line break close enough (a short prompt that ends inside a long paragraph): cut at a space.
+        if ($cut -lt $room * 0.5) { $cut = $text.LastIndexOf(' ', [math]::Max(0, $room - 1)) }
         $text = if ($cut -gt 0) { $text.Substring(0, $cut + 1) } else { '' }
     }
     $parts.Add($text)
     $have += $text.Length
     $used.Add($file)
 }
-if ($have -lt $budget * 0.95) {
+if (-not $cutShort -and $have -lt $budget * 0.95) {
     throw "The corpus at $Rev has only $have characters; $Tokens tokens needs about $chars."
 }
 

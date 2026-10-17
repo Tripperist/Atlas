@@ -57,6 +57,8 @@ try {
         @('Invoke-Benchmark.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-Benchmark.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu')),
         @('Invoke-PrefillBench.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-PrefillBench.ps1", '-Device', 'cpu')),
         @('Invoke-FoundryBench.ps1',  'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryBench.ps1", '-Model', 'qwen2.5-0.5b')),
+        @('Invoke-FoundryContextBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256')),
+        @('  ... -InProcess',         'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-InProcess')),
         @('Test-ToolCalling.ps1',     'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ToolCalling.ps1")),
         @('Test-ComputeUnits.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Test-ComputeUnits.ps1", '-Model', 'x', '-Compute', 'cpu')),
         @('bench_foundry_sdk.py',     $py,    @("$root\src\setup\bench_foundry_sdk.py", '--model', 'qwen2.5-0.5b')),
@@ -82,6 +84,7 @@ try {
         $runs = @(
             @('Invoke-Benchmark.ps1',    'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-Benchmark.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Compute', 'cpu', '-Repeat', '1', '-MaxTokens', '16', '-NoUtilization', '-AllowBattery')),
             @('Invoke-PrefillBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-PrefillBench.ps1", '-Model', 'unsloth/Qwen3-0.6B-GGUF:Q4_0', '-Device', 'cpu', '-PromptTokens', '128', '-GenTokens', '16', '-Repeat', '1', '-AllowBattery')),
+            @('Invoke-FoundryContextBench.ps1', 'pwsh', @('-NoProfile', '-File', "$PSScriptRoot\Invoke-FoundryContextBench.ps1", '-Model', 'qwen2.5-0.5b', '-PromptTokens', '256', '-MaxTokens', '64', '-Repeat', '1', '-AllowBattery')),
             @('bench_foundry_sdk.py',    $py,    @("$root\src\setup\bench_foundry_sdk.py", '--model', 'qwen2.5-0.5b', '--repeat', '1', '--max-tokens', '16', '--allow-battery')),
             @('bench_ort_genai.py',      $py,    @("$root\src\setup\bench_ort_genai.py", '--model-dir', "$root\$ort", '--repetitions', '1', '--n-gen', '8', '--n-prompt', '64', '--allow-battery'))
         )
