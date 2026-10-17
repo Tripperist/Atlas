@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: phases 1 and 2 are implemented (2026-10-17), but not yet run on AC power; the rest is a proposal.** Written 2026-10-17 after a session
+**Status: phases 1 to 3 are implemented (2026-10-17), but nothing has been run on AC power; the rest is a proposal.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -168,9 +168,23 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
 
 ## Later
 
-- **Phase 3, suite runner:** `Invoke-AtlasBenchSuite -Suite <name>` over committed
-  manifests (`smoke`, `stack-compare`, `runtimes`, `longctx`, `ort`), writing a run
-  folder and a summary table.
+- **Phase 3, suite runner (built):** `Invoke-AtlasBenchSuite.ps1 -Suite <name>` over committed
+  manifests in `Scripts/suites/` (`smoke`, `stack-compare`, `runtimes`, `longctx`, `ort`),
+  writing a run folder and a summary table.
+
+  - Each step runs in its own `pwsh` process (array arguments bind there, and state cannot
+    leak); the conditions are checked once up front, and each step checks again.
+  - A failed step does not stop the rest unless `-StopOnError`; exit 4 means "prerequisite
+    absent" and is reported as skipped (the llama.cpp control uses it).
+  - The run folder is `.atlas-local/benchmarks/runs/<time>-<suite>/`: `suite.json`,
+    `steps.json`, `records.jsonl`, `logs/<id>.log`, `summary.md`. Records carry `suiteRun`.
+  - Tested with stub steps (`Test-BenchSuite.ps1`), and `smoke` was run for real on battery
+    (both steps ok, six records, about a minute). **`stack-compare`, `runtimes`, `longctx` and
+    `ort` have only been dry-run**, so their time estimates are guesses and the full-size model
+    arguments in them have not been exercised through the runner. `longctx` relies on its HTTP
+    step running before the in-process step, for the exact prompt lengths.
+  - Not built: a `-Set key=value` override of a step's arguments (edit the manifest or run the
+    script directly), and the comparison of two suite runs (phase 4).
 - **Phase 5, export and page:** the export script, the marker-delimited generated tables
   in BENCHMARKS.md, and the backfill migration. The schema fields they need are added in
   phase 1, so records written from then on are complete.

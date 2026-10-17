@@ -1629,9 +1629,38 @@ Things these scripts do that are easy to get wrong by hand:
   and the C# side the csproj's pin (2.6.0), so the C# run is the unchanged control. Both record
   the package versions they ran. `-QnnVersion` builds the C# side against another one.
 
-Not yet done: none of these has been run on AC power, so none has reproduced a figure already
+Not yet done: none of the scripts above has been run on AC power, so none has reproduced a figure already
 in [BENCHMARKS](docs/BENCHMARKS.md) within its own spread, and the llama.cpp `-Download` path has
 not been run at all. The runs so far were tiny checks on battery.
+
+### Suites
+
+`Invoke-AtlasBenchSuite.ps1` runs a named set of the scripts above from a manifest in
+`Scripts/suites/`, so "the stack-compare numbers" is a command and not a recollection.
+
+| Suite | For | About |
+| --- | --- | --- |
+| `smoke` | Proving the harnesses run end to end on a small model each | 2 min |
+| `stack-compare` | After a stack change: prefill matrix, short-prompt decode, the llama.cpp control, ORT GenAI | 40 min |
+| `runtimes` | GenieX, Foundry and ORT GenAI side by side at 512 tokens | 25 min |
+| `longctx` | Prefill and decode from 512 to 6,784 tokens, GenieX 30B and Foundry 7B | 60 min |
+| `ort` | ORT GenAI from Python and C#, after an onnxruntime package change | 12 min |
+
+```powershell
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -List
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite stack-compare -DryRun    # the steps and commands, nothing run
+.\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite smoke
+pwsh -Command "& .\Scripts\Invoke-AtlasBenchSuite.ps1 -Suite longctx -Skip foundry-7b-inprocess"
+```
+
+The conditions are checked once up front, so a suite on battery stops before anything loads.
+Each step runs in its own process; a failed step is reported and the rest still run
+(`-StopOnError` stops), and a step that exits 4 (a prerequisite is absent, such as the llama.cpp
+build not yet downloaded) is reported as skipped. Everything lands in
+`.atlas-local/benchmarks/runs/<time>-<suite>/`: `suite.json` (the manifest as run, the stack,
+the code revision, the conditions), `steps.json`, `records.jsonl`, a log per step and
+`summary.md`. The records also go to the history, tagged `suiteRun`. The time estimates are
+rough, and only `smoke` has been timed: the other four have never been run.
 
 ### The benchmark history
 
