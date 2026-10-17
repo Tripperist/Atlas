@@ -20,7 +20,8 @@ in PowerShell 7.
 9. [Reading a result: what to trust](#9-reading-a-result-what-to-trust)
 10. [When something goes wrong](#10-when-something-goes-wrong)
 11. [Adding a benchmark](#11-adding-a-benchmark)
-12. [Former script names](#12-former-script-names)
+12. [Code quality: how well do the models write code?](#12-code-quality-how-well-do-the-models-write-code)
+13. [Former script names](#13-former-script-names)
 
 ---
 
@@ -64,6 +65,7 @@ Every benchmark answers one of these questions:
 | Is the NPU actually doing the work? | [`Invoke-BenchPlacement`](#invoke-benchplacement), [`Invoke-BenchToolCalling`](#invoke-benchtoolcalling) |
 | Did something change after an update? | [`Invoke-BenchSuite`](#5-suites-running-several-at-once) then [`Compare-BenchStacks`](#8-comparing-two-stacks) |
 | What should the documents show? | [`Export-BenchResults`](#publishing-the-results) |
+| Which model writes better code, not just faster? | [the code quality evaluation](#12-code-quality-how-well-do-the-models-write-code) |
 | Is the machine in its normal state right now? | [`Invoke-BenchCanary`](#invoke-benchcanary), [`Invoke-BenchControl`](#invoke-benchcontrol) |
 
 Three words are used throughout:
@@ -553,7 +555,122 @@ Each prints `ok` or `FAIL` per check and exits with the number of failures.
 6. **Put it in a suite** (`Scripts/suites/*.json`) if it should run with the others, and add a row to the table
    in section 4.
 
-## 12. Former script names
+## 12. Code quality: how well do the models write code?
+
+The benchmarks above measure speed. This measures **what a local coding model writes**: one realistic task,
+asked of each model several times, built and scored against tests whose expected answers come from an
+independent oracle. It lives in [`evals/csharp-task-planner`](../evals/csharp-task-planner), and the first
+comparison (Qwen3-Coder-30B-A3B against Qwen2.5-Coder-7B) is written up in
+[RESULTS.md](../evals/csharp-task-planner/RESULTS.md).
+
+**The result in one paragraph.** Neither model's first attempt compiled (0 of 6), and one round of compiler
+feedback did not fix it. After the smallest edit that makes each program compile (1 to 2 edits for the 30B, 2 to
+5 for the 7B), the 30B passes 21 to 22 of 45 tests and the 7B passes 2 to 5. The 30B parses and validates input
+well and gets the algorithm (stages, critical path) mostly wrong; the 7B cannot parse the input format. One task
+and three samples per model, with the models differing in size, generation, quantization and runtime at once, so
+it does not say why.
+
+### What it measures
+
+The task ([`prompt.txt`](../evals/csharp-task-planner/prompt.txt)) is `planner`, a C# console program: parse a
+task file, reject bad input with five distinct exit codes, group tasks into dependency stages, find the critical
+path with a precise tie-break, print text or JSON, and stay fast on 100,000 tasks. 45 black-box tests (21
+functional, 20 error handling, 4 at scale) run against each built program, with a 30-second timeout each. The
+expected outputs come from [`oracle.py`](../evals/csharp-task-planner/oracle.py), a second implementation in
+Python, not from either model, and a separate C# reference passes all 45 before any model is scored.
+
+### Check the harness (about 10 seconds, no models needed)
+
+Needs the .NET 10 SDK and Python. From the repository root:
+
+```powershell
+cd evals\csharp-task-planner
+python oracle.py selftest                    # answers worked out by hand: "oracle self-test: ok"
+python oracle.py gen tests/generated         # builds the 45 cases (about 4 MB, not committed)
+python eval.py reference                     # must print 45/45, warnings=0
+```
+
+If `eval.py reference` does not say `45/45`, nothing else in this section can be trusted.
+
+### Score the models' code that is already here
+
+The generated programs are committed (see [the source](#see-the-generated-source)), so you can score and
+re-score them without running a model:
+
+```powershell
+python eval.py runs/qwen3-coder-30b-a3b/s1-fixed      # one program: 21/45, with every failing case and why
+python eval.py --all runs                             # every program under runs/ (slow: failing
+                                                      # scale cases run to their 30-second timeout)
+
+# the stage breakdown, then the table (analyze every fixed program, and the reference, then summarize):
+python analyze.py reference (Get-ChildItem runs -Directory -Recurse -Filter '*-fixed' | ForEach-Object { Resolve-Path -Relative $_.FullName })
+python summarize.py                                   # writes runs/summary.md
+```
+
+Scoring rewrites each `result.json` in place. The scores do not change, but a timing field does
+(`buildSeconds`), so `git status` will show them as modified: `git checkout -- evals` puts them back.
+
+### Generate new code from the models
+
+```powershell
+python generate.py --model all --samples 3        # both models, seeds 1 to 3; about 15 minutes
+python eval.py --all runs
+python repair.py runs/<model>/s1 runs/<model>/s2  # one round of compiler feedback for programs that did not build
+python make_fixed.py                              # apply the recorded minimal compile fixes
+```
+
+- **It needs the models running.** The 30B runs through `geniex infer` on the GPU, and the 7B on the NPU
+  through Foundry Local's HTTP endpoint (so they do not contend for the NPU). Both models must already be
+  downloaded (`geniex pull`, `foundry model download`). Run it on AC power with nothing else busy: the speed does
+  not change what the weights write, but a slow machine makes a long run.
+- **It overwrites.** `generate.py` writes to `runs/<model>/s<seed>/`, replacing the committed sample of the same
+  seed. Do it on a branch, or copy `runs/` first, if you want to keep the originals.
+- **A seed reproduces its run exactly** (the 30B's first sample came out as 2,323 tokens both times).
+- **`make_fixed.py` applies edits that were made by hand** for the committed samples, and are recorded in
+  each `FIXES.md`. For new samples you write the compile fixes yourself, the way
+  [the README there](../evals/csharp-task-planner/README.md) describes, and report how many you made.
+- To add a model, see "Adding a model" in that README. Keep the prompt, temperature, top-p, seeds and token limit
+  the same.
+- `generate.py`, `repair.py` and `make_fixed.py` were not re-run when this section was written; the commands are
+  the ones that produced the committed samples.
+
+### Read the scores
+
+Look at the stages in order, because a program that does not compile scores zero on all 45:
+
+| Stage | Where | What it tells you |
+| --- | --- | --- |
+| Compiles? | `s<N>/result.json`, `build.built` and `build.errorSample` | Can the model write code that builds at all |
+| After one feedback round | `s<N>-repair1/` | Whether the compiler's message alone is enough for it to fix its own mistake |
+| After the minimal compile fix | `s<N>-fixed/result.json`: `passed` of 45, by `functional`, `error`, `scale` | The quality of the logic, once compile errors are out of the way. `FIXES.md` lists each edit, and the count is reported |
+| Stage breakdown | `runs/analysis.json`, from `analyze.py` | `parses` (reads valid input at all), `stages`, `total`, `critical path`, each out of 16 cases. Tells a program that cannot parse from one that gets only the algorithm wrong |
+| All of it, one table | [`runs/summary.md`](../evals/csharp-task-planner/runs/summary.md) | Tokens, time, lines, compile errors, tests passed, stage scores, per model and seed |
+
+`result.json` also lists every failing case with the reason (`failures`: for example, "line 6: got 'Critical path
+(5): test', expected 'Critical path (12): fetch -> configure -> compile -> test'") and the slowest scale case.
+Scoring is all-or-nothing per test. **Do not tune the tests to a model's output**: the oracle decides, and the
+tests were fixed before any model ran.
+
+### See the generated source
+
+Everything a model produced is committed under
+[`evals/csharp-task-planner/runs/`](../evals/csharp-task-planner/runs), one folder per model and sample:
+
+| Path | What it is |
+| --- | --- |
+| `runs/qwen3-coder-30b-a3b/s1/` ... `s3/` | The first attempts of the 30B: `Program.cs` (the extracted program), `raw.txt` (the whole reply), `meta.json` (settings, tokens, speed), `result.json` (the score) |
+| `runs/qwen2.5-coder-7b/s1/` ... `s3/` | The same for the 7B |
+| `.../s<N>-repair1/` | The reply to compiler feedback |
+| `.../s<N>-fixed/` | The first attempt with the minimal compile fixes applied, plus `FIXES.md` listing each one (before and after) |
+| [`reference/Program.cs`](../evals/csharp-task-planner/reference/Program.cs) | The reference solution, used only to prove the tests are passable |
+
+For example, the 30B's first program is
+[`runs/qwen3-coder-30b-a3b/s1/Program.cs`](../evals/csharp-task-planner/runs/qwen3-coder-30b-a3b/s1/Program.cs)
+(348 lines; it does not compile), and the version that scores 21/45 is
+[`s1-fixed/Program.cs`](../evals/csharp-task-planner/runs/qwen3-coder-30b-a3b/s1-fixed/Program.cs). Diffing the two
+shows the single edit. The 7B's equivalents are under `runs/qwen2.5-coder-7b/`.
+
+## 13. Former script names
 
 The scripts were renamed to one pattern on 2026-10-17. Old records in the history keep the old names in their
 `source` field, and `Compare-BenchStacks` treats a former name and its current one as the same cell. The full

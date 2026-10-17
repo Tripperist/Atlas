@@ -12,6 +12,8 @@ Laptop with a Snapdragon X2 Elite (X2E78100), 64 GB RAM, Windows 11 ARM64.
 | | |
 | --- | --- |
 | **Measured numbers** | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) |
+| **Running, reporting and comparing benchmarks** | [docs/RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md) |
+| **Code quality: what the models write, and how to score it** | [docs/RUNNING-BENCHMARKS.md, section 12](docs/RUNNING-BENCHMARKS.md#12-code-quality-how-well-do-the-models-write-code) |
 | **Resolved bugs and superseded findings** | [docs/ARCHIVE.md](docs/ARCHIVE.md) |
 | **Compiling your own models** | [docs/COMPILING.md](docs/COMPILING.md) |
 | **Contributor rules** | [AGENTS.md](AGENTS.md) |
@@ -49,7 +51,7 @@ the same prompt.
 7. [Foundry Local](#7-foundry-local)
 8. [Proving which compute unit ran](#8-proving-which-compute-unit-ran)
 9. [Comparing the methods](#9-comparing-the-methods)
-10. [Benchmarks](#10-benchmarks)
+10. [Benchmarks](#10-benchmarks) (speed, and [code quality](#coding-quality-not-just-speed))
 11. [Keeping the workspace current](#11-keeping-the-workspace-current)
 12. [Troubleshooting](#12-troubleshooting)
 13. [Open questions](#13-open-questions)
@@ -1531,11 +1533,27 @@ under, so results measured under different drivers or runtime versions are never
 compared. [RUNNING-BENCHMARKS.md](docs/RUNNING-BENCHMARKS.md) has the prerequisites, a first
 run in order, and each script.
 
-**Coding quality, not just speed.** [`evals/csharp-task-planner`](evals/csharp-task-planner)
-scores what local coding models actually write on one task, against tests whose
-expected outputs come from an independent oracle. The first comparison,
-Qwen3-Coder-30B-A3B against Qwen2.5-Coder-7B, is in
-[RESULTS](evals/csharp-task-planner/RESULTS.md).
+### Coding quality, not just speed
+
+Speed says nothing about whether a model writes good code, so there is a second kind of benchmark: one
+realistic task (a C# build-plan calculator), given to each local coding model three times, built, and scored
+against 45 tests whose expected outputs come from an independent oracle, not from either model.
+
+**First result** (Qwen3-Coder-30B-A3B against Qwen2.5-Coder-7B): neither model's first attempt compiled (0 of 6).
+After the smallest edit that makes each program compile, the 30B passes 21 to 22 of 45 tests and the 7B passes 2
+to 5. The 30B reads and validates input well and gets the algorithm mostly wrong; the 7B cannot parse the input
+format.
+
+- **Run it, and measure the results:** [RUNNING-BENCHMARKS.md, section 12](docs/RUNNING-BENCHMARKS.md#12-code-quality-how-well-do-the-models-write-code).
+  The harness check needs no model and takes seconds:
+  `cd evals\csharp-task-planner; python oracle.py gen tests/generated; python eval.py reference` (must say 45/45).
+- **See the generated source:** every program the models wrote is committed in
+  [`evals/csharp-task-planner/runs/`](evals/csharp-task-planner/runs), for example
+  [the 30B's first attempt](evals/csharp-task-planner/runs/qwen3-coder-30b-a3b/s1/Program.cs) and
+  [the same program with its one compile fix](evals/csharp-task-planner/runs/qwen3-coder-30b-a3b/s1-fixed/Program.cs).
+  [`runs/summary.md`](evals/csharp-task-planner/runs/summary.md) has one row per program.
+- **The write-up:** [RESULTS.md](evals/csharp-task-planner/RESULTS.md), with the task, how it was judged, and what
+  it does not show.
 
 ---
 
