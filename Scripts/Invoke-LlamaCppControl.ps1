@@ -102,7 +102,7 @@ else {
         Write-Host "  sha256: $($manifest.sha256)"
         if (-not $Download) {
             Write-Host 'Run again with -Download to fetch it (nothing is installed), or give -LlamaBenchPath.' -ForegroundColor Yellow
-            exit 1
+            exit 4   # a prerequisite is not present; Invoke-AtlasBenchSuite.ps1 reports that as skipped
         }
         New-Item -ItemType Directory -Force -Path $dir | Out-Null
         $zip = Join-Path $dir $manifest.asset

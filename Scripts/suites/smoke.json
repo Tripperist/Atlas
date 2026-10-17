@@ -1,0 +1,19 @@
+{
+  "description": "About two minutes. Proves the harnesses run end to end on a small model each; not a result you would publish.",
+  "steps": [
+    {
+      "id": "prefill-small",
+      "script": "Invoke-PrefillBench.ps1",
+      "estimateMinutes": 1,
+      "needs": ["cpu", "gpu"],
+      "args": { "Model": "unsloth/Qwen3-0.6B-GGUF:Q4_0", "Device": ["cpu", "gpu"], "PromptTokens": [128, 512], "GenTokens": 32, "Repeat": 2, "CtxSize": 1024 }
+    },
+    {
+      "id": "foundry-small",
+      "script": "Invoke-FoundryContextBench.ps1",
+      "estimateMinutes": 1,
+      "needs": ["npu"],
+      "args": { "Model": ["qwen2.5-0.5b"], "PromptTokens": [256, 1024], "MaxTokens": 64, "Repeat": 1 }
+    }
+  ]
+}

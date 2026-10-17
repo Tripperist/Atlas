@@ -1,0 +1,26 @@
+{
+  "description": "Long-context behaviour: GenieX on the 30B coder model at 512 to 6,784 tokens, and Foundry on the 7B model at the same range over HTTP and in process. The Foundry in-process step reads the exact prompt lengths from the HTTP step, so keep them in this order.",
+  "steps": [
+    {
+      "id": "genie-30b",
+      "script": "Invoke-PrefillBench.ps1",
+      "estimateMinutes": 25,
+      "needs": ["npu", "gpu"],
+      "args": { "Model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0", "Device": ["npu", "gpu"], "PromptTokens": [512, 1792, 6784], "GenTokens": 64, "Repeat": 2, "CtxSize": 8192 }
+    },
+    {
+      "id": "foundry-7b-http",
+      "script": "Invoke-FoundryContextBench.ps1",
+      "estimateMinutes": 15,
+      "needs": ["npu"],
+      "args": { "Model": ["qwen2.5-coder-7b"], "PromptTokens": [512, 2048, 4096, 6784], "MaxTokens": 128, "Repeat": 2 }
+    },
+    {
+      "id": "foundry-7b-inprocess",
+      "script": "Invoke-FoundryContextBench.ps1",
+      "estimateMinutes": 20,
+      "needs": ["npu"],
+      "args": { "Model": ["qwen2.5-coder-7b"], "PromptTokens": [512, 2048, 4096, 6784], "MaxTokens": 100, "Repeat": 2, "InProcess": true }
+    }
+  ]
+}

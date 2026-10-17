@@ -1,0 +1,12 @@
+{
+  "description": "ONNX Runtime GenAI from Python and from C#, interleaved: the check to repeat after an onnxruntime, onnxruntime-genai or onnxruntime-qnn change.",
+  "steps": [
+    {
+      "id": "ort-genai",
+      "script": "Invoke-OrtGenAiBench.ps1",
+      "estimateMinutes": 12,
+      "needs": ["npu"],
+      "args": { "Rounds": 3 }
+    }
+  ]
+}

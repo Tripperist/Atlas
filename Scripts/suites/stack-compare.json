@@ -1,0 +1,35 @@
+{
+  "description": "What to run after a stack change (GenieX, QAIRT, Foundry, ORT, driver) to see what moved: the prefill matrix, short-prompt decode on the three compute units, the stock llama.cpp control, and ONNX Runtime GenAI.",
+  "steps": [
+    {
+      "id": "prefill-matrix",
+      "script": "Invoke-PrefillBench.ps1",
+      "estimateMinutes": 8,
+      "needs": ["npu"],
+      "args": { "Matrix": true, "PromptTokens": [512], "Repeat": 3 }
+    },
+    {
+      "id": "decode-short-4b",
+      "script": "Invoke-Benchmark.ps1",
+      "estimateMinutes": 8,
+      "needs": ["npu"],
+      "args": { "Model": "unsloth/Qwen3-4B-GGUF:Q4_0", "Compute": ["cpu", "gpu", "npu"], "Repeat": 3 }
+    },
+    {
+      "id": "llamacpp-control",
+      "script": "Invoke-LlamaCppControl.ps1",
+      "estimateMinutes": 10,
+      "needs": ["cpu", "gpu"],
+      "optional": true,
+      "note": "Skipped, not failed, if the pinned build is not unpacked: it is fetched only by running Invoke-LlamaCppControl.ps1 -Download.",
+      "args": { "Model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "Rounds": 3 }
+    },
+    {
+      "id": "ort-genai",
+      "script": "Invoke-OrtGenAiBench.ps1",
+      "estimateMinutes": 12,
+      "needs": ["npu"],
+      "args": { "Rounds": 3 }
+    }
+  ]
+}
