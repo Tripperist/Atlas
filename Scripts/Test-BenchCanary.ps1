@@ -94,6 +94,20 @@ Check 'a configuration with no reference does not hide a bad one that has one' (
 $v = Get-AtlasCanaryVerdict -Current @((Cur 10 1000 'gpu'), (Cur 1 1 'cpu')) -Reference ($refs)
 Check '... and a bad configuration with a reference still aborts' ($v.Verdict -eq 'abort')
 
+Write-Host ''
+Write-Host 'CPU decode is information only' -ForegroundColor Cyan
+$both = @(1..5 | ForEach-Object { Ref 50 1000 'gpu' }) + @(1..5 | ForEach-Object { Ref 150 1500 'cpu' })
+$v = Get-AtlasCanaryVerdict -Current @((Cur 50 1000 'gpu'), (Cur 60 1500 'cpu')) -Reference $both
+$row = $v.Rows | Where-Object { $_.Config -eq 'cpu' -and $_.Metric -eq 'decode' }
+Check 'CPU decode at 40 % of its reference does not change the verdict' (($v.Verdict -eq 'ok') -and ($row.Level -eq 'info') -and (-not $row.Gated) -and ([math]::Abs($row.Ratio - 0.4) -lt 1e-9)) "$($v.Verdict) $($row.Level)"
+Check '... and it is not the worst figure' (($null -eq $v.Worst) -or ($v.Worst.Metric -ne 'decode') -or ($v.Worst.Config -ne 'cpu'))
+$v = Get-AtlasCanaryVerdict -Current @((Cur 50 1000 'gpu'), (Cur 150 600 'cpu')) -Reference $both
+Check 'CPU prefill still gates: 40 % of its reference is an abort' (($v.Verdict -eq 'abort') -and ($v.Worst.Config -eq 'cpu') -and ($v.Worst.Metric -eq 'prefill'))
+$v = Get-AtlasCanaryVerdict -Current @((Cur 20 1000 'gpu'), (Cur 150 1500 'cpu')) -Reference $both
+Check 'GPU decode still gates: 40 % of its reference is an abort' (($v.Verdict -eq 'abort') -and ($v.Worst.Config -eq 'gpu') -and ($v.Worst.Metric -eq 'decode'))
+$v = Get-AtlasCanaryVerdict -Current @((Cur 50 1000 'gpu'), (Cur 1 1500 'cpu')) -Reference @($both | Where-Object compute -Like '*/gpu')
+Check 'CPU decode with no reference reads no-reference, not info' ((($v.Rows | Where-Object { $_.Config -eq 'cpu' -and $_.Metric -eq 'decode' }).Level -eq 'no-reference') -and ($v.Verdict -eq 'ok'))
+
 if ($IncludeRuns) {
     Write-Host ''
     Write-Host 'The canary script, against a real llama-bench' -ForegroundColor Cyan

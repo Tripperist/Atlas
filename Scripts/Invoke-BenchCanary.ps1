@@ -19,6 +19,9 @@
         abort         below 60 %: do not benchmark now
         no-reference  fewer than three earlier AC canary runs: recorded, nothing gated
 
+    CPU decode is shown but does not count: it moved about 20 % between healthy runs, where GPU
+    decode moved about 2 %. GPU prefill, GPU decode and CPU prefill decide the verdict.
+
     The thresholds are provisional; there was no AC data to set them from (BenchCanary.psm1
     says what they were chosen from). Every run is recorded as kind canary, with its verdict,
     and a run that warned or aborted is never used as a reference.
