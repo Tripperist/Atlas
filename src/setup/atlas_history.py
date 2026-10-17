@@ -210,6 +210,9 @@ def record(
                 "order": order, "promptKind": prompt_kind, "ctxSize": ctx_size, "seed": seed,
                 "modelArtifact": model_artifact}
     record_obj.update({k: v for k, v in optional.items() if v is not None and v != ""})
+    suite_run = os.environ.get("ATLAS_SUITE_RUN")
+    if suite_run:
+        record_obj["suiteRun"] = suite_run
     record_obj["onAcPower"] = cond.get("onAcPower") if cond else None
     if cond:
         record_obj["conditions"] = cond

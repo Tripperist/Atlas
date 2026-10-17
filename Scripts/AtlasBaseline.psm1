@@ -289,6 +289,8 @@ function Add-AtlasBenchmarkRecord {
     foreach ($k in $optional.Keys) {
         if ($null -ne $optional[$k] -and -not ($optional[$k] -is [string] -and -not $optional[$k])) { $record[$k] = $optional[$k] }
     }
+    # A suite run (Invoke-AtlasBenchSuite.ps1) names itself here, so its records can be found again.
+    if ($env:ATLAS_SUITE_RUN) { $record['suiteRun'] = $env:ATLAS_SUITE_RUN }
     $record['onAcPower'] = if ($conditions) { $conditions.onAcPower } else { $null }
     if ($conditions) { $record['conditions'] = $conditions }
     $rev = Get-AtlasCodeRev

@@ -68,6 +68,13 @@ try {
     $ids = Get-Content $tmp | ForEach-Object { ($_ | ConvertFrom-Json).id }
     Check 'ids are unique across all records written' (@($ids | Select-Object -Unique).Count -eq @($ids).Count)
 
+    $null = Add-AtlasBenchmarkRecord -State $state -Source 't' -Model 'm' -Compute 'npu'
+    Check 'no suiteRun outside a suite run' ($null -eq (LastRecord).suiteRun)
+    $env:ATLAS_SUITE_RUN = '20261017-000000-smoke'
+    try { $null = Add-AtlasBenchmarkRecord -State $state -Source 't' -Model 'm' -Compute 'npu' }
+    finally { Remove-Item Env:ATLAS_SUITE_RUN }
+    Check 'ATLAS_SUITE_RUN is recorded as suiteRun' ((LastRecord).suiteRun -eq '20261017-000000-smoke')
+
     Write-Host ''
     Write-Host 'Get-AtlasBenchmarkHistory, over records written before format 2' -ForegroundColor Cyan
     Remove-Item $tmp -Force

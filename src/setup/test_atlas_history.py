@@ -62,6 +62,13 @@ for _ in range(20):
     ids.add(last()["id"])
 check("ids are unique across rapid records", len(ids) == 20)
 
+atlas_history.record(source="t", model="m", compute="npu", state=STATE)
+check("no suiteRun outside a suite run", "suiteRun" not in last())
+os.environ["ATLAS_SUITE_RUN"] = "20261017-000000-smoke"
+atlas_history.record(source="t", model="m", compute="npu", state=STATE)
+del os.environ["ATLAS_SUITE_RUN"]
+check("ATLAS_SUITE_RUN is recorded as suiteRun", last().get("suiteRun") == "20261017-000000-smoke")
+
 print("\nPython check_conditions(), against the live machine")
 try:
     cond = atlas_history.check_conditions(needs=("cpu",))
