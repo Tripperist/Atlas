@@ -1747,6 +1747,7 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
+| **Python ORT GenAI on `onnxruntime-qnn` 2.7.0 is about 20 % slower than C#** | 13.7 tok/s decode and 324 prefill from `bench_ort_genai.py`, against 17.6 and 430 from the C# `OrtBench` on the same 2.7.0 version (and 16.9 / 388 on 2.6.0). Measured on AC power, but with the CPU 16.8 % busy before the Python run. The C# comparison shows no 2.7.0 regression, so the package version is not the explanation by itself. **Next step:** Python on `onnxruntime-qnn` 2.6.0, and Python again with an idle CPU. See [BENCHMARKS](docs/BENCHMARKS.md#onnxruntime-qnn-270-against-260) |
 | **Foundry `max_tokens` fails in `GroupQueryAttention`** | Reproducible on `qwen2.5-0.5b-instruct-qnn-npu`: a `max_tokens` small relative to the prompt returns a hard 500. A 64-token prompt needs `>= 32`, a 256-token prompt `>= 64`. **Next step:** reproduce against ONNX Runtime GenAI directly, which decides whether this is a Foundry bug or an upstream one and therefore where to report it |
 | `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |

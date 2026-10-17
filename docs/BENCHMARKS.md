@@ -252,6 +252,45 @@ Measured with [`bench_ort_genai.py`](../src/setup/bench_ort_genai.py), which mir
 
 **The architecture explains it.** As described in the [README](../README.md#6-onnx-runtime-genai), this bundle's graph is a hybrid: **36 `EPContext` nodes** that QNN executes on the NPU, plus **32 `GroupQueryAttention` nodes that run on CPU**. Prefill is attention-heavy across all 512 positions, so pushing attention to the CPU costs exactly where the NPU should be strongest. That it still reports ~98 % NPU utilization is a good illustration of why a utilization figure is not a throughput measurement.
 
+### `onnxruntime-qnn` 2.7.0 against 2.6.0
+
+The GenieX v0.9.0 stack change also moved `onnxruntime-qnn` from 2.6.0 to 2.7.0, and the ORT
+GenAI path had not been re-measured on AC power. Measured 2026-10-16 on AC power, power scheme
+Balanced, Phi-4-mini-reasoning `qnn-int4`, a 512-token prompt, 128 generated, 3 repetitions per
+run, with `Scripts/Invoke-OrtGenAiBench.ps1`. The C# side is [`OrtBench`](../src/csharp/OrtBench),
+built against each version of `Qualcomm.ML.OnnxRuntime.QNN` (`-QnnVersion`); the records show the
+provider DLL that loaded. Six single-round runs, interleaved 2.6.0, 2.7.0, 2.7.0, 2.6.0, 2.6.0, 2.7.0:
+
+| QNN package | Decode tok/s, per run | Mean | Prefill tok/s, per run | Mean |
+| --- | --- | --- | --- | --- |
+| 2.6.0 | 17.0, 17.0, 16.6 | **16.9** | 377, 407, 380 | 388 |
+| 2.7.0 | 18.2, 19.0, 15.6 | **17.6** | 458, 441, 391 | 430 |
+
+**On the C# path 2.7.0 is not slower**: decode is level and prefill about 11 % higher, with a
+spread inside a run of up to 10 %. Both match the figures in the table above (17.5 decode, 436.9
+prefill), so those figures were not disturbed by the package change.
+
+**The Python side is slower than C#, and not explained.** `bench_ort_genai.py` on the
+virtual environment's `onnxruntime-qnn` 2.7.0, three rounds immediately afterwards: decode
+13.9, 14.2 and 12.8 tok/s (mean 13.7), prefill 292, 332 and 348 (mean 324). That is about 20 % below C# on the
+same package version, and below the 17.5 / 436.9 measured earlier from Python on 2.6.0. It is
+not clear whether this is the 2.7.0 Python wheel against the NuGet package (different builds), or
+the CPU being 16.8 % busy before that run started (ORT GenAI is sensitive to background CPU, see
+below), or Python. **Python on `onnxruntime-qnn` 2.6.0 has not been run**, which is the
+comparison that would separate the first from the others.
+
+**A first run that looked like a regression was the machine.** The `ort` suite
+(Python and C# interleaved, three rounds) ran first, with about 0.6 cores of background load,
+and gave 6 to 9 tok/s decode for Python on 2.7.0 and 7.5 to 8.6 for C# on **2.6.0**, the unchanged
+control, in the same rounds; only the last C# run reached 16.2. The control being as slow as
+the changed side is what ruled the package out, and the C# comparison above, run a few minutes later,
+settled it. Why the machine was in a half-speed state is not known; it is the same unexplained state
+seen before. The canary could not flag it, because the pinned llama.cpp build it needs has not been
+downloaded.
+
+Limits: three runs per package on one machine, one model, one prompt length; the stack hash covers
+the Python package only, so these C# records carry the version in their `packages` field instead.
+
 **Conclusion for runtime selection.** On prefill-dominated work, the ordering is unambiguous: **GenieX QAIRT > GenieX llama.cpp ≫ ORT GenAI**. ORT GenAI's value is in-process control of the token loop and a first-party C# path — not speed. If you need that control, the cost is roughly 3.5× on prefill against the GenieX llama.cpp path; if you do not, `geniex serve` is both faster and simpler.
 
 **This reframes the CPU-versus-NPU question entirely.**
