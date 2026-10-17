@@ -477,6 +477,7 @@ The checks that the benchmark code itself works:
 .\Scripts\Test-BenchConditions.ps1              # the conditions policy, then the conditions right now
 .\Scripts\Test-BenchHistory.ps1                 # the history format
 .\Scripts\Test-BenchPrompt.ps1                  # prompts are rebuilt byte for byte
+.\Scripts\Test-BenchLint.ps1                    # PSScriptAnalyzer over Scripts/ (install it once: see the script)
 ```
 
 Each prints `ok` or `FAIL` per check and exits with the number of failures.

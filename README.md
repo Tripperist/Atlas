@@ -1650,6 +1650,7 @@ running, and a stopped daemon holds none.
 .\Scripts\Test-BenchSuite.ps1                       # the suite runner, over stub steps
 .\Scripts\Test-BenchCompare.ps1                     # the stack comparison rules
 .\Scripts\Test-BenchCanary.ps1                      # the canary rules; -IncludeRuns runs it for real
+.\Scripts\Test-BenchLint.ps1                        # PSScriptAnalyzer over Scripts/ (Install-Module PSScriptAnalyzer first)
 ```
 
 The harness scripts require **PowerShell 7** (`pwsh`, not `powershell`) and say so

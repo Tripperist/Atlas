@@ -117,7 +117,6 @@ if ($controls.Count) {
 else { Write-Host 'No control figure is shared by the two stacks, so nothing says the machine was in the same state.' -ForegroundColor Yellow }
 Write-Host ''
 
-$fmt = { param($r) '{0,9:N2}' -f $r }
 $view = $rows | Where-Object { $All -or $_.Control -or $_.Verdict -ne 'same' } | Sort-Object @{ Expression = { -not $_.Control } }, Model, Compute, Prompt, Metric
 if ($Markdown) {
     Write-Host "| Model | Compute | Prompt | Metric | $From | $To | Change | |"
