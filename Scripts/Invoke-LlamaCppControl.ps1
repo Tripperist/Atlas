@@ -63,6 +63,9 @@ param(
     [switch]$Download,
     [switch]$HashModel,
     [switch]$NoRecord,
+    # Invoke-AtlasCanary.ps1 runs this with a small model and records the result itself, with
+    # the verdict, so it asks for the results back instead of letting this script record them.
+    [switch]$PassThru,
     # Run on battery anyway; the result is recorded as onAcPower = false
     [switch]$AllowBattery
 )
@@ -198,4 +201,11 @@ if (-not $NoRecord) {
                       archiveSha256 = $archiveSha } | Out-Null
     }
     Write-Host ("Recorded {0} control measurement(s) under stack {1}" -f $results.Count, (Get-AtlasShortId $state.id)) -ForegroundColor Green
+}
+
+if ($PassThru) {
+    [pscustomobject]@{
+        Results = @($results); Model = $modelLabel; Tag = $manifest.tag; BinarySource = $binarySource; LlamaBenchSha256 = $exeSha
+        ArchiveSha256 = $archiveSha; ModelArtifact = $artifact; State = $state; PromptTokens = $PromptTokens; GenTokens = $GenTokens; Repeat = $Repeat
+    }
 }

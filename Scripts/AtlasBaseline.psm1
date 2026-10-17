@@ -236,7 +236,7 @@ function Add-AtlasBenchmarkRecord {
         [hashtable]$Extra,
         # ---- history format 2
         # smoke records (the check Update-Workspace runs) are never published
-        [ValidateSet('benchmark', 'control', 'smoke')][string]$Kind = 'benchmark',
+        [ValidateSet('benchmark', 'control', 'smoke', 'canary')][string]$Kind = 'benchmark',
         $Conditions,
         [string]$Harness,
         [string]$HarnessVersion,
