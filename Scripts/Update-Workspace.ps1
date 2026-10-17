@@ -62,6 +62,7 @@
 .EXAMPLE
     .\Scripts\Update-Workspace.ps1 -History
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [switch]$Apply,
@@ -74,6 +75,7 @@ param(
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
 
 $root         = Get-AtlasRoot
 $venvPy       = Join-Path $root '.venv\Scripts\python.exe'
@@ -554,6 +556,9 @@ if (-not $SkipVerify) {
         Write-Host "  short benchmark on $model ..."
         $gxExe = Join-Path $env:LOCALAPPDATA 'GenieX CLI\geniex.exe'
         if (-not (Test-Path $gxExe)) { $gxExe = 'geniex' }
+        # A smoke check after an update: record the conditions, never refuse. Refusing here
+        # would block the update it is meant to verify.
+        $null = Assert-AtlasConditions -Needs @('npu') -WarnOnly
         $out = (& $gxExe infer $model -p 'Explain what an NPU is.' `
                     --max-tokens 128 --compute npu --think=false 2>&1 | Out-String) `
                -replace '\x1b\[[0-9;]*m', ''
@@ -563,7 +568,7 @@ if (-not $SkipVerify) {
             $tps = [double]$Matches[1]; $tok = [int]$Matches[2]; $ftt = [double]$Matches[3]
             Write-Host ("  benchmark                 {0} tok/s, first token {1}s" -f $tps, $ftt)
             Add-AtlasBenchmarkRecord -State $current -Source 'Update-Workspace.ps1' `
-                -Model $model -Compute 'npu' -TokPerSec $tps -FirstTokenS $ftt -Tokens $tok | Out-Null
+                -Model $model -Compute 'npu' -TokPerSec $tps -FirstTokenS $ftt -Tokens $tok -Kind smoke | Out-Null
             Write-Host ("  recorded under stack {0}; see -History" -f (Get-AtlasShortId $current.id)) -ForegroundColor DarkGray
             Write-Host '  Smoke test only. geniex rounds first-token to 0.1s, so a warm' -ForegroundColor DarkGray
             Write-Host '  short prompt reads 0.0s. For numbers comparable to docs/BENCHMARKS.md,' -ForegroundColor DarkGray

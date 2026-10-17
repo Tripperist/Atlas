@@ -52,7 +52,12 @@ def main() -> int:
         action="store_true",
         help="Skip QNN attachment, for a CPU baseline on the same model.",
     )
+    parser.add_argument("--allow-battery", action="store_true",
+                        help="Run on battery anyway; the result is recorded as onAcPower = false.")
     args = parser.parse_args()
+    # This graph runs part of its attention on the CPU, so a battery power limit slows it by
+    # a large factor: an unchanged C# control fell from 17.7-22 to 6.7 tok/s on battery.
+    atlas_history.check_conditions(needs=() if args.cpu_only else ("npu",), allow_battery=args.allow_battery)
 
     fmt = classify(args.model_dir)
     if not fmt.loadable_by_ort_genai:
@@ -166,7 +171,8 @@ def main() -> int:
             tokens=args.n_gen,
             prefill_tps=round(mean_prefill, 1),
             prompt_tokens=args.n_prompt,
-            extra={"repetitions": len(prefills), "harness": "bench_ort_genai.py"},
+            n=len(prefills),
+            harness="bench_ort_genai.py",
         )
         if stack:
             print(f"[history] recorded under stack {stack}")

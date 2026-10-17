@@ -42,6 +42,7 @@
 .EXAMPLE
     .\Scripts\Test-ComputeUnits.ps1 -Model qualcomm/Qwen3-4B:W4A16 -Repeat 3
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [string]$Model,
@@ -50,10 +51,15 @@ param(
     [ValidateSet('cpu', 'gpu', 'npu', 'hybrid')]
     [string[]]$Compute = @('cpu', 'gpu', 'npu'),
     [int]$Repeat = 1,
-    [string]$PowerMode = 'burst'
+    [string]$PowerMode = 'burst',
+    # Run on battery anyway
+    [switch]$AllowBattery
 )
 
 $ErrorActionPreference = 'Continue'
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+$needs = @($Compute | ForEach-Object { if ($_ -in 'npu', 'hybrid') { 'npu' } else { $_ } } | Select-Object -Unique)
+$null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
 
 if (-not (Get-Command geniex -ErrorAction SilentlyContinue)) {
     Write-Error 'geniex not found on PATH. See the README "GenieX / Install" section.'

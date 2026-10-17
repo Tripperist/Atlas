@@ -43,15 +43,21 @@
 .EXAMPLE
     .\Scripts\Test-ToolCalling.ps1 -Model qwen2.5-0.5b
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [string]$Model = 'qwen2.5-0.5b',
     [int]$Seconds = 25,
-    [int]$ControlMaxTokens = 40
+    [int]$ControlMaxTokens = 40,
+    # Run on battery anyway; the result is recorded as onAcPower = false
+    [switch]$AllowBattery
 )
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+# Placement is measured here, so the NPU must be free of anything but the Foundry daemon.
+$null = Assert-AtlasConditions -Needs 'npu' -AllowBattery:$AllowBattery -Expect 'foundry'
 
 if (-not (Get-Command foundry -ErrorAction SilentlyContinue)) {
     Write-Host 'foundry not found on PATH. See the README "Foundry Local" section.' -ForegroundColor Red

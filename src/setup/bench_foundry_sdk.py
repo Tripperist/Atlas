@@ -54,7 +54,12 @@ def main() -> int:
         "Without it a long-prompt record cannot be told from a short-prompt one.",
     )
     parser.add_argument("--no-record", action="store_true")
+    parser.add_argument("--allow-battery", action="store_true",
+                        help="Run on battery anyway; the result is recorded as onAcPower = false.")
     args = parser.parse_args()
+    # Refuse to measure on battery, or with a Foundry daemon holding the NPU. This runs the
+    # model in this process, and a daemon with the same model loaded contends for it.
+    atlas_history.check_conditions(needs=("npu",), allow_battery=args.allow_battery)
     if args.prompt_file:
         args.prompt = Path(args.prompt_file).read_text(encoding="utf-8")
         print(f"prompt   : {len(args.prompt):,} chars from {args.prompt_file}")
@@ -178,9 +183,9 @@ def main() -> int:
             first_token_s=round(mean_first, 3),
             tokens=int(statistics.mean(counts)),
             prompt_tokens=args.prompt_tokens,
+            n=len(rates),
+            harness="foundry local in-process sdk (Session API)",
             extra={
-                "runs": len(rates),
-                "harness": "foundry local in-process sdk (Session API)",
                 "sdkVersion": version,
                 "loadSeconds": round(load_s, 1),
             },

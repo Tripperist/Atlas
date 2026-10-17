@@ -47,6 +47,7 @@
 .EXAMPLE
     .\Scripts\Invoke-Benchmark.ps1 -Compute cpu,npu -MaxTokens 256 -Repeat 5
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [string]$Model,
@@ -57,11 +58,18 @@ param(
     [int]$Repeat = 3,
     [string]$PowerMode = 'burst',
     [string]$CsvPath,
-    [switch]$NoUtilization
+    [switch]$NoUtilization,
+    # Run on battery anyway; the result is recorded as onAcPower = false
+    [switch]$AllowBattery
 )
 
 $ErrorActionPreference = 'Continue'
 $root = Split-Path $PSScriptRoot -Parent
+Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+# Refuse to measure on battery, or with something else holding the NPU.
+$needs = @($Compute | ForEach-Object { if ($_ -in 'npu', 'hybrid') { 'npu' } else { $_ } } | Select-Object -Unique)
+$null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
 
 if (-not (Get-Command geniex -ErrorAction SilentlyContinue)) {
     Write-Error 'geniex not found on PATH. See the README "GenieX / Install" section.'
@@ -334,7 +342,8 @@ Write-Host "Results written to $CsvPath" -ForegroundColor Green
 # silently compared across different drivers or runtimes.
 # View with: .\Scripts\Update-Workspace.ps1 -History
 try {
-    Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force -ErrorAction Stop
+    # AtlasBaseline was imported at the top. Importing it again with -Force here would
+    # discard the conditions the run was checked under.
     $state = Get-AtlasState
     foreach ($g in ($rows | Group-Object Compute)) {
         $avg = { param($f) ($g.Group | Measure-Object $f -Average).Average }
@@ -344,7 +353,7 @@ try {
             -FirstTokenS ([math]::Round((& $avg 'FirstTokS'), 2)) `
             -Tokens      ([int](& $avg 'Tokens')) `
             -CsvPath     $CsvPath `
-            -Extra       @{ runs = $g.Count; maxTokens = $MaxTokens; powerMode = $PowerMode; sampled = (-not $NoUtilization) } |
+            -N $g.Count -Harness 'geniex infer' -Extra @{ maxTokens = $MaxTokens; powerMode = $PowerMode; sampled = (-not $NoUtilization) } |
             Out-Null
     }
     Write-Host ("Recorded in benchmark history under stack {0}" -f (Get-AtlasShortId $state.id)) -ForegroundColor Green

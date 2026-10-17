@@ -89,5 +89,26 @@ foreach ($b in $verdict.Blockers) { '          refusing: ' + $b }
 foreach ($w in $verdict.Warnings) { '          warning: ' + $w }
 
 Write-Host ''
+Write-Host 'Assert-AtlasConditions, with the battery test hook (deterministic whether or not you are plugged in)' -ForegroundColor Cyan
+$env:ATLAS_TEST_ON_BATTERY = '1'
+try {
+    $threw = $false
+    try { $null = Assert-AtlasConditions -Needs @() 6>$null } catch { $threw = $true }
+    if (-not $threw) { $fail++ }
+    '  {0}  refuses on battery by throwing' -f $(if ($threw) { 'ok  ' } else { 'FAIL' })
+
+    $c = Assert-AtlasConditions -Needs @() -AllowBattery 6>$null
+    $ok = ($c.onAcPower -eq $false) -and ($c.overrides -contains 'allowBattery')
+    if (-not $ok) { $fail++ }
+    '  {0}  -AllowBattery returns the conditions and marks the override' -f $(if ($ok) { 'ok  ' } else { 'FAIL' })
+
+    $c = Assert-AtlasConditions -Needs @() -WarnOnly 6>$null
+    $ok = ($c.overrides -contains 'warnOnly')
+    if (-not $ok) { $fail++ }
+    '  {0}  -WarnOnly reports but never refuses, and marks it' -f $(if ($ok) { 'ok  ' } else { 'FAIL' })
+}
+finally { Remove-Item Env:ATLAS_TEST_ON_BATTERY -ErrorAction SilentlyContinue }
+
+Write-Host ''
 if ($fail) { Write-Host "$fail FAILED" -ForegroundColor Red } else { Write-Host "all checks passed" -ForegroundColor Green }
 exit $fail

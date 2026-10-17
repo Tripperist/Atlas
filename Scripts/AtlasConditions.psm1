@@ -73,6 +73,9 @@ function Get-AtlasConditions {
                 elseif ($status -in 2, 3, 6, 7, 8, 9, 11) { $true }
                 else { $null }
     }
+    # Test hook: report battery on any machine, so the refusal can be tested on AC. It can
+    # only make the guard stricter.
+    if ($env:ATLAS_TEST_ON_BATTERY) { $onAc = $false; $percent = 50; $status = 1 }
     $scheme = ((powercfg /getactivescheme 2>$null) -join ' ') -replace '^.*\((.*)\)\s*$', '$1'
 
     # ---- CPU use and background consumers, over one window
@@ -215,7 +218,10 @@ function Assert-AtlasConditions {
         [string[]]$Needs = @(),
         [switch]$AllowBattery,
         [string[]]$Expect = @(),
-        [ValidateRange(1, 30)][int]$Seconds = 3
+        [ValidateRange(1, 30)][int]$Seconds = 3,
+        # Report and record, but never refuse. For the smoke check Update-Workspace runs
+        # after an update: refusing there would block the update itself.
+        [switch]$WarnOnly
     )
 
     $c = Get-AtlasConditions -Seconds $Seconds
@@ -223,8 +229,14 @@ function Assert-AtlasConditions {
     Write-Host ("conditions: " + (Get-AtlasConditionsSummary -Conditions $c)) -ForegroundColor DarkGray
     foreach ($w in $r.Warnings) { Write-Host "  warning: $w" -ForegroundColor Yellow }
     if (-not $r.Ok) {
-        foreach ($b in $r.Blockers) { Write-Host "  refusing: $b" -ForegroundColor Red }
-        throw 'The conditions for a valid benchmark are not met (see above).'
+        if ($WarnOnly) {
+            foreach ($b in $r.Blockers) { Write-Host "  warning (not refusing, smoke check): $b" -ForegroundColor Yellow }
+            $c.overrides = @('warnOnly')
+        }
+        else {
+            foreach ($b in $r.Blockers) { Write-Host "  refusing: $b" -ForegroundColor Red }
+            throw 'The conditions for a valid benchmark are not met (see above).'
+        }
     }
     if ($AllowBattery -and $c.onAcPower -eq $false) { $c.overrides = @('allowBattery') }
     # Stamp the records this run writes. Late-bound: the history module owns the cache.

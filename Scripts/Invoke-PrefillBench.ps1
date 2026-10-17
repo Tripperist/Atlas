@@ -56,6 +56,7 @@
 .EXAMPLE
     .\Scripts\Invoke-PrefillBench.ps1 -Model 'unsloth/Qwen3-4B-GGUF:Q4_0' -Device npu
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [string]$Model = 'unsloth/Qwen3-4B-GGUF:Q4_0',
@@ -68,11 +69,17 @@ param(
     [int]$GenTokens = 128,
     [int]$Repeat = 3,
     [int]$CtxSize = 0,
-    [switch]$NoRecord
+    [switch]$NoRecord,
+    # Run on battery anyway; the result is recorded as onAcPower = false
+    [switch]$AllowBattery
 )
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+# Refuse to measure on battery, or with something else holding the NPU.
+$needs = if ($Matrix -or $Plugin -eq 'qairt') { @('npu') } else { @($Device) }
+$null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery
 
 # The prefill matrix from docs/BENCHMARKS.md: GenieX's two plugins on Qwen3-4B, plus
 # Phi-4-mini-reasoning, which is the one model that also exists as an ORT
@@ -236,7 +243,8 @@ if (-not $NoRecord) {
             -Model $r.Model -Compute "$($r.Plugin)/$($r.Device)" `
             -TokPerSec $r.DecodeTps -FirstTokenS ([math]::Round($r.TtftMs / 1000, 3)) `
             -Tokens $r.GenTokens -PrefillTps $r.PrefillTps -PromptTokens $PromptTokens `
-            -Extra (@{ repetitions = $Repeat; harness = 'geniex-bench'; ctxSize = $CtxSize; statistic = 'median' } +
+            -N $Repeat -Harness 'geniex-bench' -HarnessVersion $state.geniex.version -CtxSize $CtxSize `
+            -Extra (@{ statistic = 'median' } +
                     $(if ($r.Spread) { $r.Spread } else { @{} })) | Out-Null
     }
     Write-Host ("Recorded {0} measurement(s) under stack {1}" -f $good.Count, (Get-AtlasShortId $state.id)) -ForegroundColor Green

@@ -38,17 +38,25 @@
 .EXAMPLE
     .\Scripts\Invoke-FoundryBench.ps1 -Model qwen2.5-1.5b -Repeat 5
 #>
+#requires -Version 7
 [CmdletBinding()]
 param(
     [string]$Model = 'phi-3.5-mini',
     [string]$Prompt = 'Plan a detailed day in Lisbon, with specific neighbourhoods, food and timings.',
     [int]$MaxTokens = 400,
     [int]$Repeat = 3,
-    [switch]$NoRecord
+    [switch]$NoRecord,
+    # Run on battery anyway; the result is recorded as onAcPower = false
+    [switch]$AllowBattery
 )
 
 $ErrorActionPreference = 'Continue'
 Import-Module (Join-Path $PSScriptRoot 'AtlasBaseline.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'AtlasConditions.psm1') -Force
+# Refuse to measure on battery, or with something else holding the NPU. The Foundry
+# daemon is the thing under test here, so it is expected and not flagged.
+$needs = if ($Model -match 'generic-(gpu|cpu)') { @() } else { @('npu') }
+$null = Assert-AtlasConditions -Needs $needs -AllowBattery:$AllowBattery -Expect 'foundry'
 
 if (-not (Get-Command foundry -ErrorAction SilentlyContinue)) {
     Write-Host 'foundry not found on PATH. See the README "Foundry Local" section.' -ForegroundColor Red
@@ -225,7 +233,7 @@ if (-not $NoRecord) {
         -Model $Model -Compute "foundry/$unit" `
         -TokPerSec ([math]::Round($meanTps, 1)) `
         -Tokens ([int](($rows | Measure-Object Tokens -Average).Average)) `
-        -Extra @{ runs = $rows.Count; npuPeak = $maxNpu; cpuMean = [math]::Round($meanCpu, 1)
+        -N $rows.Count -Extra @{ npuPeak = $maxNpu; cpuMean = [math]::Round($meanCpu, 1)
                   harness = 'foundry openai endpoint'; throughputSampled = $false; temperature = 0
                   sampledTokPerSec = [math]::Round(($rows | Measure-Object Sampled -Average).Average, 1) } | Out-Null
     Write-Host ("Recorded under stack {0}; see -History" -f (Get-AtlasShortId $state.id)) -ForegroundColor Green
