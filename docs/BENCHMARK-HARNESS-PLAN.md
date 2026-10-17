@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: proposal. Nothing here is implemented.** Written 2026-10-17 after a session
+**Status: phase 1 is implemented (2026-10-17); the rest is a proposal.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -39,7 +39,7 @@ records the conditions it ran under.
 | The published figure for a cell | **The latest valid AC run**, with a small pin list that overrides it when an older run is the right one |
 | Existing records | **Backfill** the valid ones into the new format, flagged `schemaVersion: "1-migrated"`, with fields that were never recorded left null |
 
-## Phase 1: conditions check
+## Phase 1: conditions check (done)
 
 A PowerShell module, `Scripts/AtlasConditions.psm1`, used by every harness. Python
 harnesses reach it through `atlas_history.py`, the way they already reach the stack
@@ -67,6 +67,30 @@ with an explicit `valid: false` and a reason.
 
 **Done when:** running on battery refuses; `-AllowBattery` runs and records `false`; on
 AC it passes; with a `geniex serve` running, an NPU run refuses.
+
+**What shipped, and where it differs from the plan.**
+
+- `Scripts/AtlasConditions.psm1` and the history format fields, as planned. Checked live
+  against a Foundry daemon with a model loaded on the NPU and a running `geniex serve`.
+- `#requires -Version 7` is on the harness scripts, `Update-Workspace.ps1` and the tests,
+  **not** on the four bootstrap scripts: `Install-Prerequisites.ps1` does not install
+  PowerShell 7, so they must run on a stock machine.
+- `Update-Workspace.ps1` records its conditions and never refuses (`-WarnOnly`), because
+  refusing would block the update its smoke check is verifying.
+- `bench_foundry_sdk.py` does not expect the Foundry daemon: it needs the NPU for itself, so
+  a daemon holding a model there blocks it. (A daemon holding the same model during the one
+  464 s in-process load is a candidate cause; that is not established.) `Invoke-FoundryBench.ps1`
+  talks to the daemon and does expect it.
+- Two test-only hooks were added: `ATLAS_HISTORY_PATH` redirects the history, and
+  `ATLAS_TEST_ON_BATTERY` makes the check report battery, so the refusal can be tested
+  plugged in.
+- Six existing records are marked `valid: false` by `Mark-AtlasInvalidRecords.ps1`, which is
+  committed and idempotent.
+- Tests: `Test-AtlasConditions.ps1` (the policy over 14 synthetic cases, a live capture, and the
+  battery hook), `Test-AtlasHistory.ps1` (PowerShell and Python) and `Test-BenchmarkGuards.ps1` (all seven harnesses refuse on battery in about 5 s,
+  and four tiny real runs record the override).
+- Not yet exercised on AC power: the pass path is covered by synthetic cases, and the
+  battery hook, but no harness has been run for real while plugged in under this check.
 
 ## Phase 2: committed harnesses
 

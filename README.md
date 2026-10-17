@@ -1557,6 +1557,63 @@ The baseline lives in `.atlas-local/baseline.json`, git-ignored because driver
 versions are per-machine. Record a new one with `-Accept` **after** verification
 passes — an accepted baseline is a claim that this combination worked.
 
+### Benchmark conditions
+
+A benchmark figure depends on more than the software stack. Every benchmark script
+checks its conditions **before loading anything** and records them with the result:
+AC or battery, the Windows power scheme, how busy the CPU is, any process that could
+hold the NPU (`geniex`, `llama-*`, `atlas-chat`), the models a Foundry daemon has
+loaded, and background processes using more than about 0.3 core.
+
+| Condition | What happens |
+| --- | --- |
+| On battery | **Refused.** Pass `-AllowBattery` (`--allow-battery` for the Python scripts) to run anyway; the result is recorded `onAcPower: false` and kept out of published figures |
+| A run that needs the NPU, and another process may hold it | **Refused**, naming the process and, for Foundry, the `foundry model unload` command |
+| A busy CPU, a background consumer, a competing process off the NPU | A warning |
+
+The reason is a measured one: an ONNX Runtime GenAI benchmark run on battery looked
+like a 3× regression from a package upgrade, and an unchanged control on the older
+package fell the same way. `Update-Workspace.ps1` runs its smoke check **warn-only**
+and marks it `kind: smoke`, because refusing there would block the update it is
+there to verify.
+
+Foundry is checked without starting it: `foundry cache ls` starts the daemon as a
+side effect, so the loaded models are asked for only when the daemon is already
+running, and a stopped daemon holds none.
+
+```powershell
+.\Scripts\Test-AtlasConditions.ps1                  # the policy, then the conditions right now
+.\Scripts\Test-AtlasHistory.ps1                     # the history format, against a temporary file
+.\Scripts\Test-BenchmarkGuards.ps1                  # every harness refuses on battery
+.\Scripts\Test-BenchmarkGuards.ps1 -IncludeRuns     # and records the override on tiny real runs
+```
+
+The harness scripts require **PowerShell 7** (`pwsh`, not `powershell`) and say so
+when launched from Windows PowerShell 5.1. The four bootstrap scripts
+(`Get-SystemInfo`, `Initialize-Workspace`, `Install-Prerequisites`, `Test-Environment`)
+still run on a stock machine. With `pwsh -File`, an array parameter such as
+`-Compute cpu,gpu` does not bind; use `pwsh -Command "& .\Scripts\...ps1 -Compute cpu,gpu"`.
+
+### The benchmark history
+
+Results are appended to `.atlas-local/benchmarks/history.jsonl`, stamped with the
+stack they ran under, and now also with the conditions above, the Atlas revision
+(`codeRev`, with `+dirty` when `Scripts`, `src` or `evals` differ from it), a unique
+`id`, and a `kind` (`benchmark`, `control` or `smoke`). Records written before this
+(`schemaVersion` 2 introduced the fields) still read: the reader fills what they lack.
+
+```powershell
+Import-Module .\Scripts\AtlasBaseline.psm1
+Get-AtlasBenchmarkHistory -Valid            # without invalid records and those measured on battery
+Get-AtlasBenchmarkHistory -Kind control     # the stock-engine runs
+.\Scripts\Mark-AtlasInvalidRecords.ps1 -DryRun   # flag records whose note says they were not comparable
+```
+
+See [BENCHMARKS](docs/BENCHMARKS.md#benchmark-history) for the format. The plan for what
+comes next (committed harnesses for the runs that were ad hoc, a suite runner, and a
+page generated from the data) is in
+[docs/BENCHMARK-HARNESS-PLAN.md](docs/BENCHMARK-HARNESS-PLAN.md).
+
 ---
 
 ## 12. Troubleshooting

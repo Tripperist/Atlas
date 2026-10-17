@@ -1108,19 +1108,40 @@ survives a JSON round-trip and adding a descriptive field later does not
 invalidate existing history. Each record embeds its full state snapshot, so the
 history stays readable after the baseline is replaced.
 
-The format is JSON Lines and append-only: records are never rewritten, so the
-file concatenates and diffs cleanly, and a crashed run costs at most its own
-line.
+The format is JSON Lines and the harnesses only ever append to it, so the file
+concatenates and diffs cleanly and a crashed run costs at most its own line. The one
+exception is
+[`Mark-AtlasInvalidRecords.ps1`](../Scripts/Mark-AtlasInvalidRecords.ps1), which sets
+`valid: false` on records known not to be comparable. It rewrites only the lines it
+changes and writes a backup first.
 
 **Prefill is stored as its own field** rather than folded into throughput,
 because short-prompt decode rates understate the NPU's prefill advantage by a
 wide margin. Records predating the field show `-`.
 
-All five harnesses write to the same history —
+Six harnesses write to the same history —
 [`Invoke-Benchmark.ps1`](../Scripts/Invoke-Benchmark.ps1),
 [`Invoke-PrefillBench.ps1`](../Scripts/Invoke-PrefillBench.ps1),
 [`Invoke-FoundryBench.ps1`](../Scripts/Invoke-FoundryBench.ps1),
-[`Update-Workspace.ps1`](../Scripts/Update-Workspace.ps1) and
-[`bench_ort_genai.py`](../src/setup/bench_ort_genai.py). The Python harness
-shells out to [`AtlasBaseline.psm1`](../Scripts/AtlasBaseline.psm1) rather than
-reimplementing the hash, so both sides derive the same id for the same machine.
+[`Update-Workspace.ps1`](../Scripts/Update-Workspace.ps1),
+[`bench_foundry_sdk.py`](../src/setup/bench_foundry_sdk.py) and
+[`bench_ort_genai.py`](../src/setup/bench_ort_genai.py). The Python harnesses
+shell out to [`AtlasBaseline.psm1`](../Scripts/AtlasBaseline.psm1) and
+[`AtlasConditions.psm1`](../Scripts/AtlasConditions.psm1) rather than
+reimplementing the hash or the policy, so both sides derive the same id for the same
+machine and apply the same rules.
+
+**What a record carries (format 2).** Beside the stack and the figures: a stable
+`id`; `kind` (`benchmark`, `control` or `smoke`; smoke records are the check
+`Update-Workspace.ps1` runs, and are never published); `conditions` and `onAcPower`
+(see the [README](../README.md#benchmark-conditions)); `codeRev`, the Atlas revision
+with `+dirty` when `Scripts`, `src` or `evals` differ from it; and, only where they
+apply, `n`, `stdev`, `reps`, `order`, `promptKind`, `ctxSize`, `seed`, `harness`,
+`harnessVersion` and `modelArtifact`. Records written before format 2 lack the new
+fields and read as unknown: **their conditions were never recorded**, and the
+figures above that assumed AC power did so without a check.
+
+**Validity.** `valid: false` with a `validReason` marks a record that is not
+comparable (a run that was contended, in a half-speed state, or measured on battery).
+Six existing records are marked, and `Get-AtlasBenchmarkHistory -Valid` leaves them
+out along with anything measured on battery.
