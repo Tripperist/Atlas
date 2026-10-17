@@ -1,6 +1,6 @@
 # Benchmark harness plan
 
-**Status: phases 1 to 4 are implemented (2026-10-17), but no figure has been measured on AC power for the record; phase 5 is a proposal.** Written 2026-10-17 after a session
+**Status: phases 1 to 4 are implemented and the first AC measurements were taken on 2026-10-17 (see BENCHMARKS.md); phase 5 is a proposal.** Written 2026-10-17 after a session
 in which several published numbers turned out to depend on conditions nobody had
 checked. When a phase ships, its entry moves to [BENCHMARKS.md](BENCHMARKS.md) and the
 README, and this file records what was decided.
@@ -247,6 +247,15 @@ quoted in BENCHMARKS.md, which is where stale or wrong published numbers would s
     Not tested: a canary on AC power building its own reference, or a genuine abort.
   - The canary needs the pinned build unpacked, which needs `Invoke-BenchControl.ps1
     -Download` (not run). Without it the canary is unavailable.
+  - **Update 2026-10-17, first AC data.** The pinned build was downloaded and the suites run on AC power
+    (`stack-compare`, the `genie-30b` step of `longctx`, `ort`). The canary now has a reference (six healthy
+    runs). Twelve readings gave spreads of GPU decode 4 %, CPU prefill 19 %, GPU prefill 29 % and CPU decode
+    37 %, so CPU decode became information only and the rest gate; 85 % and 60 % stay provisional, with
+    little margin on prefill. The measured suite times were far below the guessed ones (`stack-compare` 10
+    minutes against 38), and the manifests were updated. The AC results contradicted several published
+    figures, the largest being the 30B's GPU decode on GenieX v0.9.0 (31.6 tok/s, not 17.4): see
+    BENCHMARKS.md, 'First measurements on AC power'. Still to do: `runtimes` and the Foundry steps of
+    `longctx` at full size, and v0.8.0 on AC for a like-for-like version comparison.
 
 ## Not in scope
 

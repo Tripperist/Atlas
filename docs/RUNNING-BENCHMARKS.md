@@ -26,17 +26,20 @@ in PowerShell 7.
 
 > **Status of the tooling (2026-10-17): what has actually been run.**
 >
-> - **Run for real on AC power:** the `ort` suite (about 9 minutes against an estimate of 12); the C#
->   `OrtBench` against `onnxruntime-qnn` 2.6.0 and 2.7.0; the `smoke` suite; `Test-BenchGuards` with real
->   runs.
-> - **Run only as tiny checks, or on battery:** each measuring script, on small models.
-> - **Never run at full size:** the `stack-compare`, `runtimes` and `longctx` suites, the prefill matrix, and
->   the Foundry context benchmark on the 7B model through this tooling. Their time estimates are guesses.
-> - **Never run:** `Invoke-BenchControl.ps1 -Download` (so the canary has had no pinned build to run);
->   `Invoke-BenchPlacement` and `Invoke-BenchToolCalling` since they were renamed.
-> - **The canary has no reference yet**, so it records and gates nothing, and its 85 % and 60 % lines are
->   provisional.
-> - **No published table has been reproduced with these scripts.**
+> - **Run for real on AC power:** the `stack-compare` suite (about 10 minutes, against a guessed 38), the
+>   `genie-30b` step of `longctx` (7 minutes), the `ort` suite (4 minutes when the machine is healthy, 9 when it
+>   was not), the C# `OrtBench` against `onnxruntime-qnn` 2.6.0 and 2.7.0, the canary six times, and the
+>   `smoke` suite. The results are in
+>   [BENCHMARKS.md](BENCHMARKS.md#first-measurements-on-ac-power-2026-10-17).
+> - **Run only as tiny checks, or on battery:** the Foundry scripts, `Invoke-BenchPlacement` and
+>   `Invoke-BenchToolCalling` (the last two not since they were renamed).
+> - **Never run at full size:** the `runtimes` suite, the `longctx` Foundry steps (7B over HTTP and in process).
+>   Their time estimates are guesses.
+> - **The canary now has a reference** (six healthy AC runs). CPU decode is information only because it moved
+>   about 37 % between healthy runs; the 85 % and 60 % lines are still provisional and have little margin on
+>   the prefill figures.
+> - **No published table from before 2026-10-17 has been reproduced as it stood.** The re-measurements on AC
+>   differ from several of them, in places by a lot (the 30B's GPU decode on GenieX v0.9.0).
 
 ## 1. What the benchmarks show
 
@@ -100,7 +103,7 @@ Three words are used throughout:
 .\Scripts\Invoke-BenchSuite.ps1 -Suite smoke                 # about 2 minutes: do the harnesses run?
 .\Scripts\Invoke-BenchControl.ps1 -Download                  # once: the pinned llama.cpp
 .\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare -DryRun # what the real run will do
-.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare         # about 40 minutes; the canary runs first
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare         # about 10 minutes; the canary runs first
 .\Scripts\Compare-BenchStacks.ps1 -List                      # the stacks that now have results
 ```
 
@@ -122,15 +125,15 @@ script's own documentation.
 | Script | Answers | Typical time | Writes to the history |
 | --- | --- | --- | --- |
 | [`Invoke-BenchDecode`](#invoke-benchdecode) | How fast does a model write, per compute unit? | minutes | yes |
-| [`Invoke-BenchPrefill`](#invoke-benchprefill) | How fast does GenieX read a prompt, and does it slow with length? | 1 to 25 min | yes |
+| [`Invoke-BenchPrefill`](#invoke-benchprefill) | How fast does GenieX read a prompt, and does it slow with length? | 3 min (the matrix) to 7 min (the 30B, three lengths) | yes |
 | [`Invoke-BenchFoundry`](#invoke-benchfoundry) | Foundry Local speed, and is it on the NPU? | minutes | yes |
 | [`Invoke-BenchFoundryContext`](#invoke-benchfoundrycontext) | Foundry speed against prompt length, over HTTP or in process | 5 to 20 min | yes |
-| [`Invoke-BenchOrtGenAi`](#invoke-benchortgenai) | ONNX Runtime GenAI from Python and C# | about 10 min | yes |
-| [`Invoke-BenchControl`](#invoke-benchcontrol) | What does unmodified llama.cpp give on this machine? | about 10 min | yes (kind `control`) |
-| [`Invoke-BenchCanary`](#invoke-benchcanary) | Is the machine in its normal state? | about 30 s | yes (kind `canary`) |
+| [`Invoke-BenchOrtGenAi`](#invoke-benchortgenai) | ONNX Runtime GenAI from Python and C# | about 4 min | yes |
+| [`Invoke-BenchControl`](#invoke-benchcontrol) | What does unmodified llama.cpp give on this machine? | about 2 min (the 30B) | yes (kind `control`) |
+| [`Invoke-BenchCanary`](#invoke-benchcanary) | Is the machine in its normal state? | about a minute | yes (kind `canary`) |
 | [`Invoke-BenchPlacement`](#invoke-benchplacement) | Does the compute-unit flag change where the work runs? | minutes | no |
 | [`Invoke-BenchToolCalling`](#invoke-benchtoolcalling) | Does a Foundry model call tools, and stay on the NPU doing so? | a couple of minutes | no |
-| [`Invoke-BenchSuite`](#5-suites-running-several-at-once) | Run a named set of the above | 2 to 60 min | via its steps |
+| [`Invoke-BenchSuite`](#5-suites-running-several-at-once) | Run a named set of the above | 2 to about 40 min | via its steps |
 | [`Compare-BenchStacks`](#8-comparing-two-stacks) | What moved between two stacks? | seconds | reads it |
 | [`Mark-BenchInvalid`](#mark-benchinvalid) | Flag records known not to be comparable | seconds | edits it |
 | [`New-BenchPrompt`](#new-benchprompt) | Build a long prompt of a known size | seconds | no |
@@ -282,8 +285,12 @@ the median of the last five healthy AC canary runs:
 | `no-reference` | fewer than three earlier AC runs: recorded, nothing gated | 0 |
 | (unavailable) | the pinned build is not unpacked | 4 |
 
-**The 85 % and 60 % lines are provisional**: they were chosen before there was any AC data to set
-them from. Until three healthy AC canary runs exist the verdict is `no-reference`, so for now it
+**CPU decode is shown but does not count.** It moved about 37 % between healthy runs (127 to 187 tok/s on the
+0.6B model), where GPU decode moved 4 %, so GPU prefill, GPU decode and CPU prefill decide the verdict.
+
+**The 85 % and 60 % lines are provisional.** They were chosen before there was any AC data, and the first
+12 AC readings show little margin on the prefill figures (their lowest readings were about 90 % of their
+means). A reference exists from three healthy AC runs; until then the verdict is `no-reference`, which
 records and gates nothing. [`Invoke-BenchSuite`](#5-suites-running-several-at-once) runs it before
 and after its steps.
 
@@ -343,10 +350,10 @@ Committing it means "the stack-compare numbers" is a command, not a recollection
 | Suite | For | About |
 | --- | --- | --- |
 | `smoke` | Proving the harnesses run end to end on small models | 2 min |
-| `stack-compare` | After a stack change: the prefill matrix, short-prompt decode, the llama.cpp control, ONNX Runtime GenAI | 40 min |
-| `runtimes` | GenieX, Foundry and ONNX Runtime GenAI side by side at 512 tokens | 25 min |
-| `longctx` | Prefill and decode from 512 to 6,784 tokens: GenieX 30B, Foundry 7B | 60 min |
-| `ort` | ONNX Runtime GenAI from Python and C#, after an `onnxruntime` package change | 12 min |
+| `stack-compare` | After a stack change: the prefill matrix, short-prompt decode, the llama.cpp control, ONNX Runtime GenAI | about 10 min (measured) |
+| `runtimes` | GenieX, Foundry and ONNX Runtime GenAI side by side at 512 tokens | about 13 min (the Foundry step is a guess) |
+| `longctx` | Prefill and decode from 512 to 6,784 tokens: GenieX 30B, Foundry 7B | about 40 min (the 30B step took 7; the Foundry steps are guesses) |
+| `ort` | ONNX Runtime GenAI from Python and C#, after an `onnxruntime` package change | about 4 min (measured) |
 
 ```powershell
 .\Scripts\Invoke-BenchSuite.ps1 -List

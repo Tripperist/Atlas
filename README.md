@@ -1500,11 +1500,14 @@ On long prompts the 30B's NPU prefill holds up better than the GPU's (337 agains
 falls to 9 tok/s, below the GPU's 15; see
 [BENCHMARKS](docs/BENCHMARKS.md#long-prompts).
 
-Those are GenieX v0.8.0 figures. On v0.9.0 the 30B's NPU decode is 14 to 42 % higher
-and its first token no longer pays a 14 s mapping cost (though a cold process now takes
-about three times as long to start), while its GPU decode at short prompts fell from
-about 28 to about 17 tok/s; see
-[BENCHMARKS](docs/BENCHMARKS.md#geniex-v090-against-v080).
+Those are GenieX v0.8.0 figures, measured before the power state was recorded. On v0.9.0
+the 30B's NPU decode is higher and its first token no longer pays a 14 s mapping cost (though
+a cold process now takes about three times as long to start); see
+[BENCHMARKS](docs/BENCHMARKS.md#geniex-v090-against-v080). **The first measurements on AC
+power (2026-10-17) are higher still** (the 30B's NPU decodes 27.6 tok/s and its GPU 31.6 at a
+512-token prompt), and a v0.9.0 GPU decode fall that had been reported did not reproduce; see
+[First measurements on AC power](docs/BENCHMARKS.md#first-measurements-on-ac-power-2026-10-17).
+Treat decode figures from before then as lower bounds.
 
 Foundry's `qwen2.5-coder-7b` (7.1 GB) also runs on the NPU: about 16 tok/s on
 either route at a short prompt, with prefill falling from about 520 to about
@@ -1516,7 +1519,7 @@ tokens; see
 
 ```powershell
 .\Scripts\Invoke-BenchSuite.ps1 -Suite smoke            # 2 minutes: do the benchmarks run on this machine?
-.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare    # what to run after a stack change (about 40 minutes)
+.\Scripts\Invoke-BenchSuite.ps1 -Suite stack-compare    # what to run after a stack change (about 10 minutes)
 .\Scripts\Compare-BenchStacks.ps1                       # what moved since the previous stack
 .\Scripts\Update-Workspace.ps1 -History                 # past runs, grouped by stack
 ```
@@ -1608,7 +1611,6 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 
 | Item | Status |
 | --- | --- |
-| **Python ORT GenAI on `onnxruntime-qnn` 2.7.0 is about 20 % slower than C#** | 13.7 tok/s decode and 324 prefill from `bench_ort_genai.py`, against 17.6 and 430 from the C# `OrtBench` on the same 2.7.0 version (and 16.9 / 388 on 2.6.0). Measured on AC power, but with the CPU 16.8 % busy before the Python run. The C# comparison shows no 2.7.0 regression, so the package version is not the explanation by itself. **Next step:** Python on `onnxruntime-qnn` 2.6.0, and Python again with an idle CPU. See [BENCHMARKS](docs/BENCHMARKS.md#onnxruntime-qnn-270-against-260) |
 | **Foundry `max_tokens` fails in `GroupQueryAttention`** | Reproducible on `qwen2.5-0.5b-instruct-qnn-npu`: a `max_tokens` small relative to the prompt returns a hard 500. A 64-token prompt needs `>= 32`, a 256-token prompt `>= 64`. **Next step:** reproduce against ONNX Runtime GenAI directly, which decides whether this is a Foundry bug or an upstream one and therefore where to report it |
 | `--spec-type draft-simple` | Fails with `SDKError(Text generation failed)` using Qwen3-0.6B as draft for Qwen3-4B. Tokenizer or config mismatch unknown |
 | `ort.ModelCompiler` | Fails with `Conv with domain com.ms.internal.nhwc` on both ORT 1.27.0 and 1.30.0, where the `ep.context_*` session options succeed. Possibly an ORT bug |
@@ -1632,7 +1634,6 @@ Things measured but unresolved, or not yet measured. Resolved items move to the
 | **GenieX CPU prefill is erratic** | 40, 110 and 61 tok/s across three rounds on the 30B. Not yet known whether this is GenieX's CPU path or the machine |
 | **Foundry throughput is not stable between sessions** | Figures from before 2026-10-16 came from a harness whose own sampler lowered them by about 9 % at 7B and about 40 % at 0.5B, and some runs sat in an unexplained half-speed state (the 7B at 7.1 tok/s where it later gave 14.1). `phi-3.5-mini` moved the other way, 27.7 to 19.7. The harness is fixed; the half-speed state and the `phi-3.5-mini` drop are not explained. **Next step:** repeat a fixed Foundry workload across several sessions to see how often the state appears |
 | **`Invoke-BenchDecode.ps1` samples counters while timing** | The same flaw as the Foundry harness. Unsampled, Qwen3-4B gave 31.3 / 28.3 / 27.6 against 30.4 / 24.6 / 21.9 sampled, and the unsampled CPU varied 33 % in one run. Records now carry `sampled`; older ones should be assumed sampled. **Next step:** repeat unsampled before quoting any CPU or GPU figure from `geniex infer` |
-| **GenieX v0.9.0 GPU decode on the 30B MoE fell about 40 %** | 28.9 to 17.4 tok/s at a 512-token prompt, below stock llama.cpp b10566 on the same file (21), where v0.8.0 was above it. Qwen3-4B and Phi-4-mini on the GPU did not move, and at 6,784 tokens the 30B is unchanged. A control run showed the machine in its normal state. The llama.cpp bump to `e467e5b` is the obvious suspect; not isolated or reported. **Next step:** another MoE model on the GPU, and `geniex` with the old engine if one can be built |
 | NPU headroom | Utilization clamps at 100 % in tooling while raw readings reach 238 %. A hosted profile gives per-layer placement but not saturation. Unmeasured for LLMs |
 
 ### Untested paths

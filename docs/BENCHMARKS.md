@@ -32,6 +32,7 @@ and is compared in [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
 - [Prefill vs decode](#prefill-vs-decode)
 - [A 30B mixture-of-experts model](#a-30b-mixture-of-experts-model)
 - [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080)
+- [First measurements on AC power (2026-10-17)](#first-measurements-on-ac-power-2026-10-17)
 - [Foundry Local](#foundry-local)
 - [What the numbers mean](#what-the-numbers-mean)
 - [Qualcomm's published figures](#qualcomms-published-figures)
@@ -294,7 +295,8 @@ provider DLL that loaded. Six single-round runs, interleaved 2.6.0, 2.7.0, 2.7.0
 spread inside a run of up to 10 %. Both match the figures in the table above (17.5 decode, 436.9
 prefill), so those figures were not disturbed by the package change.
 
-**The Python side is slower than C#, and not explained.** `bench_ort_genai.py` on the
+**The Python side was slower than C#, and not explained. It did not reproduce: see
+[the AC re-run](#first-measurements-on-ac-power-2026-10-17), where Python and C# agree.** `bench_ort_genai.py` on the
 virtual environment's `onnxruntime-qnn` 2.7.0, three rounds immediately afterwards: decode
 13.9, 14.2 and 12.8 tok/s (mean 13.7), prefill 292, 332 and 348 (mean 324). That is about 20 % below C# on the
 same package version, and below the 17.5 / 436.9 measured earlier from Python on 2.6.0. It is
@@ -383,7 +385,9 @@ A second turn costs both of them, as context grows: GenieX 31.7 to 29.4
 
 > Measured on GenieX v0.8.0 (stack `44a1e6e37bc4`). GenieX v0.9.0 changed several of
 > these results, notably the NPU cold start and the GPU decode rate; see
-> [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
+> [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080). The GPU decode fall did not
+> reproduce when re-measured on AC power:
+> [First measurements on AC power](#first-measurements-on-ac-power-2026-10-17).
 
 `Qwen3-Coder-30B-A3B-Instruct`, Q4_0 GGUF from unsloth: architecture
 `qwen3moe`, 30.5 B parameters (per `llama-bench`; published as about 3.3 B
@@ -491,6 +495,10 @@ tried, and 64 generated tokens is a short decode.
 
 ### Stock llama.cpp on the same file
 
+> **The GenieX-against-stock gaps below were re-measured on AC power on 2026-10-17** and have changed: stock GPU
+> decode is 27.3 tok/s (not 22 to 26) and GenieX's GPU now beats it. See
+> [First measurements on AC power](#first-measurements-on-ac-power-2026-10-17).
+
 The same GGUF through an unmodified upstream build: llama.cpp **b10566**
 (2026-08-21), the official `ggml-org` release asset
 `llama-b10566-bin-win-opencl-adreno-arm64.zip`, SHA256
@@ -556,6 +564,10 @@ turn with that prompt and 500 generated tokens takes about 75 s on the NPU and
 ---
 
 ## GenieX v0.9.0 against v0.8.0
+
+> **Re-measured on AC power on 2026-10-17: the GPU decode fall below did not reproduce.** See
+> [First measurements on AC power](#first-measurements-on-ac-power-2026-10-17). Read the figures in this section
+> as taken in a state of unknown power and possibly degraded.
 
 GenieX v0.9.0 was installed on 2026-10-16 (rc.4 was installed first and never measured). It is a
 different stack, `af42e97d18e1`: GenieX v0.9.0, **llama.cpp `e467e5b`** (v0.8.0 and
@@ -645,6 +657,96 @@ old wrapper saw every llama.cpp cell as a failure. It now reads the harness's JS
 report.
 
 ---
+
+## First measurements on AC power (2026-10-17)
+
+Everything above this section, and the Foundry section below it, was measured before the conditions check
+existed, so **the power state of those figures was never recorded**. The laptop was on battery for much of
+2026-10-16 (Windows' own battery report shows it, until 20:43), so some of them were. These are the first
+figures measured on AC power, with the conditions recorded and the machine otherwise quiet, on the same stack
+(`af42e97d18e1`, GenieX v0.9.0): the `stack-compare` suite and the `genie-30b` step of `longctx`
+(see [RUNNING-BENCHMARKS.md](RUNNING-BENCHMARKS.md)), with the pinned stock llama.cpp b10566 as control. The
+run folders are `20261017-091732-stack-compare` and `20261017-093953-longctx` under
+`.atlas-local/benchmarks/runs/`. Two repetitions or more per figure, interleaved, one machine.
+
+**The 30B model on GenieX v0.9.0.** Prompt lengths 512, 1,792 and 6,784 tokens, 64 generated, context 8,192:
+
+| Prompt | Unit | Prefill tok/s | First token | Decode, v0.8.0 | Decode, v0.9.0 before | **Decode, v0.9.0 on AC** |
+| --- | --- | --- | --- | --- | --- | --- |
+| 512 | NPU | 477 | 1.07 s | 16.7 | 19.3 | **27.6** |
+| 512 | GPU | 288 | 1.77 s | 28.9 | 17.4 | **31.6** |
+| 1,792 | NPU | 497 | 3.61 s | 12.7 | 17.5 | **21.5** |
+| 1,792 | GPU | 245 | 7.31 s | 21.3 | 15.3 | **27.6** |
+| 6,784 | NPU | 430 | 15.8 s | 9.1 | 10.4 | **16.1** |
+| 6,784 | GPU | 137 | 49.6 s | 14.9 | 14.4 | **18.4** |
+
+"v0.8.0" and "v0.9.0 before" are the figures in [the sections above](#geniex-v090-against-v080), whose power
+state is unknown.
+
+- **The GPU decode regression on v0.9.0 did not reproduce.** The 30B's GPU decode at a 512-token prompt was
+  reported to fall from 28.9 to 17.4 tok/s on v0.9.0. On AC it is **31.6**, above v0.8.0's published figure.
+  The earlier 17.4 was measured in a degraded state, either battery or the unexplained half-speed state; the
+  records cannot say which. Nothing here shows a v0.9.0 regression on the GPU.
+- **NPU decode is much higher than any figure above**, at every length (27.6 against 19.3 at 512 tokens; 16.1
+  against 10.4 at 6,784). Prefill on the NPU holds up at length (497 at 1,792; 430 at 6,784) and the GPU's
+  falls (288, 245, 137), as before.
+- **The NPU still leads on prefill and on first token** at every length, by 1.7 times at 512 tokens and 3.1
+  times at 6,784. At 6,784 tokens its decode is now 16.1 against the GPU's 18.4, where the earlier figures had
+  it well behind.
+- **Against the stock llama.cpp control, GenieX's GPU is now ahead**: 31.6 against 27.3 tok/s decode at 512
+  tokens (about 16 % faster), and prefill 288 against 265. The earlier statement that v0.9.0 fell below stock
+  rests on the degraded figure.
+- **What this does not settle.** v0.8.0 was not re-measured on AC (that means installing it again), so "v0.9.0
+  against v0.8.0" is still comparing a v0.9.0 AC run with a v0.8.0 run of unknown power state. The NPU's
+  "14 to 42 % higher decode" on v0.9.0 may be partly the v0.8.0 figures having been degraded. The CPU was not
+  run at these lengths, and the 896 and 3,456-token cells were not repeated.
+
+**The control moved by more than the threshold said it should.** The stock llama.cpp b10566 on the 30B, three
+interleaved rounds, twice, on AC:
+
+| | Prefill tok/s | Decode tok/s |
+| --- | --- | --- |
+| GPU, 2026-10-17 (twice) | 262, 265 | **27.3, 27.4** (spread under 1 %) |
+| GPU, earlier "normal state" | 286, 290, 293 | 21.2, 21.0, 22 to 26 |
+| CPU, 2026-10-17 (twice) | 124, 130 | 36.7, 40.3 |
+| CPU, earlier | 111, 121, 119 | 27.6, 39.3, 38 to 40 |
+
+GPU decode is **about 30 % higher** than the control gave on 2026-10-16, which was taken as showing the machine
+in its normal state. A control only shows that two runs agree with each other; it cannot show that both were
+healthy. That is what the canary's AC reference is for.
+
+**The rest of `stack-compare`** (three runs per figure unless noted, 512-token prompts):
+
+| | Prefill tok/s | First token | Decode tok/s |
+| --- | --- | --- | --- |
+| Qwen3-4B, QAIRT, NPU | **2,518** | 0.20 s | 34.5 |
+| Qwen3-4B, llama.cpp, NPU | 1,487 | 0.34 s | 29.5 |
+| Qwen3-4B, llama.cpp, GPU | 328 | 1.56 s | 29.3 |
+| Qwen3-4B, llama.cpp, CPU | 246 | 2.08 s | 27.0 |
+| Phi-4-mini, llama.cpp, NPU | 1,667 | 0.31 s | 31.9 |
+| Phi-4-mini, llama.cpp, CPU | 298 | 1.72 s | 27.2 |
+
+Short-prompt decode of Qwen3-4B (`Invoke-BenchDecode`, 160 tokens): NPU **31.6**, GPU 30.5, CPU 28.2 tok/s, with
+the NPU at 100 % and the GPU and CPU rows near zero on the other units. The three units sit within 12 % of
+each other, as in the unsampled figures above. Against the earlier prefill matrix, the llama.cpp NPU and GPU prefill figures agree within
+about 7 %; CPU prefill is 18 % higher (246 against 209) and QAIRT's NPU prefill 20 % higher (2,518 against 2,105).
+
+**ONNX Runtime GenAI, Python and C#** (Phi-4-mini `qnn-int4`, 512 / 128 tokens, three interleaved rounds):
+Python on `onnxruntime-qnn` 2.7.0 gives **18.6 tok/s** decode (17.4 to 20.2) and 430 prefill; C# on 2.6.0 gives
+**18.3** (17.3 to 18.9) and 414. They agree, and match the 17.5 and 436.9 published earlier. The Python figure
+of 13.7 that was 20 % below C# [earlier today](#onnxruntime-qnn-270-against-260) did not reproduce: it was the
+machine's state (the CPU was 16.8 % busy before that run), not the 2.7.0 wheel.
+
+**The canary's own spread.** Twelve readings of the 0.6B canary on AC (six runs, two rounds each), as spread
+over mean: GPU decode 4 %, CPU prefill 19 %, GPU prefill 29 %, CPU decode 37 %. CPU decode (127 to 187 tok/s)
+moves too much to gate on and is information only; the others gate. The 85 % and 60 % lines remain provisional
+and have little margin on the prefill figures (their lowest readings were about 90 % of their means).
+
+**What to take from this.** Decode figures from before 2026-10-17 are **lower bounds of unknown quality**,
+especially the v0.9.0 ones. The ordering (the NPU leads on prefill and first token, by more as prompts lengthen;
+decode is close across units) held on every re-measurement. Treat any figure in this document with no recorded
+power state as a rough guide until it is re-measured; `Compare-BenchStacks` prefers AC records where there are
+any.
 
 ## Foundry Local
 
