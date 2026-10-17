@@ -4,7 +4,7 @@
     {
       "id": "ort-genai",
       "script": "Invoke-BenchOrtGenAi.ps1",
-      "estimateMinutes": 12,
+      "estimateMinutes": 4,
       "needs": ["npu"],
       "args": { "Rounds": 3 }
     }

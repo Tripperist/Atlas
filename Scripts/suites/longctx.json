@@ -4,7 +4,7 @@
     {
       "id": "genie-30b",
       "script": "Invoke-BenchPrefill.ps1",
-      "estimateMinutes": 25,
+      "estimateMinutes": 7,
       "needs": ["npu", "gpu"],
       "args": { "Model": "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0", "Device": ["npu", "gpu"], "PromptTokens": [512, 1792, 6784], "GenTokens": 64, "Repeat": 2, "CtxSize": 8192 }
     },
