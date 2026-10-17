@@ -32,7 +32,11 @@ function Get-AtlasLocalDir {
 }
 
 function Get-AtlasBaselinePath { Join-Path (Get-AtlasLocalDir) 'baseline.json' }
-function Get-AtlasHistoryPath  { Join-Path (Get-AtlasLocalDir) 'benchmarks\history.jsonl' }
+# ATLAS_HISTORY_PATH redirects the history, for tests that must not touch the real one.
+function Get-AtlasHistoryPath {
+    if ($env:ATLAS_HISTORY_PATH) { return $env:ATLAS_HISTORY_PATH }
+    Join-Path (Get-AtlasLocalDir) 'benchmarks\history.jsonl'
+}
 
 <#
 .SYNOPSIS
@@ -177,7 +181,42 @@ function Write-AtlasBaseline {
 
     The full state snapshot is embedded in each record, not just its id, so
     history stays self-describing after baseline.json is replaced.
+
+    History format 2 (schemaVersion 2) adds, beside the original fields: a stable
+    `id`; `kind` (benchmark, control or smoke); `conditions` and `onAcPower`, the
+    state the run was made under (AtlasConditions.psm1); `codeRev`, the Atlas
+    revision, with +dirty when Scripts, src or evals differ from it; and optional
+    n, stdev, reps, order, promptKind, ctxSize, seed, harness, harnessVersion and
+    modelArtifact. Fields that do not apply are left out. Older records stay valid
+    and read as unknown: the reader fills `n`, `kind`, `valid` and `onAcPower`.
 #>
+# The conditions the current run was checked under, set by Assert-AtlasConditions
+# (it calls Set-AtlasRunConditions if this module is loaded) and stamped on every
+# record written afterwards. Held here, with the history, so that reloading
+# AtlasConditions.psm1 with -Force cannot orphan it.
+$script:RunConditions = $null
+$script:CodeRev = $null
+
+function Set-AtlasRunConditions {
+    param($Conditions)
+    $script:RunConditions = $Conditions
+}
+
+function Get-AtlasRunConditions { $script:RunConditions }
+
+# The Atlas revision a run used, with +dirty when the code that makes a measurement
+# differs from it. Only Scripts, src and evals count: a changed lock file or a
+# document does not change what a harness measures.
+function Get-AtlasCodeRev {
+    if ($script:CodeRev) { return $script:CodeRev }
+    $root = Get-AtlasRoot
+    $rev = git -C $root rev-parse --short HEAD 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $rev) { return $null }
+    $dirty = git -C $root status --porcelain -- Scripts src evals 2>$null
+    $script:CodeRev = if ($dirty) { "$rev+dirty" } else { "$rev" }
+    $script:CodeRev
+}
+
 function Add-AtlasBenchmarkRecord {
     [CmdletBinding()]
     param(
@@ -194,27 +233,67 @@ function Add-AtlasBenchmarkRecord {
         [Nullable[double]]$PrefillTps,
         [Nullable[int]]$PromptTokens,
         [string]$CsvPath,
-        [hashtable]$Extra
+        [hashtable]$Extra,
+        # ---- history format 2
+        # smoke records (the check Update-Workspace runs) are never published
+        [ValidateSet('benchmark', 'control', 'smoke')][string]$Kind = 'benchmark',
+        $Conditions,
+        [string]$Harness,
+        [string]$HarnessVersion,
+        # repetitions behind the figure, its spread, and each repetition
+        [Nullable[int]]$N,
+        [Nullable[double]]$Stdev,
+        [double[]]$Reps,
+        [string]$Order,
+        [string]$PromptKind,
+        [Nullable[int]]$CtxSize,
+        [Nullable[int]]$Seed,
+        $ModelArtifact
     )
 
     $id = if ($State -is [System.Collections.IDictionary] -and $State.Contains('id')) { $State['id'] }
           elseif ($State.PSObject.Properties['id']) { $State.id }
           else { Get-AtlasStateId $State }
+    $short = Get-AtlasShortId $id
+
+    $conditions = if ($PSBoundParameters.ContainsKey('Conditions')) { $Conditions } else { Get-AtlasRunConditions }
+    $ts = (Get-Date -Format 'o')
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $recordId = (($sha.ComputeHash([System.Text.Encoding]::UTF8.GetBytes("$ts|$Source|$Model|$Compute|$PromptTokens|$short")) |
+                      ForEach-Object { $_.ToString('x2') }) -join '').Substring(0, 12)
+    }
+    finally { $sha.Dispose() }
 
     $record = [ordered]@{
-        ts          = (Get-Date -Format 'o')
-        stateId     = Get-AtlasShortId $id
-        source      = $Source
-        model       = $Model
-        compute     = $Compute
-        tokPerSec   = $TokPerSec
-        firstTokenS = $FirstTokenS
-        tokens      = $Tokens
-        prefillTps  = $PrefillTps
-        promptTokens = $PromptTokens
-        csv         = $CsvPath
-        state       = $State
+        schemaVersion = 2
+        id            = $recordId
+        ts            = $ts
+        stateId       = $short
+        kind          = $Kind
+        source        = $Source
+        model         = $Model
+        compute       = $Compute
+        tokPerSec     = $TokPerSec
+        firstTokenS   = $FirstTokenS
+        tokens        = $Tokens
+        prefillTps    = $PrefillTps
+        promptTokens  = $PromptTokens
+        csv           = $CsvPath
+        state         = $State
     }
+    $optional = [ordered]@{
+        harness = $Harness; harnessVersion = $HarnessVersion; n = $N; stdev = $Stdev; reps = $Reps
+        order = $Order; promptKind = $PromptKind; ctxSize = $CtxSize; seed = $Seed; modelArtifact = $ModelArtifact
+    }
+    foreach ($k in $optional.Keys) {
+        if ($null -ne $optional[$k] -and -not ($optional[$k] -is [string] -and -not $optional[$k])) { $record[$k] = $optional[$k] }
+    }
+    $record['onAcPower'] = if ($conditions) { $conditions.onAcPower } else { $null }
+    if ($conditions) { $record['conditions'] = $conditions }
+    $rev = Get-AtlasCodeRev
+    if ($rev) { $record['codeRev'] = $rev }
+    # callers that still pass these in -Extra keep working, and win
     if ($Extra) { foreach ($k in $Extra.Keys) { $record[$k] = $Extra[$k] } }
 
     $path = Get-AtlasHistoryPath
@@ -225,20 +304,47 @@ function Add-AtlasBenchmarkRecord {
     $record
 }
 
+# Read the history. Older records lack the format-2 fields, so the reader fills them:
+#   n          from `repetitions` or `runs`, whichever the harness used
+#   kind       smoke for the Update-Workspace check, control for the stock-engine runs
+#   valid      true unless a record says otherwise
+#   onAcPower  null (unknown) unless recorded
 function Get-AtlasBenchmarkHistory {
     [CmdletBinding()]
-    param([string]$StateId)
+    param(
+        [string]$StateId,
+        # leave out records marked invalid and those measured on battery
+        [switch]$Valid,
+        [ValidateSet('benchmark', 'control', 'smoke')][string]$Kind
+    )
 
     $path = Get-AtlasHistoryPath
     if (-not (Test-Path $path)) { return @() }
-    $records = Get-Content $path | Where-Object { $_.Trim() } | ForEach-Object {
+    $records = @(Get-Content $path | Where-Object { $_.Trim() } | ForEach-Object {
         try { $_ | ConvertFrom-Json } catch { }   # tolerate a truncated final line
+    })
+    foreach ($r in $records) {
+        $names = $r.PSObject.Properties.Name
+        if ('n' -notin $names) {
+            $n = if ('repetitions' -in $names) { $r.repetitions } elseif ('runs' -in $names) { $r.runs } else { $null }
+            $r | Add-Member -NotePropertyName n -NotePropertyValue $n -Force
+        }
+        if ('kind' -notin $names) {
+            $k = if ($r.source -eq 'Update-Workspace.ps1') { 'smoke' }
+                 elseif (('control' -in $names -and $r.control) -or $r.source -like '*control*') { 'control' }
+                 else { 'benchmark' }
+            $r | Add-Member -NotePropertyName kind -NotePropertyValue $k -Force
+        }
+        if ('valid' -notin $names) { $r | Add-Member -NotePropertyName valid -NotePropertyValue $true -Force }
+        if ('onAcPower' -notin $names) { $r | Add-Member -NotePropertyName onAcPower -NotePropertyValue $null -Force }
     }
-    if ($StateId) { $records = $records | Where-Object { $_.stateId -eq $StateId } }
+    if ($StateId) { $records = @($records | Where-Object { $_.stateId -eq $StateId }) }
+    if ($Valid) { $records = @($records | Where-Object { $_.valid -ne $false -and $_.onAcPower -ne $false }) }
+    if ($Kind) { $records = @($records | Where-Object { $_.kind -eq $Kind }) }
     $records
 }
 
 Export-ModuleMember -Function Get-AtlasRoot, Get-AtlasLocalDir, Get-AtlasBaselinePath,
     Get-AtlasHistoryPath, Get-AtlasState, Get-AtlasStateId, Get-AtlasShortId,
     Read-AtlasBaseline, Write-AtlasBaseline, Add-AtlasBenchmarkRecord,
-    Get-AtlasBenchmarkHistory
+    Get-AtlasBenchmarkHistory, Set-AtlasRunConditions, Get-AtlasRunConditions, Get-AtlasCodeRev

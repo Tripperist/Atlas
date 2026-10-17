@@ -227,6 +227,8 @@ function Assert-AtlasConditions {
         throw 'The conditions for a valid benchmark are not met (see above).'
     }
     if ($AllowBattery -and $c.onAcPower -eq $false) { $c.overrides = @('allowBattery') }
+    # Stamp the records this run writes. Late-bound: the history module owns the cache.
+    if (Get-Command Set-AtlasRunConditions -ErrorAction SilentlyContinue) { Set-AtlasRunConditions -Conditions $c }
     $c
 }
 
