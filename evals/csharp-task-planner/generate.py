@@ -2,10 +2,14 @@
 
     python generate.py --model 30b --samples 3
     python generate.py --model 7b  --samples 3
+    python generate.py --model 7b  --samples 1 --out scratch/runs
 
 Both models get the identical prompt and the same sampling settings. Each sample
-is saved under runs/<model>/s<seed>/ as raw.txt (the whole reply), Program.cs
-(the extracted code) and meta.json (settings, token counts, timings).
+is saved under <out>/<model>/s<seed>/ as raw.txt (the whole reply), Program.cs
+(the extracted code) and meta.json (settings, token counts, timings). <out> is
+runs/ next to this file unless --out says otherwise. The committed samples live in
+runs/, and a sample of the same model and seed there is REPLACED, so generate into
+another folder with --out to keep them.
 
 The 30B runs through `geniex infer` on the GPU so that it cannot contend for the
 NPU with the 7B, which runs on the NPU through Foundry Local's HTTP endpoint.
@@ -143,13 +147,18 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", choices=list(MODELS) + ["all"], default="all")
     ap.add_argument("--samples", type=int, default=3)
+    ap.add_argument("--out", default=str(HERE / "runs"), metavar="DIR",
+                    help="where to save the samples (default: runs/ next to this file, which holds the "
+                         "committed samples and has them replaced). Relative paths are from the current directory.")
     a = ap.parse_args()
+    out_root = Path(a.out).resolve()
     for key in (list(MODELS) if a.model == "all" else [a.model]):
         spec = MODELS[key]
         for seed in range(1, a.samples + 1):
-            out_dir = HERE / "runs" / spec["label"] / f"s{seed}"
+            out_dir = out_root / spec["label"] / f"s{seed}"
+            replacing = (out_dir / "Program.cs").exists()
             out_dir.mkdir(parents=True, exist_ok=True)
-            print(f"{spec['label']} seed {seed} ...", flush=True)
+            print(f"{spec['label']} seed {seed} -> {out_dir}{'  (replacing the sample already there)' if replacing else ''} ...", flush=True)
             reply, meta = (run_geniex if key == "30b" else run_foundry)(spec["id"], seed)
             code, info = extract(reply)
             (out_dir / "raw.txt").write_text(reply, encoding="utf-8")

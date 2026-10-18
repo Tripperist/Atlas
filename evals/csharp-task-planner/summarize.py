@@ -1,7 +1,14 @@
-"""Collect the saved results of every run into one markdown table (runs/summary.md)."""
+"""Collect the saved results of every run into one markdown table (runs/summary.md).
+
+    python summarize.py
+    python summarize.py --runs scratch/runs      # a folder made with generate.py --out
+
+Needs both models and seeds 1 to 3, each with its -repair1 and -fixed results and an entry in analysis.json.
+"""
 
 from __future__ import annotations
 
+import argparse
 import json
 from pathlib import Path
 
@@ -15,6 +22,10 @@ def load(p: Path):
 
 
 def main() -> None:
+    global RUNS
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--runs", default=str(RUNS), metavar="DIR", help="the folder to summarize (default: runs/)")
+    RUNS = Path(ap.parse_args().runs)
     fixes = load(RUNS / "fix-counts.json") or {}
     analysis = load(RUNS / "analysis.json") or {}
     rows = []

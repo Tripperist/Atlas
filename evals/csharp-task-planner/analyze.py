@@ -10,10 +10,15 @@ across the text-format functional cases that exit 0:
   critical      the "Critical path" line matches
 
     python analyze.py runs/<model>/s1-fixed ...
+    python analyze.py --runs scratch/runs scratch/runs/<model>/s1-fixed ...
+
+The result is written to <runs>/analysis.json (runs/ by default), replacing it, so give
+every program you want in the table in one call.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import subprocess
 import sys
@@ -35,8 +40,12 @@ def parts(text: str) -> dict:
 def main() -> int:
     manifest = json.loads((CASES / "cases.json").read_text(encoding="utf-8"))
     cases = [c for c in manifest if c["category"] == "functional" and c["expect"]["exit"] == 0 and not c["expect"].get("json")]
+    ap = argparse.ArgumentParser()
+    ap.add_argument("dirs", nargs="*")
+    ap.add_argument("--runs", default=str(HERE / "runs"), metavar="DIR", help="where analysis.json is written (default: runs/)")
+    a = ap.parse_args()
     out = {}
-    for arg in sys.argv[1:]:
+    for arg in a.dirs:
         d = Path(arg)
         exe = HERE / ".work" / d.as_posix().replace("/", "_").replace(":", "") / "out" / "planner.exe"
         if not exe.exists():
@@ -59,7 +68,9 @@ def main() -> int:
         n = len(cases)
         print(f"{str(d):42s} parses {tally['parses']:2d}/{n}  stages {tally['stages']:2d}/{n}  "
               f"total {tally['total']:2d}/{n}  critical path {tally['critical']:2d}/{n}")
-    (HERE / "runs" / "analysis.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
+    runs = Path(a.runs)
+    runs.mkdir(parents=True, exist_ok=True)
+    (runs / "analysis.json").write_text(json.dumps(out, indent=1), encoding="utf-8")
     return 0
 
 
