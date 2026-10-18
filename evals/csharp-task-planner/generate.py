@@ -95,8 +95,12 @@ def run_geniex(model_id: str, seed: int) -> tuple[str, dict]:
 
 
 def foundry_endpoint() -> str:
-    out = subprocess.run(["foundry", "server", "start"], capture_output=True, text=True).stdout
-    out += subprocess.run(["foundry", "status"], capture_output=True, text=True).stdout
+    # The CLI prints UTF-8 (box and bullet characters). Under the Windows code page, text=True makes the
+    # reader fail and .stdout come back None, so say UTF-8 and replace what cannot be read.
+    def cli(*args: str) -> str:
+        return subprocess.run(["foundry", *args], capture_output=True, text=True, encoding="utf-8", errors="replace").stdout or ""
+
+    out = cli("server", "start") + cli("status")
     m = re.search(r"http://127\.0\.0\.1:\d+", ANSI.sub("", out))
     if not m:
         raise SystemExit("could not find the Foundry endpoint")
