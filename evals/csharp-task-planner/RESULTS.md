@@ -56,8 +56,12 @@ error precedence.
   path by a different method, passes all 45 with no warnings and a slowest case of
   0.3 s. The reference is not a competitor and is not scored against the models.
 - **Same prompt and settings for both**: temperature 0.2, top-p 0.95, seeds 1, 2
-  and 3, at most 4,096 output tokens. A seed reproduces its run exactly (the 30B's
-  first sample came out as 2,323 tokens both times it was generated).
+  and 3, at most 4,096 output tokens. On the stack they were generated on, a seed
+  reproduced its run (the 30B's first sample came out as 2,323 tokens both times it
+  was generated). **That did not hold later:** regenerated on 2026-10-17, on GenieX
+  v0.9.0 for the 30B and Foundry 0.10.3 for the 7B, seed 1 gave different programs
+  from the committed ones (the 30B 1,980 tokens against 2,323, the 7B 1,254 against
+  1,506). The committed samples are the ones every score in this document is for.
 - **Three stages**, because a compile failure scores zero on every test and hides
   everything else:
   1. *One shot*: build the model's program as written.
@@ -145,6 +149,9 @@ code in about 0.8 times the time.
   attributes the gap to size. Qwen2.5-Coder 14B (a GPU variant in Foundry) and the
   1.5B and 0.5B NPU variants would give a size ladder within one generation, and
   were not run.
+- **A repeat of the draw.** The two regenerated samples above did not compile either
+  (2 errors for the 30B, 1 for the 7B), which agrees with the 0 of 6 here, but it
+  is two more samples, scored one-shot only.
 - **Anything beyond this task.** One task, three samples per model at one
   temperature. The samples varied (the 30B's three programs fail in three
   different ways), so a different draw could move the numbers.

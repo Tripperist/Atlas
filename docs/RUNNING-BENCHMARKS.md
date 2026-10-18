@@ -623,9 +623,14 @@ python make_fixed.py                              # apply the recorded minimal c
   through Foundry Local's HTTP endpoint (so they do not contend for the NPU). Both models must already be
   downloaded (`geniex pull`, `foundry model download`). Run it on AC power with nothing else busy: the speed does
   not change what the weights write, but a slow machine makes a long run.
-- **It overwrites.** `generate.py` writes to `runs/<model>/s<seed>/`, replacing the committed sample of the same
-  seed. Do it on a branch, or copy `runs/` first, if you want to keep the originals.
-- **A seed reproduces its run exactly** (the 30B's first sample came out as 2,323 tokens both times).
+- **Use `--out` to keep the committed samples.** `generate.py` writes to `runs/<model>/s<seed>/` by default,
+  replacing the committed sample of the same seed (it says so as it goes). `--out DIR` saves elsewhere:
+  `python generate.py --model 30b --samples 1 --out scratch/runs`. `eval.py` and `repair.py` take any
+  directory, and `analyze.py --runs DIR` and `summarize.py --runs DIR` read and write there too.
+- **A seed does not reproduce across a stack change.** On the stack they were generated on, seed 1 gave the same
+  30B program twice. Regenerated on 2026-10-17 (GenieX v0.9.0; Foundry 0.10.3 for the 7B), seed 1 gave different
+  programs from the committed ones (30B: 1,980 tokens against 2,323; 7B: 1,254 against 1,506). Neither compiled,
+  which agrees with the committed 0 of 6. Score the committed samples, not new ones, to reproduce the write-up.
 - **`make_fixed.py` applies edits that were made by hand** for the committed samples, and are recorded in
   each `FIXES.md`. For new samples you write the compile fixes yourself, the way
   [the README there](../evals/csharp-task-planner/README.md) describes, and report how many you made.
