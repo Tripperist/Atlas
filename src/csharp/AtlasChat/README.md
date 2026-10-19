@@ -58,6 +58,8 @@ dotnet run -c Release --project src\csharp\AtlasChat -- --runtime ort-genai --ma
 | `--verbose` | off | Show the ORT/GenAI loader warnings (`ort-genai`) |
 | `--system` | none | A system prompt (the two `foundry` runtimes) |
 | `--default-options` | off | Leave generation options at the SDK's defaults (the two `foundry` runtimes) |
+| `--no-stream` | off | One request, one reply, as the issue's code does (the two `foundry` runtimes) |
+| `--greedy` | off | Greedy decoding with no output cap, to simulate a model whose config sets no sampling |
 | `--timeout` | none | Cancel each turn after N seconds, and report how long it really took |
 
 Commands: `/reset` `/stats` `/model` `/help` `/quit`
@@ -269,8 +271,46 @@ $q | atlas-chat --runtime foundry-client --default-options qwen2.5-0.5b --system
 $q | atlas-chat --runtime foundry        --default-options qwen2.5-0.5b --system "You are a sycophantic AI." --timeout 3
 ```
 
-On `qwen2.5-0.5b` (the NPU, QNN) the issue did **not** reproduce: all four combinations of API and options
-finished in under a second with a sensible reply. The issue used `qwen3-0.6b` on CUDA.
+#### The experiment on this machine (2026-10-19)
+
+Foundry Local SDK 2.1.0, the issue's prompt (system "You are a sycophantic AI.", user "Do you like me?") and its
+3-second `CancellationToken`, against `qwen3-0.6b`, the issue's model. The variant here is
+`qwen3-0.6b-generic-gpu:2` (WebGPU on the Adreno X2-85); the issue used `qwen3-0.6b-cuda-gpu:2` on an NVIDIA RTX
+2080. Also `qwen2.5-0.5b` on the NPU (QNN). Each case is a fresh process; the one-reply cases use
+`--no-stream`, which is the call the issue's code makes.
+
+**What did not reproduce.** The 90-second run, the single sentence repeated to the end, and the cancellation
+being ignored *only* by the new API:
+
+- Every short-prompt case finished in a few seconds (about 10 s for the process, model load included) with
+  nothing repeated: the old and new API, SDK defaults and explicit options, streamed and one-reply, on both
+  models. Setting greedy decoding with no output cap (`--greedy`, which simulates a model whose config sets no
+  sampling) did not make it loop either (446 characters from the new API, 104 tokens from the old).
+- This variant's own `genai_config.json` sets sampling (`do_sample` true, temperature 0.6, top-k 20, top-p
+  0.95) and a 40,960-token limit. A variant whose config sets none of that would decode greedily to that limit,
+  which is what the issue describes, but that is a guess: the CUDA variant is not available on this machine.
+
+**What did reproduce.**
+
+| | Old API (`GetChatClientAsync`) | New API (`ChatSession`) |
+| --- | --- | --- |
+| The reply | The **answer only**. The model's reasoning comes back in a separate `reasoning_content` field, and `completion_tokens` counts it (72 of 120 tokens in one run) | **Reasoning and answer as one text**, starting "Okay, the user is asking if I like them..." |
+| A short prompt | 17 to 175 tokens | 446 to 1,066 characters (reasoning first) |
+| An open-ended prompt, one reply, 3 s token | ran **17.7 s** (1,133 tokens): the token was ignored | ran **12.0 s** (about 4,100 characters): the token was ignored |
+| An open-ended prompt, streamed, 3 s token | stopped at **3.03 s** | stopped at **3.02 s** |
+
+- **The difference the issue saw is at least partly the reasoning.** Qwen3 thinks before it answers. The old API
+  hands back only the answer; the Session API hands back the thinking too, so the text is longer and starts with
+  the model's reasoning, which reads as junk to someone expecting an answer. A Session API option to separate it
+  was not looked for here.
+- **A cancellation token is not honoured by a one-reply call in either API.** `ProcessRequestAsync` and
+  `CompleteChatAsync` both ran to completion past a 3-second token. The old API looked fine in the issue only
+  because its reply was short; on an open-ended prompt it overran by more than the new one did. The streaming
+  calls honour the token in both.
+
+**Limits.** Two prompts, a handful of runs per case, one machine, a different execution provider and hardware
+from the issue's, and no repetition loop reproduced, so what causes the issue's loop is not established here.
+The commands are in this README; `ATLAS_DUMP_RESPONSE=1` prints the old API's full response.
 
 ### geniex
 

@@ -30,17 +30,21 @@ internal sealed class FoundryClientRuntime : IChatRuntime
     private readonly int _topK;
     private readonly string? _system;
     private readonly bool _defaultOptions;
+    private readonly bool _noStream;
+    private readonly bool _greedy;
     private readonly List<ChatMessage> _history = new();
     private IModel? _model;
     private OpenAIChatClient? _client;
 
-    public FoundryClientRuntime(int maxOutputTokens, float temperature, int topK, string? system, bool defaultOptions)
+    public FoundryClientRuntime(int maxOutputTokens, float temperature, int topK, string? system, bool defaultOptions, bool noStream = false, bool greedy = false)
     {
         _maxOutputTokens = maxOutputTokens;
         _temperature = temperature;
         _topK = topK;
         _system = system;
         _defaultOptions = defaultOptions;
+        _noStream = noStream;
+        _greedy = greedy;
         // See FoundryRuntime: a null logger turns any startup failure into an ArgumentNullException.
         _loggerFactory = LoggerFactory.Create(b => b
             .AddConsole()
@@ -80,7 +84,11 @@ internal sealed class FoundryClientRuntime : IChatRuntime
         ModelId = _model.Id;
 
         _client = await _model.GetChatClientAsync(ct);
-        if (!_defaultOptions)
+        if (_greedy)
+        {
+            _client.Settings.Temperature = 0f;   // greedy; MaxTokens left unset
+        }
+        else if (!_defaultOptions)
         {
             // The same options FoundryRuntime sets on its session, so the two differ only in the API.
             _client.Settings.MaxTokens = _maxOutputTokens;
@@ -105,6 +113,24 @@ internal sealed class FoundryClientRuntime : IChatRuntime
         int chunks = 0;
         try
         {
+            if (_noStream)
+            {
+                // The call the issue's code makes: one request, one reply.
+                var response = await _client.CompleteChatAsync(_history, ct);
+                var choice0 = response.Choices?.FirstOrDefault();
+                if (Environment.GetEnvironmentVariable("ATLAS_DUMP_RESPONSE") == "1")
+                {
+                    // What the old client returns besides the text, e.g. a separate reasoning field.
+                    Console.Error.WriteLine("[response] " + System.Text.Json.JsonSerializer.Serialize(response,
+                        new System.Text.Json.JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull }));
+                }
+                LastFinishReason = choice0?.FinishReason;
+                if (response.Usage is { CompletionTokens: > 0 } usage) LastTokenCount = usage.CompletionTokens;
+                string? whole = choice0?.Message?.Content;
+                LastFirstTokenSeconds = ttft.Elapsed.TotalSeconds;
+                if (!string.IsNullOrEmpty(whole)) { reply.Append(whole); yield return whole; }
+                yield break;
+            }
             await foreach (var chunk in _client.CompleteChatStreamingAsync(_history, ct))
             {
                 var choice = chunk.Choices?.FirstOrDefault();

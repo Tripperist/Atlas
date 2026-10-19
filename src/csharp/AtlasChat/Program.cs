@@ -20,6 +20,8 @@ bool showThinking = false;
 bool verbose = false;
 string? system = null;
 bool defaultOptions = false;
+bool noStream = false;
+bool greedy = false;
 int timeoutSeconds = 0;
 
 for (int i = 0; i < args.Length; i++)
@@ -36,6 +38,8 @@ for (int i = 0; i < args.Length; i++)
         case "--verbose": verbose = true; break;
         case "--system" when i + 1 < args.Length: system = args[++i]; break;
         case "--default-options": defaultOptions = true; break;
+        case "--no-stream": noStream = true; break;
+        case "--greedy": greedy = true; break;
         case "--timeout" when i + 1 < args.Length: timeoutSeconds = int.Parse(args[++i]); break;
         case "--help" or "-h": Usage(); return 0;
         default:
@@ -49,13 +53,13 @@ IChatRuntime runtime;
 switch (runtimeName)
 {
     case "foundry":
-        runtime = new FoundryRuntime(maxTokens, temperature, topK, system, defaultOptions);
+        runtime = new FoundryRuntime(maxTokens, temperature, topK, system, defaultOptions, noStream, greedy);
         model ??= "qwen2.5-0.5b";
         break;
 
     case "foundry-client":
         // The earlier chat API of the same SDK: GetChatClientAsync / CompleteChatStreamingAsync.
-        runtime = new FoundryClientRuntime(maxTokens, temperature, topK, system, defaultOptions);
+        runtime = new FoundryClientRuntime(maxTokens, temperature, topK, system, defaultOptions, noStream, greedy);
         model ??= "qwen2.5-0.5b";
         break;
 
@@ -200,12 +204,16 @@ while (true)
         int counted = runtime.LastTokenCount ?? chunks;
         double rate = decodeS > 0 && counted > 1 ? (counted - 1) / decodeS : 0;
 
-        var parts = new List<string>
-        {
-            rate > 0 ? $"{rate:F1} tok/s" : "rate n/a",
-            $"{tokens}{(estimated ? "~" : "")} tok",
-            $"first {firstS:F2}s",
-        };
+        // One request, one reply: the first token and the last arrive together, so there is no decode
+        // window and any rate would be meaningless. Report the total instead.
+        var parts = noStream
+            ? new List<string> { $"{tokens}{(estimated ? "~" : "")} tok in {sw.Elapsed.TotalSeconds:F1}s (one reply: no rate)" }
+            : new List<string>
+            {
+                rate > 0 ? $"{rate:F1} tok/s" : "rate n/a",
+                $"{tokens}{(estimated ? "~" : "")} tok",
+                $"first {firstS:F2}s",
+            };
 
         // "length" means the cap stopped it, not the model. Without this the
         // only symptom of a runaway generation is a wall of repeated text.
@@ -241,12 +249,16 @@ static void Usage()
       usage: atlas-chat [--runtime foundry|foundry-client|geniex|ort-genai] [model] [--quiet]
                         [--max-tokens N] [--temperature T] [--top-k K]
                         [--host 127.0.0.1:18181] [--show-think]
-                        [--system TEXT] [--default-options] [--timeout SECONDS]
+                        [--system TEXT] [--default-options] [--no-stream] [--greedy] [--timeout SECONDS]
 
       foundry         Foundry Local, the newer Session API (ChatSession)
       foundry-client  Foundry Local, the earlier chat API (GetChatClientAsync)
       --system TEXT         a system prompt (the foundry runtimes)
       --default-options     leave generation options at the SDK defaults (the foundry runtimes)
+      --greedy              greedy decoding with no output cap: what a model whose config sets no sampling
+                            would do (a simulation of the conditions in #1207)
+      --no-stream           one request, one reply (ProcessRequestAsync / CompleteChatAsync), as in the
+                            code in microsoft/foundry-local#1207, instead of streaming
       --timeout SECONDS     cancel each turn after N seconds and report how long it really took
 
       geniex needs a running server:  geniex serve

@@ -25,6 +25,8 @@ internal sealed class FoundryRuntime : IChatRuntime
     private readonly int _topK;
     private readonly string? _system;
     private readonly bool _defaultOptions;
+    private readonly bool _noStream;
+    private readonly bool _greedy;
     private bool _systemPending;
     private IModel? _model;
     private ChatSession? _session;
@@ -32,13 +34,17 @@ internal sealed class FoundryRuntime : IChatRuntime
     /// <param name="system">A system prompt, sent with the first turn of each conversation.</param>
     /// <param name="defaultOptions">Leave every generation option at the SDK's default, as the code in
     /// microsoft/foundry-local#1207 does, instead of setting them below.</param>
-    public FoundryRuntime(int maxOutputTokens, float temperature, int topK, string? system = null, bool defaultOptions = false)
+    /// <param name="noStream">Use <c>ProcessRequestAsync</c> (one request, one reply) instead of the streaming call,
+    /// as the code in #1207 does.</param>
+    public FoundryRuntime(int maxOutputTokens, float temperature, int topK, string? system = null, bool defaultOptions = false, bool noStream = false, bool greedy = false)
     {
         _maxOutputTokens = maxOutputTokens;
         _temperature = temperature;
         _topK = topK;
         _system = system;
         _defaultOptions = defaultOptions;
+        _noStream = noStream;
+        _greedy = greedy;
 
         // A null ILogger is not tolerated. FoundryLocalException logs through
         // the logger it is handed, so passing null turns any startup failure
@@ -117,6 +123,23 @@ internal sealed class FoundryRuntime : IChatRuntime
         }
         request.AddItem(MessageItem.User(userMessage), false);
 
+        if (_noStream)
+        {
+            // The call the issue's code makes. The whole reply arrives at once, so the first token is the last.
+            using var response = await _session.ProcessRequestAsync(request, ct);
+            var sb = new System.Text.StringBuilder();
+            foreach (var item in response)
+            {
+                if (item is MessageItem msg)
+                    foreach (var part in msg.Parts)
+                        if (part is TextItem ti) sb.Append(ti.Text);
+            }
+            LastFirstTokenSeconds = ttft.Elapsed.TotalSeconds;
+            try { LastFinishReason = response.FinishReason.ToString().ToLowerInvariant(); } catch { }
+            if (sb.Length > 0) yield return sb.ToString();
+            yield break;
+        }
+
         // StreamingResponse and the Response it yields both wrap native
         // handles. Leaving them to finalizers works -- handle count plateaus
         // rather than climbing -- but releases them non-deterministically.
@@ -172,8 +195,14 @@ internal sealed class FoundryRuntime : IChatRuntime
     private ChatSession NewSession()
     {
         var session = new ChatSession(_model!);
-        session.SetStreaming(true);
+        session.SetStreaming(!_noStream);
         _systemPending = true;
+        if (_greedy)
+        {
+            // No sampling and no cap: what a model whose genai_config.json sets neither would do.
+            session.SetOptions(new RequestOptions { Search = new SearchOptions { DoSample = false } });
+            return session;
+        }
         if (_defaultOptions) return session;   // the SDK's own defaults, to reproduce #1207
         session.SetOptions(new RequestOptions
         {
