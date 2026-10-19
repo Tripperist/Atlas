@@ -23,14 +23,22 @@ internal sealed class FoundryRuntime : IChatRuntime
     private readonly int _maxOutputTokens;
     private readonly float _temperature;
     private readonly int _topK;
+    private readonly string? _system;
+    private readonly bool _defaultOptions;
+    private bool _systemPending;
     private IModel? _model;
     private ChatSession? _session;
 
-    public FoundryRuntime(int maxOutputTokens, float temperature, int topK)
+    /// <param name="system">A system prompt, sent with the first turn of each conversation.</param>
+    /// <param name="defaultOptions">Leave every generation option at the SDK's default, as the code in
+    /// microsoft/foundry-local#1207 does, instead of setting them below.</param>
+    public FoundryRuntime(int maxOutputTokens, float temperature, int topK, string? system = null, bool defaultOptions = false)
     {
         _maxOutputTokens = maxOutputTokens;
         _temperature = temperature;
         _topK = topK;
+        _system = system;
+        _defaultOptions = defaultOptions;
 
         // A null ILogger is not tolerated. FoundryLocalException logs through
         // the logger it is handed, so passing null turns any startup failure
@@ -102,6 +110,11 @@ internal sealed class FoundryRuntime : IChatRuntime
         var ttft = System.Diagnostics.Stopwatch.StartNew();
 
         using var request = new Request();
+        if (_systemPending && !string.IsNullOrEmpty(_system))
+        {
+            request.AddItem(new MessageItem(MessageRole.System, _system), false);
+            _systemPending = false;
+        }
         request.AddItem(MessageItem.User(userMessage), false);
 
         // StreamingResponse and the Response it yields both wrap native
@@ -160,6 +173,8 @@ internal sealed class FoundryRuntime : IChatRuntime
     {
         var session = new ChatSession(_model!);
         session.SetStreaming(true);
+        _systemPending = true;
+        if (_defaultOptions) return session;   // the SDK's own defaults, to reproduce #1207
         session.SetOptions(new RequestOptions
         {
             Search = new SearchOptions

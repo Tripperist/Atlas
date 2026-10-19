@@ -18,6 +18,9 @@ int topK = 40;
 string host = "127.0.0.1:18181";
 bool showThinking = false;
 bool verbose = false;
+string? system = null;
+bool defaultOptions = false;
+int timeoutSeconds = 0;
 
 for (int i = 0; i < args.Length; i++)
 {
@@ -31,6 +34,9 @@ for (int i = 0; i < args.Length; i++)
         case "--host" when i + 1 < args.Length: host = args[++i]; break;
         case "--show-think": showThinking = true; break;
         case "--verbose": verbose = true; break;
+        case "--system" when i + 1 < args.Length: system = args[++i]; break;
+        case "--default-options": defaultOptions = true; break;
+        case "--timeout" when i + 1 < args.Length: timeoutSeconds = int.Parse(args[++i]); break;
         case "--help" or "-h": Usage(); return 0;
         default:
             if (args[i].StartsWith('-')) { Console.Error.WriteLine($"unknown option {args[i]}"); return 2; }
@@ -43,7 +49,13 @@ IChatRuntime runtime;
 switch (runtimeName)
 {
     case "foundry":
-        runtime = new FoundryRuntime(maxTokens, temperature, topK);
+        runtime = new FoundryRuntime(maxTokens, temperature, topK, system, defaultOptions);
+        model ??= "qwen2.5-0.5b";
+        break;
+
+    case "foundry-client":
+        // The earlier chat API of the same SDK: GetChatClientAsync / CompleteChatStreamingAsync.
+        runtime = new FoundryClientRuntime(maxTokens, temperature, topK, system, defaultOptions);
         model ??= "qwen2.5-0.5b";
         break;
 
@@ -63,7 +75,7 @@ switch (runtimeName)
         break;
 
     default:
-        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry, geniex, ort-genai");
+        Console.Error.WriteLine($"unknown runtime '{runtimeName}'. Available: foundry, foundry-client, geniex, ort-genai");
         return 2;
 }
 
@@ -125,9 +137,14 @@ while (true)
     var sw = Stopwatch.StartNew();
     sampler?.Start();
 
+    // --timeout cancels the turn after N seconds, as the code in microsoft/foundry-local#1207 does with
+    // its CancellationToken. What matters is how long the turn takes AFTER that: a backend that honours
+    // the token stops within a moment, one that ignores it runs on.
+    using var turn = CancellationTokenSource.CreateLinkedTokenSource(cancel.Token);
+    if (timeoutSeconds > 0) turn.CancelAfter(TimeSpan.FromSeconds(timeoutSeconds));
     try
     {
-        await foreach (string piece in runtime.StreamAsync(line, cancel.Token))
+        await foreach (string piece in runtime.StreamAsync(line, turn.Token))
         {
             firstTokenS ??= sw.Elapsed.TotalSeconds;
             chunks++;
@@ -136,7 +153,7 @@ while (true)
     }
     catch (OperationCanceledException)
     {
-        Console.WriteLine("\n  (cancelled)");
+        Console.WriteLine($"\n  (cancelled after {sw.Elapsed.TotalSeconds:F2}s)");
     }
     catch (Exception ex)
     {
@@ -151,6 +168,12 @@ while (true)
     sw.Stop();
     var engines = sampler?.Stop();
     Console.WriteLine();
+    if (timeoutSeconds > 0 && sw.Elapsed.TotalSeconds > timeoutSeconds + 1)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        Console.WriteLine($"  the turn ran {sw.Elapsed.TotalSeconds:F1}s against a {timeoutSeconds}s timeout");
+        Console.ResetColor();
+    }
 
     // A reasoning model can spend the whole budget inside <think>, which is
     // hidden by default -- without this the turn just looks broken.
@@ -215,9 +238,16 @@ return 0;
 static void Usage()
 {
     Console.WriteLine("""
-      usage: atlas-chat [--runtime foundry|geniex|ort-genai] [model] [--quiet]
+      usage: atlas-chat [--runtime foundry|foundry-client|geniex|ort-genai] [model] [--quiet]
                         [--max-tokens N] [--temperature T] [--top-k K]
                         [--host 127.0.0.1:18181] [--show-think]
+                        [--system TEXT] [--default-options] [--timeout SECONDS]
+
+      foundry         Foundry Local, the newer Session API (ChatSession)
+      foundry-client  Foundry Local, the earlier chat API (GetChatClientAsync)
+      --system TEXT         a system prompt (the foundry runtimes)
+      --default-options     leave generation options at the SDK defaults (the foundry runtimes)
+      --timeout SECONDS     cancel each turn after N seconds and report how long it really took
 
       geniex needs a running server:  geniex serve
       ort-genai takes a model DIRECTORY, not an alias

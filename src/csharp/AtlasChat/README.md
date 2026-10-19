@@ -48,7 +48,7 @@ dotnet run -c Release --project src\csharp\AtlasChat -- --runtime ort-genai --ma
 
 | Option | Default | |
 | --- | --- | --- |
-| `--runtime` | `foundry` | `foundry`, `geniex`, `ort-genai` |
+| `--runtime` | `foundry` | `foundry`, `foundry-client`, `geniex`, `ort-genai` |
 | `--max-tokens` | 512 | Output cap, enforced by the harness |
 | `--temperature` | 0.7 | |
 | `--top-k` | 40 | Lower reduces repetition on small models |
@@ -56,6 +56,9 @@ dotnet run -c Release --project src\csharp\AtlasChat -- --runtime ort-genai --ma
 | `--show-think` | off | Reveal a reasoning model's `<think>` block |
 | `--quiet` | off | Hide the stats line |
 | `--verbose` | off | Show the ORT/GenAI loader warnings (`ort-genai`) |
+| `--system` | none | A system prompt (the two `foundry` runtimes) |
+| `--default-options` | off | Leave generation options at the SDK's defaults (the two `foundry` runtimes) |
+| `--timeout` | none | Cancel each turn after N seconds, and report how long it really took |
 
 Commands: `/reset` `/stats` `/model` `/help` `/quit`
 
@@ -250,6 +253,24 @@ the SDK, so this path is effectively capped at a **0.5B** model.
 
 `SearchOptions.FrequencyPenalty` and `PresencePenalty` are exposed but **inert**
 — any non-zero value fails the request. `--top-k` substitutes.
+
+### foundry-client
+
+The same SDK's **earlier** chat API, `model.GetChatClientAsync()` and `CompleteChatStreamingAsync` with
+OpenAI-style `ChatMessage` objects, next to the newer Session API that `foundry` uses. It exists to compare the
+two on one model: [microsoft/foundry-local#1207](https://github.com/microsoft/foundry-local/issues/1207) reports
+the Session API as far slower and degenerate against it. The old client is stateless, so this runtime keeps the
+history; `--default-options` leaves its settings at the SDK's defaults, as the issue's code does, and
+`--timeout 3` cancels the turn the way the issue's `CancellationToken` does.
+
+```powershell
+$q = "Do you like me?`n/quit`n"
+$q | atlas-chat --runtime foundry-client --default-options qwen2.5-0.5b --system "You are a sycophantic AI." --timeout 3
+$q | atlas-chat --runtime foundry        --default-options qwen2.5-0.5b --system "You are a sycophantic AI." --timeout 3
+```
+
+On `qwen2.5-0.5b` (the NPU, QNN) the issue did **not** reproduce: all four combinations of API and options
+finished in under a second with a sensible reply. The issue used `qwen3-0.6b` on CUDA.
 
 ### geniex
 
