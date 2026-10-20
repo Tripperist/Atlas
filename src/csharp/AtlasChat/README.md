@@ -286,9 +286,13 @@ being ignored *only* by the new API:
   nothing repeated: the old and new API, SDK defaults and explicit options, streamed and one-reply, on both
   models. Setting greedy decoding with no output cap (`--greedy`, which simulates a model whose config sets no
   sampling) did not make it loop either (446 characters from the new API, 104 tokens from the old).
+- Greedy decoding with no cap on an **open-ended** prompt did not loop either, streamed with a 60-second limit:
+  the new API wrote 929 tokens and the old (temperature 0) 689, each ending on its own in 17 to 19 s; with SDK
+  defaults, 1,320 and 609 tokens in 15 to 22 s. So greedy decoding is not a sufficient cause for this variant.
 - This variant's own `genai_config.json` sets sampling (`do_sample` true, temperature 0.6, top-k 20, top-p
   0.95) and a 40,960-token limit. A variant whose config sets none of that would decode greedily to that limit,
-  which is what the issue describes, but that is a guess: the CUDA variant is not available on this machine.
+  which is what the issue describes, but greedy decoding alone did not loop here (above), so whatever makes the
+  CUDA variant run to its limit is specific to it (its config, or its numerics) and not testable on this machine.
 
 **What did reproduce.**
 
