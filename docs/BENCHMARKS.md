@@ -34,6 +34,7 @@ and is compared in [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080).
 - [A 30B mixture-of-experts model](#a-30b-mixture-of-experts-model)
 - [GenieX v0.9.0 against v0.8.0](#geniex-v090-against-v080)
 - [First measurements on AC power (2026-10-17)](#first-measurements-on-ac-power-2026-10-17)
+- [Adreno driver 32.0.181.0 against 32.0.172.2 (2026-10-29)](#adreno-driver-3201810-against-3201722-2026-10-29)
 - [Foundry Local](#foundry-local)
 - [What the numbers mean](#what-the-numbers-mean)
 - [Qualcomm's published figures](#qualcomms-published-figures)
@@ -805,6 +806,76 @@ especially the v0.9.0 ones. The ordering (the NPU leads on prefill and first tok
 decode is close across units) held on every re-measurement. Treat any figure in this document with no recorded
 power state as a rough guide until it is re-measured; `Compare-BenchStacks` prefers AC records where there are
 any.
+
+## Adreno driver 32.0.181.0 against 32.0.172.2 (2026-10-29)
+
+> **Finding: the new Adreno driver cuts GPU decode by 70 to 87 % through llama.cpp's OpenCL backend, and nothing
+> else moved.** The full account, with what it does not show, is in
+> [ADRENO-DRIVER-32.0.181.0.md](ADRENO-DRIVER-32.0.181.0.md). Stay on 32.0.172.2 for GPU work.
+
+Two `stack-compare` runs on identical software (GenieX v0.9.3, llama.cpp `e467e5b`, Foundry 0.12.1, ONNX Runtime
+1.30.0, `onnxruntime-genai` 0.17.1, `onnxruntime-qnn` 2.7.0, Atlas code `bb4cf1d`), on AC power, Balanced, the CPU
+idle: stack `50595dce79eb` on driver **32.0.172.2** (`20261029-145037-stack-compare`) and stack `b1e7645e6ede` on
+**32.0.181.0** (`20261029-151203-stack-compare`, run with `-IgnoreCanary` because the canary aborts). The order was
+new driver, old restored, new driver again. `Compare-BenchStacks.ps1 -From 50595dce -To b1e7645e` lists one
+difference, `drivers.adreno`.
+
+**GPU, OpenCL (the figures that moved):**
+
+| Model and build | Phase | 32.0.172.2 | 32.0.181.0 | Change |
+| --- | --- | --- | --- | --- |
+| Qwen3-0.6B, stock llama.cpp b10566 | decode | 98.1 tok/s | 12.8 | **−87 %** |
+| Qwen3-0.6B, stock llama.cpp b10566 | prefill | 1,184 | 1,202 | +1.5 % |
+| Qwen3-4B, GenieX llama.cpp | decode | 29.5 | 9.0 | **−69 %** |
+| Qwen3-4B, GenieX llama.cpp | prefill | 335 | 306 | −8.8 % (noise) |
+| Qwen3-4B, GenieX llama.cpp | first token | 1.53 s | 1.68 s | +9.5 % |
+| Qwen3-4B, short-prompt decode | decode | 31.2 | 8.9 | **−72 %** |
+| Qwen3-Coder-30B, stock llama.cpp b10566 | decode | 26.8 | 5.9 | **−78 %** |
+| Qwen3-Coder-30B, stock llama.cpp b10566 | prefill | 248 | 68 | **−73 %** |
+
+**Not affected (the controls):**
+
+| | 32.0.172.2 | 32.0.181.0 |
+| --- | --- | --- |
+| NPU, QAIRT Qwen3-4B, prefill / decode | 2,198 / 33.7 | 2,127 / 32.8 |
+| NPU, llama.cpp Qwen3-4B, prefill / decode | 1,482 / 29.0 | 1,487 / 28.7 |
+| NPU, llama.cpp Phi-4-mini, prefill / decode | 1,638 / 31.2 | 1,650 / 31.6 |
+| NPU, ONNX Runtime GenAI Python, prefill / decode | 406 / 16.3 | 414 / 16.7 |
+| NPU, ONNX Runtime GenAI C#, prefill / decode | 457 / 18.8 | 454 / 18.5 |
+| CPU, llama.cpp Qwen3-4B, prefill / decode | 264 / 30.2 | 261 / 30.5 |
+| CPU, llama.cpp Phi-4-mini, prefill / decode | 313 / 33.6 | 319 / 33.4 |
+| CPU, stock llama.cpp 30B, prefill / decode | 126 / 40.0 | 134 / 41.5 |
+| CPU, stock llama.cpp 0.6B, prefill / decode | 1,672 / 181 | 1,692 / 187 |
+
+The NPU driver did not change, so the NPU rows are the negative control; the CPU rows show the machine itself was in
+the same state. Every control figure is within about 6 %.
+
+**The canary reproduced it, in both directions.** Stock llama.cpp on Qwen3-0.6B, a half-minute fixed run:
+
+| Driver | Runs | GPU decode, tok/s | GPU prefill, tok/s | CPU decode, tok/s |
+| --- | --- | --- | --- | --- |
+| 32.0.172.2 (2026-10-29) | 3, all ok | 100.3, 100.7, 98.2 | 1,355, 1,303, 1,264 | 195, 184, 184 |
+| 32.0.181.0 (2026-10-29) | 6, all abort | 13.0, 12.6, 13.1, 13.0, 13.0, 12.9 | 1,164, 1,196, 1,193, 1,194, 1,217, 1,193 | 189, 159, 188, 187, 191, 188 |
+| 32.0.172.2 (2026-10-17 reference) | 12 | 95.3 mean (93 to 97) | 1,508 mean (1,352 to 1,792) | 166 mean (127 to 187) |
+
+**WebGPU is not affected.** The same AtlasChat runs as on 2026-10-19 (old driver), repeated on the new one, on
+`qwen3-0.6b-generic-gpu:2` (Foundry Local, ONNX Runtime GenAI's WebGPU execution provider on the same Adreno),
+streamed, an open-ended prompt:
+
+| Run | 32.0.172.2 (2026-10-19) | 32.0.181.0 (2026-10-29) |
+| --- | --- | --- |
+| New API (`ChatSession`), greedy | 87.9 tok/s, 929 tokens | 90.1 tok/s, 929 tokens |
+| Old API (`GetChatClientAsync`), greedy | 90.9 tok/s, 689 tokens | 89.9 tok/s, 689 tokens |
+| New API, SDK defaults | 88.2 tok/s | 90.7 tok/s |
+| Old API, SDK defaults | 90.9 tok/s | 89.4 tok/s |
+
+The greedy runs produced the same token counts both times, so the same computation at the same speed. The same
+model through OpenCL is at 12.8 tok/s on the new driver. These are console runs, not recorded harness results.
+
+**Limits.** One machine; the cause is not established (decode collapsed, prefill did not, except on the 30B);
+WebGPU was checked on one 0.6B model only; the GenieX 30B on the GPU was not re-run; the old-driver WebGPU figures
+are from 2026-10-19, not the same afternoon. **Do not run `Export-BenchResults.ps1` on the new driver**: it would
+publish the slow GPU figures as the baseline in [Current figures](#current-figures).
 
 ## Foundry Local
 
