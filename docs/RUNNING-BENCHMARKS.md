@@ -485,7 +485,27 @@ the figure on each, the change, and a verdict. The rules:
 
 Example, on the real history: GenieX v0.8.0 against v0.9.0. The control held (4 figures within 10 %); the 30B
 GPU decode fell from 28.9 to 17.4 tok/s (-40 %); the 30B NPU first token fell from 13.9 s to 0.35 s; NPU decode
-rose 14 to 42 %.
+rose 14 to 42 %. (That GPU fall was later shown to be a degraded-state measurement: on AC it is 31.6. The tool
+reports what the history holds; whether the history is right is the conditions check's job.)
+
+### Evaluating a driver or other stack update
+
+What worked for the Adreno driver update (see
+[ADRENO-DRIVER-32.0.181.0.md](ADRENO-DRIVER-32.0.181.0.md)):
+
+1. **Run `Update-Workspace.ps1` first.** It must show exactly one component changed. If GenieX or Foundry moved
+   too, the comparison has two causes.
+2. **Check what the last measurement was.** The baseline stack may have no benchmark data (it had only smoke
+   checks); `Compare-BenchStacks.ps1 -List` shows the stacks that do.
+3. **Run the canary a few times** on the new driver. It is a minute, and its GPU decode, GPU prefill and CPU
+   figures say at once which part moved and whether the machine did.
+4. **Run `stack-compare` on the new stack with `-IgnoreCanary`** (the canary aborts a suite below 60 % of its
+   reference, which is the result you are measuring), then **roll back, run it again, and update again if you
+   can**: new, old, new rules out a drift in the machine.
+5. **Compare** with `Compare-BenchStacks.ps1 -From <old> -To <new>`. For a GPU driver, read the GPU control rows
+   as the result and the CPU and NPU rows as the controls; the headline "A control moved" is about the GPU here.
+6. **Do not `-Accept` or run `Export-BenchResults.ps1`** until you know whether the new stack is the one to
+   publish: the export takes the latest AC session of each cell.
 
 ## 9. Reading a result: what to trust
 
