@@ -123,7 +123,7 @@ about 180 on both.
 
 1. Roll the driver back to 32.0.172.2 for GPU work, and keep the installer for 32.0.181.0 so it can be retried.
 2. Report it, with the reproducer above, to Qualcomm (the driver) and to the llama.cpp OpenCL backend's Adreno
-   maintainers. Not done; an issue-ready page is [issues/adreno-32.0.181.0-opencl-decode.md](issues/adreno-32.0.181.0-opencl-decode.md).
+   maintainers. Not done; a plain data sheet to write the report from is [data/adreno-driver-32.0.181.0.md](data/adreno-driver-32.0.181.0.md); llama.cpp requires such reports to be written by the person filing them.
 3. Re-test each new Adreno driver with the canary first: its GPU decode figure caught this in one minute.
 4. Optional, to learn how far it reaches: a larger Foundry GPU model on WebGPU (for example `qwen3-4b`), the
    GenieX 30B on the GPU, and the 1.7B.
