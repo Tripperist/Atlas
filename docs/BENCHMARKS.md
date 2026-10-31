@@ -873,7 +873,7 @@ The greedy runs produced the same token counts both times, so the same computati
 model through OpenCL is at 12.8 tok/s on the new driver. These are console runs, not recorded harness results.
 
 **Limits.** One machine; the cause is not established (decode collapsed, prefill did not, except on the 30B);
-WebGPU was checked on one 0.6B model only; the GenieX 30B on the GPU was not re-run; the old-driver WebGPU figures
+WebGPU was checked on one 0.6B model only; the GenieX 30B on the GPU was re-run at a 512-token prompt only, not at long context; the old-driver WebGPU figures
 are from 2026-10-19, not the same afternoon. **Do not run `Export-BenchResults.ps1` on the new driver**: it would
 publish the slow GPU figures as the baseline in [Current figures](#current-figures).
 

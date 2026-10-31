@@ -46,8 +46,40 @@ control on the same GPU fell by a similar amount (Qwen3-0.6B decode 98.12 to 12.
 (`qualcomm/GenieX`, commit `d66de04`) builds llama.cpp with `GGML_OPENCL` on and carries three Adreno OpenCL patches
 (`sdk/patches/llama-opencl-adreno-*.patch`); the QAIRT engine ignores `--compute`.
 
-Not measured with GenieX: Qwen3-0.6B and Qwen3-Coder-30B on the GPU, the `geniex serve` OpenAI-compatible endpoint
-on the GPU, and any GenieX build other than v0.9.3.
+### More GenieX models, GPU and CPU, on 32.0.181.0 only (2026-10-31)
+
+The same two tools on three more models, all Q4_0 GGUF through the llama.cpp engine, run on the new driver after the
+suite runs above (AC power, battery 100 %, Balanced, CPU 3 to 5 % busy at the start of each step, nothing else
+running). Prefill is a 512-token prompt, 3 repeats; `geniex infer` is the 160-token short-prompt run, 3 runs per unit.
+Stock llama.cpp b10566 on the same driver is from the `stack-compare` run above.
+
+| Model | Tool | GPU decode | GPU prefill | GPU first token | CPU decode | CPU prefill |
+| --- | --- | --- | --- | --- | --- | --- |
+| Qwen3-0.6B | `geniex-bench` | 11.79 | 1,291.08 | 397 ms | 110.95 | 1,339.26 |
+| Qwen3-0.6B | `geniex infer` | 11.80 | | 0.1 s | 121.10 | |
+| Qwen3-1.7B | `geniex-bench` | 11.66 | 681.33 | 752 ms | 59.39 | 551.07 |
+| Qwen3-1.7B | `geniex infer` | 11.30 | | 0.2 s | 60.90 | |
+| Qwen3-Coder-30B | `geniex-bench` | 4.88 | 67.53 | 7,582 ms | 29.52 | 125.92 |
+| Qwen3-Coder-30B | `geniex infer` | 4.70 | | 0.6 s | 32.90 | |
+
+Same driver, stock llama.cpp b10566 for comparison: Qwen3-0.6B GPU decode 12.84, prefill (256) 1,201.80; Qwen3-Coder-30B
+GPU decode 5.86, prefill 68.19. The Qwen3-1.7B was not run on stock llama.cpp.
+
+Old-driver GenieX figures for the same cells: there are none for the Qwen3-0.6B or the Qwen3-1.7B. For the
+Qwen3-Coder-30B (`geniex-bench`, 512-token prompt, 32.0.172.2) the history holds GenieX v0.9.0 on 2026-10-17, on AC
+power: decode 31.57, prefill 288.48. Earlier sessions on the same driver (GenieX v0.8.0 and v0.9.0, 2026-10-15 and
+10-16) gave decode 17.42 to 28.9 and prefill 285.8 to 302.9; those records do not say whether the machine was on AC
+power. The 30B was run with `-CtxSize 4096`; the others used the model default. The GenieX version differs from the
+v0.9.3 used on the new driver.
+
+A first pass of the 0.6B and 1.7B steps (15:09 to 15:25) overlapped a background file search (`find`, about one
+core); the harness warned at the start of those steps and the CPU figures were far too low (0.6B CPU decode 1.5 to
+5 tok/s). Those eight records are marked `valid = false` in the history and the figures above are from a rerun on the
+idle machine (15:32 to 15:38). The 30B steps ran after the search had finished and were not rerun.
+
+Not measured with GenieX: the `geniex serve` OpenAI-compatible endpoint on the GPU, the long-context runs
+(`longctx`, 896 to 6,784 tokens) on the new driver, any quantisation other than Q4_0, any model other than the four
+above, and any GenieX build other than v0.9.3.
 
 ## Commands
 
@@ -62,7 +94,10 @@ The GenieX figures above came from `geniex-bench` v0.9.3 (a 512-token prompt, 3 
 compute unit by `Scripts/Invoke-BenchPrefill.ps1 -Matrix -PromptTokens 512 -Repeat 3`) and from the GenieX CLI
 (`Scripts/Invoke-BenchDecode.ps1`, which runs `geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion
 battery works, in detail." --max-tokens 160 --compute <cpu|gpu|npu> --power-mode burst --seed 42 --think=false`, 3 runs
-per unit, interleaved).
+per unit, interleaved). The three extra models were run with `Scripts/Invoke-BenchPrefill.ps1 -Model <model> -Plugin
+llama_cpp -Device gpu,cpu -PromptTokens 512 -Repeat 3` (plus `-CtxSize 4096` for the 30B) and `Scripts/Invoke-BenchDecode.ps1
+-Model <model> -Compute gpu,cpu -Repeat 3`, with `<model>` one of `unsloth/Qwen3-0.6B-GGUF:Q4_0`,
+`unsloth/Qwen3-1.7B-GGUF:Q4_0`, `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0`.
 
 The 0.6B "runs" below are the same command with `-p 256 -n 32 -r 1 -o json`, two rounds (GPU first, then CPU first),
 reported as the mean of the two rounds. The 30B rows are 3 interleaved rounds, the median.
@@ -182,7 +217,10 @@ without its closing `]` and the wrapper script exited with code 5; all ten files
 ## Not measured
 
 - The 4B and 30B models through WebGPU.
-- The GenieX 30B on the GPU on 32.0.181.0.
+- The GenieX long-context runs (`longctx`, `genie-30b`) on 32.0.181.0; the GenieX 30B was measured at a 512-token
+  prompt only.
+- The GenieX 0.6B, 1.7B and 30B on 32.0.172.2 with the v0.9.3 harness; see the GenieX section for the baselines that
+  exist.
 - A `llama-bench` table on 32.0.172.2 (the figures above for that driver come from the wrapper's JSON runs).
 - Any profile, driver log, or OpenCL kernel timing.
 - Driver versions other than 32.0.172.2 and 32.0.181.0.

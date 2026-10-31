@@ -78,8 +78,10 @@ through OpenCL is at 12.8 tok/s on the new driver, so WebGPU is about seven time
   kernels llama.cpp uses for token generation, but no profiling was done and that is only a guess.
 - **WebGPU was checked on one model**, Qwen3-0.6B, and not on the 4B or the 30B. The OpenCL regression was widest
   on the larger ones.
-- **The GenieX 30B on the GPU** (`longctx`, `genie-30b`) was not re-run on the new driver. The stock llama.cpp
-  control on the same file already shows the 30B affected.
+- **The GenieX 30B on the GPU** was re-run on the new driver at a 512-token prompt only (decode 4.9 tok/s, prefill
+  67.5, against 31.6 and 288 on GenieX v0.9.0 on the old driver; a different GenieX version). The long-context runs
+  (`longctx`, `genie-30b`) were not re-run. The 0.6B, 1.7B and 30B GenieX GPU figures are in the
+  [data sheet](data/adreno-driver-32.0.181.0.md); there is no old-driver GenieX baseline for the 0.6B or 1.7B.
 - **The pre-update run is healthy**: its canary passed before and after, and its figures are within about 13 % of
   the 2026-10-17 baseline, which was taken on GenieX v0.9.0 (the largest gaps are QAIRT prefill, −13 %, and the
   4B on the CPU, +12 %). It ran about twenty minutes before the post-update run.
