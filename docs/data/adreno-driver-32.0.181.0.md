@@ -24,6 +24,31 @@ and [../BENCHMARKS.md](../BENCHMARKS.md#adreno-driver-3201810-against-3201722-20
 | ONNX Runtime / GenAI / QNN | 1.30.0 / 0.17.1 / 2.7.0 |
 | Models | `unsloth/Qwen3-0.6B-GGUF` `Qwen3-0.6B-Q4_0.gguf`; `unsloth/Qwen3-4B-GGUF` Q4_0; `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF` Q4_0 |
 
+## GenieX was benchmarked and shows the same slowdown
+
+GenieX (v0.9.3, which runs GGUF models on its bundled llama.cpp `e467e5b`, OpenCL backend for the GPU) was measured
+on both drivers with two of its own tools, in the same two `stack-compare` runs as everything else below. On the GPU
+it is affected; on the CPU and NPU it is not.
+
+| GenieX measurement (Qwen3-4B Q4_0, GGUF, llama.cpp engine) | 32.0.172.2 | 32.0.181.0 | Change |
+| --- | --- | --- | --- |
+| GPU decode, `geniex-bench`, 512-token prompt (tok/s) | 29.54 | 9.04 | −69 % |
+| GPU decode, `geniex infer --compute gpu`, short prompt (tok/s) | 31.2 | 8.9 | −72 % |
+| GPU prefill, `geniex-bench`, 512 tokens (tok/s) | 335.07 | 305.71 | −8.8 % |
+| GPU first token, `geniex-bench`, 512 tokens (s) | 1.53 | 1.68 | +0.15 s |
+| CPU decode, `geniex-bench` / `geniex infer` (tok/s) | 30.21 / 33.7 | 30.49 / 32.0 | +0.9 % / −5 % |
+| NPU decode, `geniex-bench` / `geniex infer` (tok/s) | 28.97 / 31.4 | 28.69 / 31.6 | −1.0 % / +0.6 % |
+| NPU decode, QAIRT engine, `geniex-bench` (tok/s) | 33.68 | 32.80 | −2.6 % |
+
+GenieX's CPU and NPU paths, and its QAIRT engine, did not move; only the GPU path did. The stock llama.cpp b10566
+control on the same GPU fell by a similar amount (Qwen3-0.6B decode 98.12 to 12.84 tok/s, Qwen3-Coder-30B decode
+26.80 to 5.86), so the slowdown is not specific to GenieX's build. GenieX's repository
+(`qualcomm/GenieX`, commit `d66de04`) builds llama.cpp with `GGML_OPENCL` on and carries three Adreno OpenCL patches
+(`sdk/patches/llama-opencl-adreno-*.patch`); the QAIRT engine ignores `--compute`.
+
+Not measured with GenieX: Qwen3-0.6B and Qwen3-Coder-30B on the GPU, the `geniex serve` OpenAI-compatible endpoint
+on the GPU, and any GenieX build other than v0.9.3.
+
 ## Commands
 
 ```text
@@ -32,6 +57,12 @@ llama-bench.exe -m Qwen3-0.6B-Q4_0.gguf -ngl 0  -p 256 -n 32 -r 3     (CPU)
 llama-bench.exe -m Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 99 -p 512 -n 128 -r 1   (30B, GPU)
 llama-bench.exe -m Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 0  -p 512 -n 128 -r 1   (30B, CPU)
 ```
+
+The GenieX figures above came from `geniex-bench` v0.9.3 (a 512-token prompt, 3 repeats, run for each model and
+compute unit by `Scripts/Invoke-BenchPrefill.ps1 -Matrix -PromptTokens 512 -Repeat 3`) and from the GenieX CLI
+(`Scripts/Invoke-BenchDecode.ps1`, which runs `geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion
+battery works, in detail." --max-tokens 160 --compute <cpu|gpu|npu> --power-mode burst --seed 42 --think=false`, 3 runs
+per unit, interleaved).
 
 The 0.6B "runs" below are the same command with `-p 256 -n 32 -r 1 -o json`, two rounds (GPU first, then CPU first),
 reported as the mean of the two rounds. The 30B rows are 3 interleaved rounds, the median.
