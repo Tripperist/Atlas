@@ -121,6 +121,62 @@ llama-bench.exe -m Qwen3-0.6B-Q4_0.gguf -ngl 99 -p 256 -n 32 -r 2
 Expect about 98 tok/s on the `tg32` line on 32.0.172.2 and about 13 on 32.0.181.0, with the CPU (`-ngl 0`) at
 about 180 on both.
 
+### The GenieX commands behind the GenieX figures
+
+GenieX v0.9.3 (llama.cpp `e467e5b`) was measured with two of its own tools. The repository's wrappers
+(`Scripts/Invoke-BenchPrefill.ps1` and `Scripts/Invoke-BenchDecode.ps1`) run exactly the commands below and record
+the result in the history. In the two `stack-compare` runs they were driven by the suite:
+
+```powershell
+.\Scripts\Invoke-BenchPrefill.ps1 -Matrix -PromptTokens 512 -Repeat 3
+.\Scripts\Invoke-BenchDecode.ps1 -Model unsloth/Qwen3-4B-GGUF:Q4_0 -Compute cpu,gpu,npu -Repeat 3
+```
+
+`geniex-bench` is the harness GenieX publishes with each release (`geniex-bench-windows-arm64-v0.9.3.zip`); the
+wrapper fetches the build that matches the installed GenieX version and verifies its SHA256, and runs it once per
+cell (model, engine, compute unit). It prints the median of the repeats, and the wrapper reads its JSON report. A
+512-token prompt, 128 generated tokens, 3 repeats, no `-c` unless stated:
+
+```powershell
+$bench = "$env:TEMP\atlas-geniex-bench-v0.9.3\x\geniex-bench-windows-arm64-v0.9.3\bin\geniex-bench.exe"
+
+# The matrix cells (Qwen3-4B, Phi-4-mini-reasoning), one run each, in this order:
+& $bench --plugin qairt     --device npu -m qualcomm/Qwen3-4B:W4A16                    -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device npu -m unsloth/Qwen3-4B-GGUF:Q4_0                 -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device gpu -m unsloth/Qwen3-4B-GGUF:Q4_0                 -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device cpu -m unsloth/Qwen3-4B-GGUF:Q4_0                 -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device npu -m unsloth/Phi-4-mini-reasoning-GGUF:Q4_0     -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device cpu -m unsloth/Phi-4-mini-reasoning-GGUF:Q4_0     -p 512 -n 128 -r 3 --output-json out.json
+
+# The extra models on 32.0.181.0 only, GPU then CPU (the 30B with a 4,096-token context):
+& $bench --plugin llama_cpp --device gpu -m unsloth/Qwen3-0.6B-GGUF:Q4_0               -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device cpu -m unsloth/Qwen3-0.6B-GGUF:Q4_0               -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device gpu -m unsloth/Qwen3-1.7B-GGUF:Q4_0               -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device cpu -m unsloth/Qwen3-1.7B-GGUF:Q4_0               -p 512 -n 128 -r 3 --output-json out.json
+& $bench --plugin llama_cpp --device gpu -m unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p 512 -n 128 -r 3 -c 4096 --output-json out.json
+& $bench --plugin llama_cpp --device cpu -m unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p 512 -n 128 -r 3 -c 4096 --output-json out.json
+```
+
+The prefill wrapper reverses the order of the cells between prompt sizes; only one size (512) was used here, so the
+cells ran in the order listed. The short-prompt decode figures use the GenieX CLI: one warm-up call, excluded, then
+three runs per compute unit, interleaved and reversed on alternate rounds (so a drift in the machine's state does not
+line up with one unit), each as its own `geniex infer` process:
+
+```powershell
+geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p 'hi' --max-tokens 8 --think=false      # warm-up, not measured
+
+geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 `
+    -p 'Explain how a lithium-ion battery works, in detail.' `
+    --max-tokens 160 --compute gpu --power-mode burst --seed 42 --think=false     # also --compute cpu, --compute npu
+```
+
+The extra models used the same `geniex infer` line with `unsloth/Qwen3-0.6B-GGUF:Q4_0`,
+`unsloth/Qwen3-1.7B-GGUF:Q4_0` and `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0` and `--compute gpu` and `cpu`
+(`Scripts/Invoke-BenchDecode.ps1 -Model <model> -Compute gpu,cpu -Repeat 3`). `--compute` has no effect on the QAIRT
+bundle. The GGUF models were already in the GenieX cache; `geniex pull <model> --model-hub hf` fetches them. The
+harness also samples core and GPU utilisation during each `geniex infer` run; that sampling is in the wrapper, not
+part of the GenieX command.
+
 ## Next steps
 
 1. Roll the driver back to 32.0.172.2 for GPU work, and keep the installer for 32.0.181.0 so it can be retried.
