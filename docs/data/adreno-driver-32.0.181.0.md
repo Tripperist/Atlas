@@ -123,6 +123,31 @@ limit, one run each, console runs.
 | Chat client API, SDK defaults: tok/s | 90.9 | 89.4 |
 | GPU engine utilization | 95 to 98 % | 95 to 96 % |
 
+## llama.cpp OpenCL: Adreno xmem GEMM setting, new driver only (2026-10-31)
+
+Run on 32.0.181.0, AC power, battery 100 %, scheme Balanced, stock b10566, GPU (`-ngl 99`). The two settings were
+interleaved, one after the other in each round; each cell is `llama-bench` `avg_ts` in tok/s, per round, then the
+median. The 0.6B used `-p 256 -n 32 -r 3` (2 rounds); the 30B used `-p 512 -n 128 -r 1` (3 rounds).
+
+```text
+GGML_OPENCL_ADRENO_XMEM_GEMM unset      (xmem off in b10566)
+GGML_OPENCL_ADRENO_XMEM_GEMM=0          (xmem on in b10566: the variable only has to be set)
+```
+
+In b10566 (`ggml-opencl.cpp`, line 5997) `adreno_xmem_gemm_enabled` is `getenv("GGML_OPENCL_ADRENO_XMEM_GEMM") != nullptr`
+on Adreno, so any value, including `0`, enables it. Upstream `19cce69` (2026-10-27) reads the value and defaults to on.
+
+| Test | Variable unset | Variable set to `0` |
+| --- | --- | --- |
+| Qwen3-0.6B prefill (256) | 1,216.73 / 1,230.11, median 1,223.42 | 1,213.26 / 1,186.34, median 1,199.80 |
+| Qwen3-0.6B decode | 11.97 / 11.86, median 11.91 | 11.91 / 11.85, median 11.88 |
+| Qwen3-Coder-30B prefill (512) | 70.56 / 70.49 / 70.26, median 70.49 | 69.38 / 70.09 / 70.50, median 70.09 |
+| Qwen3-Coder-30B decode | 5.28 / 6.00 / 6.18, median 6.00 | 6.03 / 6.01 / 5.34, median 6.01 |
+
+Enabling the xmem path did not change any figure outside the run-to-run spread. The models are Q4_0; the xmem path
+is described upstream as an F16 x F32 GEMM. Not run on 32.0.172.2. `llama-bench -o json` left the output array
+without its closing `]` and the wrapper script exited with code 5; all ten files held complete results.
+
 ## Not measured
 
 - The 4B and 30B models through WebGPU.
@@ -137,4 +162,5 @@ limit, one run each, console runs.
 Suite output: `.atlas-local/benchmarks/runs/20261029-145037-stack-compare` and `...-151203-stack-compare` (git-ignored,
 on the measuring machine): `summary.md`, `records.jsonl`, `canary.json`, a log per step. History records:
 `.atlas-local/benchmarks/history.jsonl`, stacks `50595dce79eb` and `b1e7645e6ede`. `llama-bench ... -o json` prints the
-per-sample times and the device strings.
+per-sample times and the device strings. The xmem runs wrote ten JSON files to a session scratch folder outside the
+repository; the figures in that table are copied from them.
