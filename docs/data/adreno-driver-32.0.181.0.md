@@ -90,14 +90,44 @@ llama-bench.exe -m Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 99 -p 512 -n 128 
 llama-bench.exe -m Qwen3-Coder-30B-A3B-Instruct-Q4_0.gguf -ngl 0  -p 512 -n 128 -r 1   (30B, CPU)
 ```
 
-The GenieX figures above came from `geniex-bench` v0.9.3 (a 512-token prompt, 3 repeats, run for each model and
-compute unit by `Scripts/Invoke-BenchPrefill.ps1 -Matrix -PromptTokens 512 -Repeat 3`) and from the GenieX CLI
-(`Scripts/Invoke-BenchDecode.ps1`, which runs `geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion
-battery works, in detail." --max-tokens 160 --compute <cpu|gpu|npu> --power-mode burst --seed 42 --think=false`, 3 runs
-per unit, interleaved). The three extra models were run with `Scripts/Invoke-BenchPrefill.ps1 -Model <model> -Plugin
-llama_cpp -Device gpu,cpu -PromptTokens 512 -Repeat 3` (plus `-CtxSize 4096` for the 30B) and `Scripts/Invoke-BenchDecode.ps1
--Model <model> -Compute gpu,cpu -Repeat 3`, with `<model>` one of `unsloth/Qwen3-0.6B-GGUF:Q4_0`,
-`unsloth/Qwen3-1.7B-GGUF:Q4_0`, `unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0`.
+GenieX v0.9.3, `geniex-bench` (512-token prompt, 128 generated tokens, 3 repeats; reports the median of the repeats):
+
+```text
+geniex-bench.exe --plugin llama_cpp --device gpu -m unsloth/Qwen3-4B-GGUF:Q4_0 -p 512 -n 128 -r 3                       (4B, GPU)
+geniex-bench.exe --plugin llama_cpp --device cpu -m unsloth/Qwen3-4B-GGUF:Q4_0 -p 512 -n 128 -r 3                       (4B, CPU)
+geniex-bench.exe --plugin llama_cpp --device npu -m unsloth/Qwen3-4B-GGUF:Q4_0 -p 512 -n 128 -r 3                       (4B, NPU)
+geniex-bench.exe --plugin qairt     --device npu -m qualcomm/Qwen3-4B:W4A16 -p 512 -n 128 -r 3                          (4B, QAIRT, NPU)
+geniex-bench.exe --plugin llama_cpp --device cpu -m unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 -p 512 -n 128 -r 3           (Phi-4-mini, CPU)
+geniex-bench.exe --plugin llama_cpp --device npu -m unsloth/Phi-4-mini-reasoning-GGUF:Q4_0 -p 512 -n 128 -r 3           (Phi-4-mini, NPU)
+geniex-bench.exe --plugin llama_cpp --device gpu -m unsloth/Qwen3-0.6B-GGUF:Q4_0 -p 512 -n 128 -r 3                     (0.6B, GPU; new driver only)
+geniex-bench.exe --plugin llama_cpp --device cpu -m unsloth/Qwen3-0.6B-GGUF:Q4_0 -p 512 -n 128 -r 3                     (0.6B, CPU; new driver only)
+geniex-bench.exe --plugin llama_cpp --device gpu -m unsloth/Qwen3-1.7B-GGUF:Q4_0 -p 512 -n 128 -r 3                     (1.7B, GPU; new driver only)
+geniex-bench.exe --plugin llama_cpp --device cpu -m unsloth/Qwen3-1.7B-GGUF:Q4_0 -p 512 -n 128 -r 3                     (1.7B, CPU; new driver only)
+geniex-bench.exe --plugin llama_cpp --device gpu -m unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p 512 -n 128 -r 3 -c 4096   (30B, GPU; new driver only)
+geniex-bench.exe --plugin llama_cpp --device cpu -m unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p 512 -n 128 -r 3 -c 4096   (30B, CPU; new driver only)
+```
+
+GenieX v0.9.3, `geniex infer` (short prompt, 160 tokens; each line run 3 times per model and unit, the units
+interleaved and the order reversed on alternate rounds; one warm-up call per model, excluded:
+`geniex infer <model> -p 'hi' --max-tokens 8 --think=false`):
+
+```text
+geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute gpu --power-mode burst --seed 42 --think=false   (4B, GPU)
+geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute cpu --power-mode burst --seed 42 --think=false   (4B, CPU)
+geniex infer unsloth/Qwen3-4B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute npu --power-mode burst --seed 42 --think=false   (4B, NPU)
+geniex infer unsloth/Qwen3-0.6B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute gpu --power-mode burst --seed 42 --think=false   (0.6B, GPU; new driver only)
+geniex infer unsloth/Qwen3-0.6B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute cpu --power-mode burst --seed 42 --think=false   (0.6B, CPU; new driver only)
+geniex infer unsloth/Qwen3-1.7B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute gpu --power-mode burst --seed 42 --think=false   (1.7B, GPU; new driver only)
+geniex infer unsloth/Qwen3-1.7B-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute cpu --power-mode burst --seed 42 --think=false   (1.7B, CPU; new driver only)
+geniex infer unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute gpu --power-mode burst --seed 42 --think=false   (30B, GPU; new driver only)
+geniex infer unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF:Q4_0 -p "Explain how a lithium-ion battery works, in detail." --max-tokens 160 --compute cpu --power-mode burst --seed 42 --think=false   (30B, CPU; new driver only)
+```
+
+`geniex-bench.exe` is the harness published with the GenieX release (`geniex-bench-windows-arm64-v0.9.3.zip`). The
+repository's wrappers run these lines and record the results: `Scripts/Invoke-BenchPrefill.ps1` (`-Matrix` for the
+first six; `-Model <model> -Plugin llama_cpp -Device gpu,cpu`, and `-CtxSize 4096` for the 30B, for the rest) and
+`Scripts/Invoke-BenchDecode.ps1` (`-Model <model> -Compute gpu,cpu[,npu] -Repeat 3`). The wrapper adds `--output-json
+<file>` to each `geniex-bench` line. `--compute` and `--device` have no effect on the QAIRT bundle.
 
 The 0.6B "runs" below are the same command with `-p 256 -n 32 -r 1 -o json`, two rounds (GPU first, then CPU first),
 reported as the mean of the two rounds. The 30B rows are 3 interleaved rounds, the median.
